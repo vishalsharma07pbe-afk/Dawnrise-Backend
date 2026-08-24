@@ -4,6 +4,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
+import com.edusphere.identity.platform.auth.config.PlatformJwtProperties;
+import com.edusphere.identity.platform.auth.refreshtoken.config.PlatformRefreshTokenProperties;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -23,7 +25,11 @@ import java.util.LinkedHashSet;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(InternalServiceSecurityProperties.class)
+@EnableConfigurationProperties({
+        InternalServiceSecurityProperties.class,
+        PlatformJwtProperties.class,
+        PlatformRefreshTokenProperties.class
+})
 public class SecurityConfig {
 
     @Bean
@@ -67,6 +73,21 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 HttpMethod.POST,
+                                "/api/v1/platform/auth/login"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/platform/auth/refresh"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/platform/auth/logout"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
                                 "/api/v1/auth/login"
                         ).permitAll()
 
@@ -83,6 +104,21 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/v1/auth/activation/resend"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/platform/auth/activation/validate"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/platform/auth/activation/complete"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/platform/auth/activation/resend"
                         ).permitAll()
 
                         .requestMatchers(

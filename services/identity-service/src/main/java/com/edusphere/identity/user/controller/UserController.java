@@ -20,7 +20,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/users")
-@PreAuthorize("@tenantSecurity.canAccessOrganization(authentication, #organizationId)")
 public class UserController {
 
     private final UserService userService;
@@ -31,6 +30,8 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and hasAuthority('USER_CREATE')
         and @userAuthorization.canCreateUser(
@@ -62,6 +63,8 @@ public class UserController {
     }
 
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and (
             (
@@ -81,6 +84,8 @@ public class UserController {
     }
 
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and hasAuthority('USER_VIEW')
         """)
@@ -104,6 +109,8 @@ public class UserController {
     }
 
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and (
             (
@@ -132,6 +139,8 @@ public class UserController {
 
     @PutMapping("/{userId}/roles")
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and hasAnyAuthority(
             'ROLE_ASSIGN_ROUTINE',
@@ -158,6 +167,8 @@ public class UserController {
 
     @PutMapping("/{userId}/status")
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(
             authentication,
             #organizationId
@@ -189,6 +200,8 @@ public class UserController {
 
     @PostMapping("/{userId}/activation/resend")
     @PreAuthorize("""
+        @organizationTokenSecurity.isOrganizationUser(authentication)
+        and
         @tenantSecurity.canAccessOrganization(authentication, #organizationId)
         and hasAuthority('USER_ACTIVATION_RESEND')
         """)

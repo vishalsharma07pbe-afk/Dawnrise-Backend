@@ -6,6 +6,11 @@ import com.edusphere.identity.auth.refreshtoken.repository.RefreshTokenRepositor
 import com.edusphere.identity.organization.provisioning.repository.OrganizationProvisioningRequestRepository;
 import com.edusphere.identity.organization.repository.OrganizationRepository;
 import com.edusphere.identity.permission.repository.RolePermissionRepository;
+import com.edusphere.identity.platform.audit.repository.PlatformSecurityAuditEventRepository;
+import com.edusphere.identity.platform.auth.activation.repository.PlatformUserActivationTokenRepository;
+import com.edusphere.identity.platform.auth.refreshtoken.repository.PlatformRefreshTokenRepository;
+import com.edusphere.identity.platform.permission.repository.PlatformRolePermissionRepository;
+import com.edusphere.identity.platform.user.repository.PlatformUserRepository;
 import com.edusphere.identity.roleapproval.repository.RoleAssignmentApprovalRepository;
 import com.edusphere.identity.roleapproval.repository.RoleAssignmentRequestRepository;
 import com.edusphere.identity.roleremoval.repository.RoleRemovalApprovalRepository;
@@ -48,6 +53,19 @@ class IdentityServiceApplicationTests {
     @MockitoBean
     private OrganizationProvisioningRequestRepository
             organizationProvisioningRequestRepository;
+    @MockitoBean
+    private PlatformUserRepository platformUserRepository;
+    @MockitoBean
+    private PlatformUserActivationTokenRepository
+            platformUserActivationTokenRepository;
+    @MockitoBean
+    private PlatformRolePermissionRepository
+            platformRolePermissionRepository;
+    @MockitoBean
+    private PlatformRefreshTokenRepository platformRefreshTokenRepository;
+    @MockitoBean
+    private PlatformSecurityAuditEventRepository
+            platformSecurityAuditEventRepository;
     @MockitoBean
     private JavaMailSender mailSender;
 

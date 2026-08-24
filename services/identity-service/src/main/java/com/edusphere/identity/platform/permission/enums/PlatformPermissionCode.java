@@ -1,0 +1,67 @@
+package com.edusphere.identity.platform.permission.enums;
+
+public enum PlatformPermissionCode {
+
+    // Employee self-service
+    PLATFORM_PROFILE_VIEW_SELF,
+    PLATFORM_PROFILE_UPDATE_SELF,
+    PLATFORM_PASSWORD_CHANGE_SELF,
+    PLATFORM_SESSION_VIEW_SELF,
+    PLATFORM_SESSION_REVOKE_SELF,
+
+    // Dawnrise employee account administration
+    PLATFORM_USER_CREATE,
+    PLATFORM_USER_VIEW,
+    PLATFORM_USER_PROFILE_UPDATE,
+    PLATFORM_USER_ACTIVATE,
+    PLATFORM_USER_DEACTIVATE,
+    PLATFORM_USER_SUSPEND,
+    PLATFORM_USER_REACTIVATE,
+    PLATFORM_USER_UNLOCK,
+
+    // Dawnrise employee access administration
+    PLATFORM_ROLE_VIEW,
+    PLATFORM_PERMISSION_VIEW,
+    PLATFORM_ROLE_ASSIGN,
+    PLATFORM_ROLE_REMOVE,
+
+    // Leads and demo requests
+    LEAD_VIEW,
+    LEAD_UPDATE,
+    LEAD_ASSIGN,
+
+    // Institution applications
+    ORGANIZATION_APPLICATION_VIEW,
+    ORGANIZATION_APPLICATION_ASSIGN,
+    ORGANIZATION_APPLICATION_REVIEW,
+    ORGANIZATION_APPLICATION_VERIFY,
+    ORGANIZATION_APPLICATION_APPROVE,
+    ORGANIZATION_APPLICATION_REJECT,
+
+    // Organization and provisioning operations
+    ORGANIZATION_VIEW,
+    ORGANIZATION_CREATE,
+    PROVISIONING_START,
+    PROVISIONING_VIEW,
+    PROVISIONING_RETRY,
+
+    // Subscription and plan operations
+    PLAN_VIEW,
+    PLAN_ASSIGN,
+    SUBSCRIPTION_VIEW,
+    SUBSCRIPTION_UPDATE,
+
+    // Customer support
+    SUPPORT_ASSIGNMENT_CREATE,
+    SUPPORT_ASSIGNMENT_VIEW,
+    SUPPORT_ASSIGNMENT_REVOKE,
+
+    // Data migration
+    DATA_IMPORT_CREATE,
+    DATA_IMPORT_VIEW,
+    DATA_IMPORT_VALIDATE,
+    DATA_IMPORT_EXECUTE,
+
+    // Platform security and audit
+    PLATFORM_SECURITY_AUDIT_VIEW
+}

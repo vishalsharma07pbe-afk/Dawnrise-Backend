@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -100,6 +101,7 @@ public class AuthController {
     }
 
     @PostMapping("/password/change")
+    @PreAuthorize("@organizationTokenSecurity.isOrganizationUser(authentication)")
     public ResponseEntity<Void> changePassword(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody ChangePasswordRequest request
