@@ -92,7 +92,7 @@ class PlatformAccountActivationServiceImplTest {
 
         assertEquals("raw-token", rawToken);
         assertTrue(previousToken.isRevoked());
-        verify(tokenRepository).save(argThat(token ->
+        verify(tokenRepository).saveAndFlush(argThat(token ->
                 "token-hash".equals(token.getTokenHash())
                         && !"raw-token".equals(token.getTokenHash())
         ));

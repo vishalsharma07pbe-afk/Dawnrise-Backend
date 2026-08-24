@@ -17,6 +17,7 @@ import com.edusphere.identity.platform.user.repository.PlatformUserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import com.edusphere.identity.securityaudit.enums.SecurityAuditAction;
 import com.edusphere.identity.securityaudit.enums.SecurityAuditOutcome;
@@ -61,7 +62,7 @@ public class PlatformAccountActivationServiceImpl
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String generateActivationToken(
             Long platformUserId
     ) {
@@ -118,7 +119,7 @@ public class PlatformAccountActivationServiceImpl
                         )
                 );
 
-        activationTokenRepository.save(activationToken);
+        activationTokenRepository.saveAndFlush(activationToken);
 
         return rawToken;
     }
