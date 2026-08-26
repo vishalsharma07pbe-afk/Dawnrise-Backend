@@ -41,6 +41,8 @@ public enum PlatformPermissionCode {
     // Organization and provisioning operations
     ORGANIZATION_VIEW,
     ORGANIZATION_CREATE,
+    ORGANIZATION_UPDATE,
+    ORGANIZATION_STATUS_MANAGE,
     PROVISIONING_START,
     PROVISIONING_VIEW,
     PROVISIONING_RETRY,
