@@ -107,8 +107,6 @@ public class AuthServiceImpl implements AuthService {
                 );
 
         if (!passwordMatches) {
-            // Failed attempts are counted even though the public error is generic.
-            loginLockoutService.recordFailedLogin(user, currentTime);
             auditService.record(
                     user.getOrganizationId(),
                     user.getId(),
@@ -117,6 +115,12 @@ public class AuthServiceImpl implements AuthService {
                     "USER",
                     user.getId(),
                     Map.of("reason", "invalid_credentials")
+            );
+
+            // Failed attempts are counted even though the public error is generic.
+            loginLockoutService.recordFailedLogin(
+                    user,
+                    currentTime
             );
         }
 

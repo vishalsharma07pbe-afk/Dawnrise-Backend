@@ -19,6 +19,8 @@ import com.edusphere.identity.common.exception.ResourceNotFoundException;
 import com.edusphere.identity.permission.enums.PermissionCode;
 import com.edusphere.identity.permission.service.PermissionService;
 import com.edusphere.identity.securityaudit.service.SecurityAuditService;
+import com.edusphere.identity.securityaudit.enums.SecurityAuditAction;
+import com.edusphere.identity.securityaudit.enums.SecurityAuditOutcome;
 import com.edusphere.identity.user.entity.User;
 import com.edusphere.identity.user.enums.UserRole;
 import com.edusphere.identity.user.enums.UserStatus;
@@ -129,6 +131,15 @@ class AuthServiceImplTest {
 
         assertEquals("Invalid username or password", exception.getMessage());
         assertEquals(1, user.getFailedLoginAttempts());
+        verify(auditService).record(
+                eq(1L),
+                eq(10L),
+                eq(SecurityAuditAction.LOGIN_FAILURE),
+                eq(SecurityAuditOutcome.FAILURE),
+                eq("USER"),
+                eq(10L),
+                anyMap()
+        );
         verify(jwtService, never()).generateAccessToken(
                 any(User.class),
                 anySet()

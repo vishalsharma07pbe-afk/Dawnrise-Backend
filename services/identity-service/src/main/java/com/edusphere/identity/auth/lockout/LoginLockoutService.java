@@ -2,6 +2,7 @@ package com.edusphere.identity.auth.lockout;
 
 import com.edusphere.identity.auth.exception.AccountLockedException;
 import com.edusphere.identity.auth.exception.InvalidCredentialsException;
+import com.edusphere.identity.platform.user.entity.PlatformUser;
 import com.edusphere.identity.user.entity.User;
 import org.springframework.stereotype.Service;
 
@@ -56,6 +57,42 @@ public class LoginLockoutService {
         user.clearLoginLock();
     }
 
+    public void checkLoginAllowed(
+            PlatformUser user,
+            OffsetDateTime currentTime
+    ) {
+        if (user.isLoginLockedAt(currentTime)) {
+            throw lockedException(user);
+        }
+    }
+
+    public void recordFailedLogin(
+            PlatformUser user,
+            OffsetDateTime currentTime
+    ) {
+        user.recordFailedLoginAttempt();
+
+        int failureThreshold = user.getLoginLockLevel() == 0
+                ? properties.getFirstFailureThreshold()
+                : properties.getEscalatedFailureThreshold();
+
+        if (user.getFailedLoginAttempts() >= failureThreshold) {
+            user.lockLoginUntil(
+                    lockExpiresAt(user.getLoginLockLevel() + 1, currentTime)
+            );
+
+            throw lockedException(user);
+        }
+
+        throw new InvalidCredentialsException(
+                INVALID_CREDENTIALS_MESSAGE
+        );
+    }
+
+    public void recordSuccessfulLogin(PlatformUser user) {
+        user.clearLoginLock();
+    }
+
     private OffsetDateTime lockExpiresAt(
             int nextLockLevel,
             OffsetDateTime currentTime
@@ -72,6 +109,17 @@ public class LoginLockoutService {
     }
 
     private AccountLockedException lockedException(User user) {
+        OffsetDateTime lockedUntil = user.getLockedUntil()
+                .truncatedTo(ChronoUnit.SECONDS);
+
+        return new AccountLockedException(
+                properties.getLockedMessagePrefix()
+                        + lockedUntil
+                        + properties.getLockedMessageSuffix()
+        );
+    }
+
+    private AccountLockedException lockedException(PlatformUser user) {
         OffsetDateTime lockedUntil = user.getLockedUntil()
                 .truncatedTo(ChronoUnit.SECONDS);
 

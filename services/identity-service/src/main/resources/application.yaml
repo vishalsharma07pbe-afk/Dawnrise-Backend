@@ -1,3 +1,24 @@
+platform:
+  auth:
+    jwt:
+      audience: ${PLATFORM_JWT_AUDIENCE:dawnrise-operations}
+      access-token-expiration: ${PLATFORM_ACCESS_TOKEN_EXPIRATION:900}
+    refresh-token:
+      expiration: ${PLATFORM_REFRESH_TOKEN_EXPIRATION:7d}
+      absolute-session-lifetime: ${PLATFORM_REFRESH_TOKEN_ABSOLUTE_SESSION_LIFETIME:30d}
+      cookie-name: ${PLATFORM_REFRESH_COOKIE_NAME:dawnrise_platform_refresh}
+      cookie-path: /api/v1/platform/auth
+      secure: ${PLATFORM_REFRESH_COOKIE_SECURE:false}
+      same-site: Strict
+  bootstrap:
+    enabled: ${PLATFORM_BOOTSTRAP_ENABLED:false}
+    username: ${PLATFORM_BOOTSTRAP_USERNAME:}
+    first-name: ${PLATFORM_BOOTSTRAP_FIRST_NAME:}
+    middle-name: ${PLATFORM_BOOTSTRAP_MIDDLE_NAME:}
+    last-name: ${PLATFORM_BOOTSTRAP_LAST_NAME:}
+    email: ${PLATFORM_BOOTSTRAP_EMAIL:}
+    phone: ${PLATFORM_BOOTSTRAP_PHONE:}
+
 spring:
   application:
     name: identity-service
@@ -86,8 +107,13 @@ security:
 
 app:
   activation:
-    base-url: ${ACTIVATION_BASE_URL:http://localhost:5173/activate}
+    base-url: ${ACTIVATION_BASE_URL:http://localhost:5174/activate}
     from-address: ${ACTIVATION_EMAIL_FROM:no-reply@edusphere.com}
+
+  platform-activation:
+    base-url: ${PLATFORM_ACTIVATION_BASE_URL:http://localhost:5173/platform/activate}
+    from-address: ${PLATFORM_ACTIVATION_EMAIL_FROM:no-reply@dawnrise.in}
+
   password-reset:
-    base-url: ${PASSWORD_RESET_BASE_URL:http://localhost:5173/reset-password}
+    base-url: ${PASSWORD_RESET_BASE_URL:http://localhost:5174/reset-password}
     from-address: ${PASSWORD_RESET_EMAIL_FROM:${ACTIVATION_EMAIL_FROM:no-reply@edusphere.com}}

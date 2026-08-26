@@ -1,6 +1,11 @@
 package com.edusphere.identity.auth.security;
 
+import com.edusphere.identity.auth.model.IdentityType;
 import com.edusphere.identity.permission.enums.PermissionCode;
+import com.edusphere.identity.platform.auth.config.PlatformJwtProperties;
+import com.edusphere.identity.platform.permission.enums.PlatformPermissionCode;
+import com.edusphere.identity.platform.user.entity.PlatformUser;
+import com.edusphere.identity.platform.user.enums.PlatformRole;
 import com.edusphere.identity.user.entity.User;
 import com.edusphere.identity.user.enums.UserRole;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -20,13 +25,16 @@ public class JwtServiceImpl implements JwtService {
 
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwtProperties;
+    private final PlatformJwtProperties platformJwtProperties;
 
     public JwtServiceImpl(
             JwtEncoder jwtEncoder,
-            JwtProperties jwtProperties
+            JwtProperties jwtProperties,
+            PlatformJwtProperties platformJwtProperties
     ) {
         this.jwtEncoder = jwtEncoder;
         this.jwtProperties = jwtProperties;
+        this.platformJwtProperties = platformJwtProperties;
     }
 
     @Override
@@ -61,7 +69,54 @@ public class JwtServiceImpl implements JwtService {
                         "organizationId",
                         user.getOrganizationId()
                 )
+                .claim(
+                        "identityType",
+                        IdentityType.ORGANIZATION_USER.name()
+                )
                 .claim("username", user.getUsername())
+                .claim("roles", roles)
+                .claim("permissions", permissionCodes)
+                .build();
+
+        return jwtEncoder
+                .encode(JwtEncoderParameters.from(claims))
+                .getTokenValue();
+    }
+
+    @Override
+    public String generatePlatformAccessToken(
+            PlatformUser platformUser,
+            Set<PlatformPermissionCode> permissions
+    ) {
+        Instant issuedAt = Instant.now();
+
+        Instant expiresAt = issuedAt.plusSeconds(
+                platformJwtProperties.getAccessTokenExpiration()
+        );
+
+        List<String> roles = platformUser.getRoles()
+                .stream()
+                .map(PlatformRole::name)
+                .sorted()
+                .toList();
+
+        List<String> permissionCodes = permissions
+                .stream()
+                .map(PlatformPermissionCode::name)
+                .sorted()
+                .toList();
+
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(ISSUER)
+                .audience(List.of(platformJwtProperties.getAudience()))
+                .subject(platformUser.getId().toString())
+                .issuedAt(issuedAt)
+                .expiresAt(expiresAt)
+                .claim(
+                        "identityType",
+                        IdentityType.PLATFORM_USER.name()
+                )
+                .claim("username", platformUser.getUsername())
                 .claim("roles", roles)
                 .claim("permissions", permissionCodes)
                 .build();
@@ -74,5 +129,10 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public long getAccessTokenExpirationSeconds() {
         return jwtProperties.getAccessTokenExpiration();
+    }
+
+    @Override
+    public long getPlatformAccessTokenExpirationSeconds() {
+        return platformJwtProperties.getAccessTokenExpiration();
     }
 }

@@ -10,6 +10,7 @@ import com.edusphere.school.school.service.SchoolService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -22,6 +23,12 @@ public class SchoolController {
         this.schoolService = schoolService;
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_CREATE', " +
+                    "'PROVISIONING_START')"
+    )
     @PostMapping
     public ResponseEntity<SchoolProvisioningResponse> createSchool(
             @Valid @RequestBody SchoolOnboardingRequest request) {
@@ -29,18 +36,33 @@ public class SchoolController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'PROVISIONING_VIEW')"
+    )
     @GetMapping("/{schoolId}/provisioning")
     public ResponseEntity<SchoolProvisioningResponse> getProvisioningStatus(
             @PathVariable Long schoolId) {
         return ResponseEntity.ok(schoolService.getProvisioningStatus(schoolId));
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'PROVISIONING_RETRY')"
+    )
     @PostMapping("/{schoolId}/provisioning/retry")
     public ResponseEntity<SchoolProvisioningResponse> retryProvisioning(
             @PathVariable Long schoolId) {
         return ResponseEntity.ok(schoolService.retryProvisioning(schoolId));
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_VIEW')"
+    )
     @GetMapping("/{schoolId}")
     public ResponseEntity<SchoolResponse> getSchool(
             @PathVariable Long schoolId){
@@ -48,6 +70,11 @@ public class SchoolController {
         return ResponseEntity.ok().body(response);
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_VIEW')"
+    )
     @GetMapping
     public ResponseEntity<PageResponse<SchoolResponse>> getAllSchools(
             @RequestParam(defaultValue = "0") int page,
@@ -63,6 +90,11 @@ public class SchoolController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_UPDATE')"
+    )
     @PutMapping("/{schoolId}")
     public ResponseEntity<SchoolResponse> updateSchool(
             @PathVariable Long schoolId, @Valid @RequestBody UpdateSchoolRequest request){
@@ -70,12 +102,22 @@ public class SchoolController {
         return ResponseEntity.ok().body(response);
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_STATUS_MANAGE')"
+    )
     @DeleteMapping("/{schoolId}")
     public ResponseEntity<Void> deleteSchool(@PathVariable Long schoolId){
         schoolService.deleteSchool(schoolId);
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'ORGANIZATION_STATUS_MANAGE')"
+    )
     @PatchMapping("/{schoolId}/restore")
     public ResponseEntity<SchoolResponse> restoreSchool(@PathVariable Long schoolId){
         SchoolResponse response = schoolService.restoreSchool(schoolId);

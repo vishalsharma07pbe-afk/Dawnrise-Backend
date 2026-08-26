@@ -1,6 +1,7 @@
 package com.edusphere.identity.user.controller;
 
 import com.edusphere.identity.auth.security.TenantSecurity;
+import com.edusphere.identity.auth.security.OrganizationTokenSecurity;
 import com.edusphere.identity.auth.security.UserAuthorization;
 import com.edusphere.identity.common.exception.GlobalExceptionHandler;
 import com.edusphere.identity.config.SecurityConfig;
@@ -43,6 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(UserController.class)
 @Import({
         SecurityConfig.class,
+        OrganizationTokenSecurity.class,
         TenantSecurity.class,
         UserAuthorization.class,
         UserStatusAuthorizationPolicy.class,
@@ -112,6 +114,29 @@ class UserControllerSecurityIntegrationTest {
                 .andExpect(status().isForbidden());
 
         verify(userService, never()).createUser(any(), any(), any());
+    }
+
+    @Test
+    void organizationEndpoint_whenPlatformToken_returnsForbidden()
+            throws Exception {
+        when(jwtDecoder.decode("platform-token"))
+                .thenReturn(Jwt.withTokenValue("platform-token")
+                        .header("alg", "none")
+                        .subject("99")
+                        .issuedAt(Instant.now())
+                        .expiresAt(Instant.now().plusSeconds(300))
+                        .claim("identityType", "PLATFORM_USER")
+                        .claim("organizationId", 1L)
+                        .claim("roles", List.of("PLATFORM_SUPER_ADMIN"))
+                        .claim("permissions", List.of("USER_VIEW"))
+                        .build());
+
+        mockMvc.perform(get(BASE_URL + "/{userId}", 1L, 10L)
+                        .header(
+                                "Authorization",
+                                "Bearer platform-token"
+                        ))
+                .andExpect(status().isForbidden());
     }
 
     @Test
