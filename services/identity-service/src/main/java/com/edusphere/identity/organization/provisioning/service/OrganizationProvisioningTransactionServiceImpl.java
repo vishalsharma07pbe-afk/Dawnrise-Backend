@@ -1,6 +1,7 @@
 package com.edusphere.identity.organization.provisioning.service;
 
 import com.edusphere.identity.auth.activation.event.UserActivationRequestedEvent;
+import com.edusphere.identity.common.phone.PhoneNumberNormalizer;
 import com.edusphere.identity.organization.entity.Organization;
 import com.edusphere.identity.organization.provisioning.dto.InitialAuthorityRequest;
 import com.edusphere.identity.organization.provisioning.dto.ProvisionOrganizationRequest;
@@ -31,6 +32,7 @@ public class OrganizationProvisioningTransactionServiceImpl
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final PhoneNumberNormalizer phoneNumberNormalizer;
 
     public OrganizationProvisioningTransactionServiceImpl(
             OrganizationRepository organizationRepository,
@@ -38,7 +40,8 @@ public class OrganizationProvisioningTransactionServiceImpl
                     provisioningRequestRepository,
             UserRepository userRepository,
             ApplicationEventPublisher eventPublisher,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            PhoneNumberNormalizer phoneNumberNormalizer
     ) {
         this.organizationRepository = organizationRepository;
         this.provisioningRequestRepository =
@@ -46,6 +49,7 @@ public class OrganizationProvisioningTransactionServiceImpl
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
+        this.phoneNumberNormalizer = phoneNumberNormalizer;
     }
 
     @Override
@@ -102,7 +106,9 @@ public class OrganizationProvisioningTransactionServiceImpl
                 authorityRequest.getEmail()
         );
         authorityUser.setPhone(
-                authorityRequest.getPhone()
+                phoneNumberNormalizer.normalizeOptional(
+                        authorityRequest.getPhone()
+                )
         );
 
         User savedAuthority =
@@ -137,8 +143,8 @@ public class OrganizationProvisioningTransactionServiceImpl
                 request.getOrganizationId()
         )) {
             throw new ProvisioningConflictException(
-                    "Organization already exists with ID: "
-                            + request.getOrganizationId()
+                    "organizationId",
+                    "An organization already exists for this school."
             );
         }
 
@@ -146,9 +152,8 @@ public class OrganizationProvisioningTransactionServiceImpl
                 .findBySchoolCode(request.getSchoolCode())
                 .ifPresent(existing -> {
                     throw new ProvisioningConflictException(
-                            "School code is already assigned to "
-                                    + "organization ID: "
-                                    + existing.getId()
+                            "schoolCode",
+                            "This school code is already assigned."
                     );
                 });
     }
@@ -164,7 +169,8 @@ public class OrganizationProvisioningTransactionServiceImpl
                 authority.getUsername()
         )) {
             throw new ProvisioningConflictException(
-                    "Username already exists in the organization"
+                    "authority.username",
+                    "This username is already registered."
             );
         }
 
@@ -173,7 +179,8 @@ public class OrganizationProvisioningTransactionServiceImpl
                 authority.getEmail()
         )) {
             throw new ProvisioningConflictException(
-                    "Email already exists in the organization"
+                    "authority.email",
+                    "This email address is already registered."
             );
         }
     }

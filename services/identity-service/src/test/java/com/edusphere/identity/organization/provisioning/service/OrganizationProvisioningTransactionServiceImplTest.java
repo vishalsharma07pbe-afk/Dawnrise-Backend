@@ -1,6 +1,7 @@
 package com.edusphere.identity.organization.provisioning.service;
 
 import com.edusphere.identity.auth.activation.event.UserActivationRequestedEvent;
+import com.edusphere.identity.common.phone.PhoneNumberNormalizer;
 import com.edusphere.identity.organization.entity.Organization;
 import com.edusphere.identity.organization.enums.OrganizationStatus;
 import com.edusphere.identity.organization.provisioning.dto.InitialAuthorityRequest;
@@ -53,6 +54,9 @@ class OrganizationProvisioningTransactionServiceImplTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private PhoneNumberNormalizer phoneNumberNormalizer;
+
     @Test
     void provisionAtomically_whenRequestIsValid_createsOrganizationAndAuthority()
             throws Exception {
@@ -84,6 +88,8 @@ class OrganizationProvisioningTransactionServiceImplTest {
                 });
         when(objectMapper.writeValueAsString(any()))
                 .thenReturn("{\"organizationId\":1}");
+        when(phoneNumberNormalizer.normalizeOptional("9876543211"))
+                .thenReturn("+919876543211");
 
         ProvisionOrganizationResponse response =
                 service.provisionAtomically(10L, request);
@@ -123,6 +129,7 @@ class OrganizationProvisioningTransactionServiceImplTest {
                 "authority.one",
                 userCaptor.getValue().getUsername()
         );
+        assertEquals("+919876543211", userCaptor.getValue().getPhone());
         assertTrue(userCaptor.getValue()
                 .getRoles()
                 .contains(UserRole.GOVERNING_AUTHORITY));
@@ -157,13 +164,80 @@ class OrganizationProvisioningTransactionServiceImplTest {
                 .saveAndFlush(any(User.class));
     }
 
+    @Test
+    void provisionAtomically_whenUsernameExists_rejectsWithSafeFieldConflict() {
+        OrganizationProvisioningTransactionServiceImpl service =
+                service();
+        ProvisionOrganizationRequest request = request();
+
+        when(provisioningRequestRepository.findById(10L))
+                .thenReturn(Optional.of(provisioningRequest()));
+        when(organizationRepository.existsById(1L))
+                .thenReturn(false);
+        when(organizationRepository.findBySchoolCode("SCH001"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByOrganizationIdAndUsername(
+                1L,
+                "authority.one"
+        )).thenReturn(true);
+
+        ProvisioningConflictException exception = assertThrows(
+                ProvisioningConflictException.class,
+                () -> service.provisionAtomically(10L, request)
+        );
+
+        assertEquals("authority.username", exception.getField());
+        assertTrue(exception.hasField());
+        assertEquals(
+                "This username is already registered.",
+                exception.getMessage()
+        );
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void provisionAtomically_whenEmailExists_rejectsWithSafeFieldConflict() {
+        OrganizationProvisioningTransactionServiceImpl service =
+                service();
+        ProvisionOrganizationRequest request = request();
+
+        when(provisioningRequestRepository.findById(10L))
+                .thenReturn(Optional.of(provisioningRequest()));
+        when(organizationRepository.existsById(1L))
+                .thenReturn(false);
+        when(organizationRepository.findBySchoolCode("SCH001"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByOrganizationIdAndUsername(
+                1L,
+                "authority.one"
+        )).thenReturn(false);
+        when(userRepository.existsByOrganizationIdAndEmail(
+                1L,
+                "authority@edusphere.com"
+        )).thenReturn(true);
+
+        ProvisioningConflictException exception = assertThrows(
+                ProvisioningConflictException.class,
+                () -> service.provisionAtomically(10L, request)
+        );
+
+        assertEquals("authority.email", exception.getField());
+        assertTrue(exception.hasField());
+        assertEquals(
+                "This email address is already registered.",
+                exception.getMessage()
+        );
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+    }
+
     private OrganizationProvisioningTransactionServiceImpl service() {
         return new OrganizationProvisioningTransactionServiceImpl(
                 organizationRepository,
                 provisioningRequestRepository,
                 userRepository,
                 eventPublisher,
-                objectMapper
+                objectMapper,
+                phoneNumberNormalizer
         );
     }
 

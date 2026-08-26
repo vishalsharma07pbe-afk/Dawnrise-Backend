@@ -16,6 +16,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.edusphere.identity.roleapproval.exception.InvalidRoleRequestException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import com.edusphere.identity.auth.activation.exception.InvalidActivationTokenException;
 import com.edusphere.identity.auth.activation.exception.PasswordMismatchException;
 import com.edusphere.identity.auth.passwordreset.exception.InvalidPasswordResetTokenException;
@@ -29,6 +32,9 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler({
             ProvisioningConflictException.class,
             ProvisioningInProgressException.class
@@ -38,11 +44,24 @@ public class GlobalExceptionHandler {
             RuntimeException exception,
             HttpServletRequest request
     ) {
+        Map<String, String> validationErrors = null;
+        String message = exception.getMessage();
+
+        if (exception instanceof ProvisioningConflictException conflict
+                && conflict.hasField()) {
+            validationErrors = Map.of(
+                    conflict.getField(),
+                    conflict.getMessage()
+            );
+
+            message = "Provisioning request conflicts with existing data";
+        }
+
         ApiErrorResponse response = createErrorResponse(
                 HttpStatus.CONFLICT,
-                exception.getMessage(),
+                message,
                 request.getRequestURI(),
-                null
+                validationErrors
         );
 
         return ResponseEntity
@@ -334,6 +353,47 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
+                .body(response);
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthorizationDenied(
+            AuthorizationDeniedException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.FORBIDDEN,
+                "Access Denied",
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(response);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiErrorResponse> handleException(
+            Exception exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.error(
+                "Unhandled error for {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
+
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred.",
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(response);
     }
 

@@ -28,6 +28,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(SchoolController.class)
@@ -194,6 +195,68 @@ class SchoolControllerSecurityIntegrationTest {
         verify(schoolService).onboardSchool(any());
     }
 
+    @Test
+    void correctAuthority_whenPlatformTokenHasPermission_reachesService()
+            throws Exception {
+        when(jwtDecoder.decode("platform-token"))
+                .thenReturn(jwt(
+                        "platform-token",
+                        "PLATFORM_USER",
+                        List.of("dawnrise-operations"),
+                        Set.of("PROVISIONING_UPDATE")
+                ));
+
+        when(schoolService.correctProvisioningAuthority(
+                any(Long.class),
+                any()
+        )).thenReturn(new SchoolProvisioningResponse(
+                1L,
+                SchoolStatus.PROVISIONING_FAILED,
+                ProvisioningStatus.FAILED,
+                1,
+                null,
+                null,
+                null
+        ));
+
+        mockMvc.perform(put(BASE_URL + "/{schoolId}/provisioning/authority", 1L)
+                        .header(
+                                "Authorization",
+                                "Bearer platform-token"
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validAuthorityCorrectionRequest()))
+                .andExpect(status().isOk());
+
+        verify(schoolService).correctProvisioningAuthority(
+                any(Long.class),
+                any()
+        );
+    }
+
+    @Test
+    void correctAuthority_whenMissingPermission_returnsForbidden()
+            throws Exception {
+        when(jwtDecoder.decode("platform-token"))
+                .thenReturn(jwt(
+                        "platform-token",
+                        "PLATFORM_USER",
+                        List.of("dawnrise-operations"),
+                        Set.of("PROVISIONING_RETRY")
+                ));
+
+        mockMvc.perform(put(BASE_URL + "/{schoolId}/provisioning/authority", 1L)
+                        .header(
+                                "Authorization",
+                                "Bearer platform-token"
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validAuthorityCorrectionRequest()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(schoolService);
+    }
+
     private static Jwt jwt(
             String tokenValue,
             String identityType,
@@ -236,6 +299,19 @@ class SchoolControllerSecurityIntegrationTest {
                     "email": "authority@edusphere.com",
                     "phone": "9876543211"
                   }
+                }
+                """;
+    }
+
+    private static String validAuthorityCorrectionRequest() {
+        return """
+                {
+                  "firstName": "Corrected",
+                  "middleName": "Middle",
+                  "lastName": "Authority",
+                  "username": "corrected.authority",
+                  "email": "corrected@edusphere.com",
+                  "phone": "9876543212"
                 }
                 """;
     }

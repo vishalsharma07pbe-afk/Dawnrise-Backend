@@ -1,6 +1,7 @@
 package com.edusphere.school.school.service;
 
 import com.edusphere.school.common.dto.PageResponse;
+import com.edusphere.school.school.DTO.AuthorityCorrectionRequest;
 import com.edusphere.school.school.DTO.InitialAuthorityRequest;
 import com.edusphere.school.school.DTO.SchoolOnboardingRequest;
 import com.edusphere.school.school.DTO.SchoolProvisioningResponse;
@@ -13,6 +14,7 @@ import com.edusphere.school.school.exception.DuplicateResourceException;
 import com.edusphere.school.school.exception.ResourceNotFoundException;
 import com.edusphere.school.school.exception.InvalidRequestException;
 import com.edusphere.school.school.mapper.SchoolMapper;
+import com.edusphere.school.school.phone.PhoneNumberNormalizer;
 import com.edusphere.school.school.provisioning.IdentityProvisioningClient;
 import com.edusphere.school.school.provisioning.IdentityProvisioningRequest;
 import com.edusphere.school.school.provisioning.IdentityProvisioningResponse;
@@ -34,10 +36,13 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
 import com.edusphere.school.school.enums.SchoolStatus;
+import com.edusphere.school.school.provisioning.IdentityProvisioningException;
+
 import static com.edusphere.school.school.enums.SchoolStatus.ACTIVE;
 import static com.edusphere.school.school.enums.SchoolStatus.INACTIVE;
 import static org.junit.jupiter.api.Assertions.*;
@@ -61,6 +66,9 @@ class SchoolServiceImplTest {
     @Mock
     private IdentityProvisioningClient identityProvisioningClient;
 
+    @Mock
+    private PhoneNumberNormalizer phoneNumberNormalizer;
+
     private SchoolServiceImpl schoolService;
 
     @BeforeEach
@@ -83,8 +91,18 @@ class SchoolServiceImplTest {
                 provisioningRepository,
                 schoolMapper,
                 identityProvisioningClient,
-                transactionTemplate
+                transactionTemplate,
+                phoneNumberNormalizer
         );
+
+        when(phoneNumberNormalizer.normalizeRequired(
+                eq("phone"),
+                anyString()
+        )).thenAnswer(invocation -> invocation.getArgument(1));
+        when(phoneNumberNormalizer.normalizeRequired(
+                eq("initialAuthority.phone"),
+                anyString()
+        )).thenAnswer(invocation -> invocation.getArgument(1));
     }
 
     @Test
@@ -206,7 +224,44 @@ class SchoolServiceImplTest {
 
         schoolService.onboardSchool(request);
 
-        verify(provisioning).fail("Identity provisioning failed: RuntimeException");
+        verify(provisioning).fail(
+                "IDENTITY_SERVICE_ERROR",
+                null,
+                "Identity provisioning could not be completed."
+        );
+        verify(savedSchool).markProvisioningFailed();
+    }
+
+    @Test
+    void onboardSchool_whenIdentityValidationFails_marksProvisioningWithFieldError() {
+        SchoolOnboardingRequest request = onboardingRequest();
+        School school = mock(School.class);
+        School savedSchool = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(request.getSchoolCode()).thenReturn("schC001");
+        when(schoolRepository.existsBySchoolCode("schC001")).thenReturn(false);
+        when(schoolMapper.toEntity(request)).thenReturn(school);
+        when(schoolRepository.save(school)).thenReturn(savedSchool);
+        when(savedSchool.getId()).thenReturn(1L);
+        when(schoolRepository.findById(1L)).thenReturn(Optional.of(savedSchool));
+        when(provisioningRepository.findWithLockBySchoolId(1L)).thenReturn(Optional.of(provisioning));
+        when(provisioningRepository.findBySchoolId(1L)).thenReturn(Optional.of(provisioning));
+        doThrow(new IdentityProvisioningException(
+                400,
+                "Validation failed",
+                Map.of("authority.email", "Email is already in use")
+        ))
+                .when(identityProvisioningClient)
+                .provisionInitialAuthority(any(), anyString());
+
+        schoolService.onboardSchool(request);
+
+        verify(provisioning).fail(
+                "IDENTITY_VALIDATION_FAILED",
+                "initialAuthority.email",
+                "Email is already in use"
+        );
         verify(savedSchool).markProvisioningFailed();
     }
 
@@ -364,6 +419,201 @@ class SchoolServiceImplTest {
 
         assertEquals("School provisioning is already in progress", exception.getMessage());
         verifyNoInteractions(identityProvisioningClient);
+    }
+
+    @Test
+    void correctProvisioningAuthority_whenFailed_updatesSnapshotAndClearsFailure() {
+        Long id = 1L;
+        School school = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+        AuthorityCorrectionRequest request = authorityCorrectionRequest();
+
+        when(schoolRepository.findById(id)).thenReturn(Optional.of(school));
+        when(provisioningRepository.findWithLockBySchoolId(id))
+                .thenReturn(Optional.of(provisioning));
+        when(provisioningRepository.findBySchoolId(id))
+                .thenReturn(Optional.of(provisioning));
+        when(provisioning.getStatus()).thenReturn(ProvisioningStatus.FAILED);
+
+        schoolService.correctProvisioningAuthority(id, request);
+
+        verify(provisioning).correctAuthority(
+                "Corrected",
+                "Middle",
+                "Authority",
+                "corrected.authority",
+                "corrected@edusphere.com",
+                "9876543212"
+        );
+        verify(school).markProvisioningFailed();
+        verifyNoInteractions(identityProvisioningClient);
+    }
+
+    @Test
+    void correctProvisioningAuthority_whenPending_rejectsCorrection() {
+        Long id = 1L;
+        School school = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(schoolRepository.findById(id)).thenReturn(Optional.of(school));
+        when(provisioningRepository.findWithLockBySchoolId(id))
+                .thenReturn(Optional.of(provisioning));
+        when(provisioning.getStatus()).thenReturn(ProvisioningStatus.PENDING);
+
+        InvalidRequestException exception = assertThrows(
+                InvalidRequestException.class,
+                () -> schoolService.correctProvisioningAuthority(
+                        id,
+                        authorityCorrectionRequest()
+                )
+        );
+
+        assertEquals(
+                "School provisioning is already in progress",
+                exception.getMessage()
+        );
+        verify(provisioning, never()).correctAuthority(
+                anyString(),
+                any(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString()
+        );
+    }
+
+    @Test
+    void correctProvisioningAuthority_whenSucceeded_rejectsCorrection() {
+        Long id = 1L;
+        School school = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(schoolRepository.findById(id)).thenReturn(Optional.of(school));
+        when(provisioningRepository.findWithLockBySchoolId(id))
+                .thenReturn(Optional.of(provisioning));
+        when(provisioning.getStatus()).thenReturn(ProvisioningStatus.SUCCEEDED);
+
+        InvalidRequestException exception = assertThrows(
+                InvalidRequestException.class,
+                () -> schoolService.correctProvisioningAuthority(
+                        id,
+                        authorityCorrectionRequest()
+                )
+        );
+
+        assertEquals(
+                "School provisioning already succeeded",
+                exception.getMessage()
+        );
+        verify(provisioning, never()).correctAuthority(
+                anyString(),
+                any(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString()
+        );
+    }
+
+    @Test
+    void retryProvisioning_withoutCorrection_reusesLegacyIdempotencyKey() {
+        Long id = 1L;
+        School school = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(provisioning.getStatus()).thenReturn(ProvisioningStatus.FAILED);
+        when(provisioning.getRequestRevision()).thenReturn(0);
+        when(schoolRepository.findById(id)).thenReturn(Optional.of(school));
+        when(provisioningRepository.findBySchoolId(id)).thenReturn(Optional.of(provisioning));
+        when(provisioningRepository.findWithLockBySchoolId(id)).thenReturn(Optional.of(provisioning));
+        when(identityProvisioningClient.provisionInitialAuthority(
+                any(IdentityProvisioningRequest.class),
+                anyString()
+        )).thenReturn(identitySuccessResponse());
+
+        schoolService.retryProvisioning(id);
+
+        verify(identityProvisioningClient).provisionInitialAuthority(
+                any(IdentityProvisioningRequest.class),
+                eq("school-provisioning:1:10")
+        );
+    }
+
+    @Test
+    void retryProvisioning_afterCorrection_usesRevisionIdempotencyKey() {
+        Long id = 1L;
+        School school = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(provisioning.getStatus()).thenReturn(ProvisioningStatus.FAILED);
+        when(provisioning.getRequestRevision()).thenReturn(1);
+        when(schoolRepository.findById(id)).thenReturn(Optional.of(school));
+        when(provisioningRepository.findBySchoolId(id)).thenReturn(Optional.of(provisioning));
+        when(provisioningRepository.findWithLockBySchoolId(id)).thenReturn(Optional.of(provisioning));
+        when(identityProvisioningClient.provisionInitialAuthority(
+                any(IdentityProvisioningRequest.class),
+                anyString()
+        )).thenReturn(identitySuccessResponse());
+
+        schoolService.retryProvisioning(id);
+
+        verify(identityProvisioningClient).provisionInitialAuthority(
+                any(IdentityProvisioningRequest.class),
+                eq("school-provisioning:1:10:revision:1")
+        );
+    }
+
+    @Test
+    void schoolProvisioningLifecycle_clearsAndStoresStructuredFailures() {
+        SchoolProvisioning provisioning = new SchoolProvisioning(
+                1L,
+                "Authority",
+                null,
+                "One",
+                "authority.one",
+                "authority@edusphere.com",
+                "9876543211"
+        );
+
+        provisioning.fail(
+                "IDENTITY_CONFLICT",
+                "initialAuthority.email",
+                "This email address is already registered."
+        );
+
+        assertEquals("IDENTITY_CONFLICT", provisioning.getLastErrorCode());
+        assertEquals(
+                "initialAuthority.email",
+                provisioning.getLastErrorField()
+        );
+
+        provisioning.startAttempt();
+
+        assertNull(provisioning.getLastErrorCode());
+        assertNull(provisioning.getLastErrorField());
+        assertNull(provisioning.getLastErrorSummary());
+
+        provisioning.fail(
+                "IDENTITY_SERVICE_UNAVAILABLE",
+                null,
+                "Identity service is temporarily unavailable."
+        );
+        provisioning.succeed();
+
+        assertNull(provisioning.getLastErrorCode());
+        assertNull(provisioning.getLastErrorField());
+        assertNull(provisioning.getLastErrorSummary());
+
+        provisioning.correctAuthority(
+                "Corrected",
+                null,
+                "Authority",
+                "corrected.authority",
+                "corrected@edusphere.com",
+                "9876543212"
+        );
+
+        assertEquals(1, provisioning.getRequestRevision());
     }
 
     @Test
@@ -655,6 +905,18 @@ class SchoolServiceImplTest {
         SchoolProvisioning provisioning = mock(SchoolProvisioning.class);
         when(provisioning.getStatus()).thenReturn(ProvisioningStatus.SUCCEEDED);
         return provisioning;
+    }
+
+    private AuthorityCorrectionRequest authorityCorrectionRequest() {
+        AuthorityCorrectionRequest request =
+                new AuthorityCorrectionRequest();
+        request.setFirstName("Corrected");
+        request.setMiddleName("Middle");
+        request.setLastName("Authority");
+        request.setUsername("corrected.authority");
+        request.setEmail("corrected@edusphere.com");
+        request.setPhone("9876543212");
+        return request;
     }
 
     private IdentityProvisioningResponse identitySuccessResponse() {

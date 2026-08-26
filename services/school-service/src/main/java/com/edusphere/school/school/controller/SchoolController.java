@@ -1,6 +1,7 @@
 package com.edusphere.school.school.controller;
 
 import com.edusphere.school.common.dto.PageResponse;
+import com.edusphere.school.school.DTO.AuthorityCorrectionRequest;
 import com.edusphere.school.school.DTO.SchoolOnboardingRequest;
 import com.edusphere.school.school.DTO.SchoolProvisioningResponse;
 import com.edusphere.school.school.DTO.SchoolResponse;
@@ -56,6 +57,25 @@ public class SchoolController {
     public ResponseEntity<SchoolProvisioningResponse> retryProvisioning(
             @PathVariable Long schoolId) {
         return ResponseEntity.ok(schoolService.retryProvisioning(schoolId));
+    }
+
+    @PreAuthorize(
+            "@platformTokenSecurity.hasPermissions(" +
+                    "authentication, " +
+                    "'PROVISIONING_UPDATE')"
+    )
+    @PutMapping("/{schoolId}/provisioning/authority")
+    public ResponseEntity<SchoolProvisioningResponse>
+        correctProvisioningAuthority(
+            @PathVariable Long schoolId,
+            @Valid @RequestBody AuthorityCorrectionRequest request
+    ) {
+        return ResponseEntity.ok(
+                schoolService.correctProvisioningAuthority(
+                        schoolId,
+                        request
+                )
+        );
     }
 
     @PreAuthorize(

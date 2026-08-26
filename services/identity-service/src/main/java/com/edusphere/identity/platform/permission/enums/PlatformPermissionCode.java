@@ -46,6 +46,7 @@ public enum PlatformPermissionCode {
     PROVISIONING_START,
     PROVISIONING_VIEW,
     PROVISIONING_RETRY,
+    PROVISIONING_UPDATE,
 
     // Subscription and plan operations
     PLAN_VIEW,

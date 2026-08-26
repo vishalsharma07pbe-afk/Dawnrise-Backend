@@ -1,6 +1,7 @@
 package com.edusphere.school.school.service;
 
 import com.edusphere.school.common.dto.PageResponse;
+import com.edusphere.school.school.DTO.AuthorityCorrectionRequest;
 import com.edusphere.school.school.DTO.InitialAuthorityRequest;
 import com.edusphere.school.school.DTO.SchoolOnboardingRequest;
 import com.edusphere.school.school.DTO.SchoolProvisioningResponse;
@@ -17,16 +18,16 @@ import com.edusphere.school.school.provisioning.IdentityInitialAuthorityRequest;
 import com.edusphere.school.school.provisioning.IdentityProvisioningClient;
 import com.edusphere.school.school.provisioning.IdentityProvisioningRequest;
 import com.edusphere.school.school.mapper.SchoolMapper;
+import com.edusphere.school.school.phone.PhoneNumberNormalizer;
 import com.edusphere.school.school.repository.SchoolProvisioningRepository;
 import com.edusphere.school.school.repository.schoolRepository;
-import org.springframework.dao.OptimisticLockingFailureException;
+import com.edusphere.school.school.provisioning.IdentityProvisioningException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.client.RestClientResponseException;
 import com.edusphere.school.school.provisioning.IdentityProvisioningResponse;
 import java.util.List;
 import org.springframework.data.domain.Sort;
@@ -48,19 +49,22 @@ public class SchoolServiceImpl implements SchoolService {
     private final SchoolMapper schoolMapper;
     private final IdentityProvisioningClient identityProvisioningClient;
     private final TransactionTemplate transactionTemplate;
+    private final PhoneNumberNormalizer phoneNumberNormalizer;
 
     public SchoolServiceImpl(
             schoolRepository schoolRepository,
             SchoolProvisioningRepository provisioningRepository,
             SchoolMapper schoolMapper,
             IdentityProvisioningClient identityProvisioningClient,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            PhoneNumberNormalizer phoneNumberNormalizer
     ) {
         this.schoolRepository = schoolRepository;
         this.provisioningRepository = provisioningRepository;
         this.schoolMapper = schoolMapper;
         this.identityProvisioningClient = identityProvisioningClient;
         this.transactionTemplate = transactionTemplate;
+        this.phoneNumberNormalizer = phoneNumberNormalizer;
     }
 
     @Override
@@ -73,11 +77,25 @@ public class SchoolServiceImpl implements SchoolService {
 
     @Override
     public SchoolProvisioningResponse onboardSchool(SchoolOnboardingRequest request) {
+        if(schoolRepository.existsBySchoolCode(request.getSchoolCode())) {
+            throw new DuplicateResourceException("School code already exists");
+        }
+
+        String normalizedSchoolPhone =
+                phoneNumberNormalizer.normalizeRequired(
+                        "phone",
+                        request.getPhone()
+                );
+        String normalizedAuthorityPhone =
+                phoneNumberNormalizer.normalizeRequired(
+                        "initialAuthority.phone",
+                        request.getInitialAuthority().getPhone()
+                );
+
         Long schoolId = transactionTemplate.execute(status -> {
-            if(schoolRepository.existsBySchoolCode(request.getSchoolCode())) {
-                throw new DuplicateResourceException("School code already exists");
-            }
-            School savedSchool = schoolRepository.save(schoolMapper.toEntity(request));
+            School school = schoolMapper.toEntity(request);
+            school.setPhone(normalizedSchoolPhone);
+            School savedSchool = schoolRepository.save(school);
             InitialAuthorityRequest authority = request.getInitialAuthority();
             provisioningRepository.save(new SchoolProvisioning(
                     savedSchool.getId(),
@@ -86,7 +104,7 @@ public class SchoolServiceImpl implements SchoolService {
                     authority.getLastName(),
                     authority.getUsername(),
                     authority.getEmail(),
-                    authority.getPhone()
+                    normalizedAuthorityPhone
             ));
             return savedSchool.getId();
         });
@@ -116,11 +134,65 @@ public class SchoolServiceImpl implements SchoolService {
     }
 
     @Override
+    public SchoolProvisioningResponse correctProvisioningAuthority(
+            long schoolId,
+            AuthorityCorrectionRequest request
+    ) {
+        String normalizedAuthorityPhone =
+                phoneNumberNormalizer.normalizeRequired(
+                        "initialAuthority.phone",
+                        request.getPhone()
+                );
+
+        transactionTemplate.executeWithoutResult(status -> {
+            School school = findSchool(schoolId);
+            SchoolProvisioning provisioning =
+                    provisioningRepository
+                            .findWithLockBySchoolId(schoolId)
+                            .orElseThrow(() ->
+                                    new ResourceNotFoundException(
+                                            "School provisioning not found"
+                                    )
+                            );
+
+            if (provisioning.getStatus() == ProvisioningStatus.PENDING) {
+                throw new InvalidRequestException(
+                        "School provisioning is already in progress"
+                );
+            }
+
+            if (provisioning.getStatus() == ProvisioningStatus.SUCCEEDED) {
+                throw new InvalidRequestException(
+                        "School provisioning already succeeded"
+                );
+            }
+
+            provisioning.correctAuthority(
+                    request.getFirstName(),
+                    request.getMiddleName(),
+                    request.getLastName(),
+                    request.getUsername(),
+                    request.getEmail(),
+                    normalizedAuthorityPhone
+            );
+            school.markProvisioningFailed();
+        });
+
+        return getProvisioningStatus(schoolId);
+    }
+
+    @Override
     @Transactional
     public SchoolResponse updateSchool(long schoolId, UpdateSchoolRequest request) {
+        String normalizedPhone =
+                phoneNumberNormalizer.normalizeRequired(
+                        "phone",
+                        request.getPhone()
+                );
         School school = schoolRepository.findById(schoolId)
                 .orElseThrow(()->new ResourceNotFoundException("School not found"));
         schoolMapper.updateEntity(request, school);
+        school.setPhone(normalizedPhone);
         School updatedSchool = schoolRepository.save(school);
         return schoolMapper.toResponse(updatedSchool);
     }
@@ -170,7 +242,7 @@ public class SchoolServiceImpl implements SchoolService {
         } catch (RuntimeException exception) {
             completeAttempt(
                     schoolId,
-                    safeErrorSummary(exception)
+                    toProvisioningFailure(exception)
             );
         }
     }
@@ -192,16 +264,32 @@ public class SchoolServiceImpl implements SchoolService {
         });
     }
 
-    private void completeAttempt(Long schoolId, String safeErrorSummary) {
+    private void completeAttempt(
+            Long schoolId,
+            ProvisioningFailure failure
+    ) {
         transactionTemplate.executeWithoutResult(status -> {
             School school = findSchool(schoolId);
-            SchoolProvisioning provisioning = provisioningRepository.findWithLockBySchoolId(schoolId)
-                    .orElseThrow(() -> new ResourceNotFoundException("School provisioning not found"));
-            if (safeErrorSummary == null) {
+
+            SchoolProvisioning provisioning =
+                    provisioningRepository
+                            .findWithLockBySchoolId(schoolId)
+                            .orElseThrow(() ->
+                                    new ResourceNotFoundException(
+                                            "School provisioning not found"
+                                    )
+                            );
+
+            if (failure == null) {
                 provisioning.succeed();
                 school.activate();
             } else {
-                provisioning.fail(safeErrorSummary);
+                provisioning.fail(
+                        failure.code(),
+                        failure.field(),
+                        failure.message()
+                );
+
                 school.markProvisioningFailed();
             }
         });
@@ -226,15 +314,69 @@ public class SchoolServiceImpl implements SchoolService {
     }
 
     private String idempotencyKey(SchoolProvisioning provisioning) {
-        return "school-provisioning:" + provisioning.getSchoolId() + ":" + provisioning.getId();
+        String legacyKey = "school-provisioning:"
+                + provisioning.getSchoolId()
+                + ":"
+                + provisioning.getId();
+
+        if (provisioning.getRequestRevision() == 0) {
+            return legacyKey;
+        }
+
+        return legacyKey
+                + ":revision:"
+                + provisioning.getRequestRevision();
     }
 
-    private String safeErrorSummary(RuntimeException exception) {
-        if (exception instanceof RestClientResponseException responseException) {
-            return "Identity provisioning failed with HTTP status "
-                    + responseException.getStatusCode().value();
+    private ProvisioningFailure toProvisioningFailure(
+            RuntimeException exception
+    ) {
+        if (exception instanceof IdentityProvisioningException
+                identityException) {
+
+            String errorCode = switch (
+                    identityException.getStatusCode()
+                    ) {
+                case 400 -> "IDENTITY_VALIDATION_FAILED";
+                case 409 -> "IDENTITY_CONFLICT";
+                case 401, 403 -> "IDENTITY_AUTHORIZATION_FAILED";
+                default -> identityException.getStatusCode() >= 500
+                        ? "IDENTITY_SERVICE_UNAVAILABLE"
+                        : "IDENTITY_REQUEST_FAILED";
+            };
+
+            var firstFieldError = identityException
+                    .getFieldErrors()
+                    .entrySet()
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+
+            if (firstFieldError != null) {
+                return new ProvisioningFailure(
+                        errorCode,
+                        toFrontendField(firstFieldError.getKey()),
+                        firstFieldError.getValue()
+                );
+            }
+
+            String safeMessage =
+                    identityException.getStatusCode() >= 500
+                            ? "Identity service is temporarily unavailable."
+                            : identityException.getMessage();
+
+            return new ProvisioningFailure(
+                    errorCode,
+                    null,
+                    safeMessage
+            );
         }
-        return "Identity provisioning failed: " + exception.getClass().getSimpleName();
+
+        return new ProvisioningFailure(
+                "IDENTITY_SERVICE_ERROR",
+                null,
+                "Identity provisioning could not be completed."
+        );
     }
 
     private School findSchool(long schoolId) {
@@ -251,6 +393,8 @@ public class SchoolServiceImpl implements SchoolService {
                 school.getStatus(),
                 provisioning.getStatus(),
                 provisioning.getAttemptCount(),
+                provisioning.getLastErrorCode(),
+                provisioning.getLastErrorField(),
                 provisioning.getLastErrorSummary(),
                 provisioning.getCreatedAt(),
                 provisioning.getUpdatedAt()
@@ -367,5 +511,25 @@ public class SchoolServiceImpl implements SchoolService {
                     "Identity provisioning did not succeed"
             );
         }
+    }
+
+    private String toFrontendField(String identityField) {
+        if (identityField == null || identityField.isBlank()) {
+            return null;
+        }
+
+        if (identityField.startsWith("authority.")) {
+            return "initialAuthority."
+                    + identityField.substring("authority.".length());
+        }
+
+        return identityField;
+    }
+
+    private record ProvisioningFailure(
+            String code,
+            String field,
+            String message
+    ) {
     }
 }

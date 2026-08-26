@@ -61,7 +61,7 @@ jwt:
 
 security:
   internal:
-    api-key: ${IDENTITY_INTERNAL_API_KEY:}
+    api-key: ${IDENTITY_INTERNAL_API_KEY}
     allowed-service-name: school-service
 
   activation-token:

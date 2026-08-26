@@ -4,6 +4,7 @@ import com.edusphere.school.school.DTO.SchoolOnboardingRequest;
 import com.edusphere.school.school.DTO.SchoolProvisioningResponse;
 import com.edusphere.school.school.DTO.SchoolResponse;
 import com.edusphere.school.school.DTO.UpdateSchoolRequest;
+import com.edusphere.school.school.DTO.AuthorityCorrectionRequest;
 import com.edusphere.school.school.enums.ProvisioningStatus;
 import com.edusphere.school.school.enums.SchoolStatus;
 import com.edusphere.school.school.exception.DuplicateResourceException;
@@ -163,7 +164,9 @@ class SchoolControllerTest {
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.error").value("Conflict"))
                 .andExpect(jsonPath("$.message")
-                        .value("School code already exists"))
+                        .value("School information conflicts with an existing record."))
+                .andExpect(jsonPath("$.validationErrors.schoolCode")
+                        .value("This school code is already registered."))
                 .andExpect(jsonPath("$.path")
                         .value(BASE_URL));
 
@@ -214,6 +217,66 @@ class SchoolControllerTest {
                 .andExpect(jsonPath("$.attemptCount").value(2));
 
         verify(schoolService).retryProvisioning(1L);
+    }
+
+    @Test
+    void correctProvisioningAuthority_whenRequestIsValid_returnsUpdatedStatus()
+            throws Exception {
+
+        when(schoolService.correctProvisioningAuthority(
+                eq(1L),
+                any(AuthorityCorrectionRequest.class)
+        )).thenReturn(createProvisioningResponse(
+                1L,
+                SchoolStatus.PROVISIONING_FAILED,
+                ProvisioningStatus.FAILED,
+                1,
+                null
+        ));
+
+        mockMvc.perform(put(BASE_URL + "/{schoolId}/provisioning/authority", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "firstName": "Corrected",
+                                  "middleName": "Middle",
+                                  "lastName": "Authority",
+                                  "username": "corrected.authority",
+                                  "email": "corrected@edusphere.com",
+                                  "phone": "9876543212"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schoolStatus")
+                        .value("PROVISIONING_FAILED"))
+                .andExpect(jsonPath("$.provisioningStatus")
+                        .value("FAILED"));
+
+        verify(schoolService).correctProvisioningAuthority(
+                eq(1L),
+                any(AuthorityCorrectionRequest.class)
+        );
+    }
+
+    @Test
+    void correctProvisioningAuthority_whenRequestIsInvalid_returnsBadRequest()
+            throws Exception {
+
+        mockMvc.perform(put(BASE_URL + "/{schoolId}/provisioning/authority", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "firstName": "",
+                                  "username": "bad username",
+                                  "email": "bad",
+                                  "phone": "1"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Request validation failed"));
+
+        verifyNoInteractions(schoolService);
     }
 
     @Test

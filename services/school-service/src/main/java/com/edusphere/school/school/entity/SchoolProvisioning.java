@@ -64,8 +64,17 @@ public class SchoolProvisioning {
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount = 0;
 
+    @Column(name = "request_revision", nullable = false)
+    private int requestRevision = 0;
+
     @Column(name = "last_error_summary", length = 500)
     private String lastErrorSummary;
+
+    @Column(name = "last_error_code", length = 100)
+    private String lastErrorCode;
+
+    @Column(name = "last_error_field", length = 150)
+    private String lastErrorField;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -114,23 +123,68 @@ public class SchoolProvisioning {
     public String getAuthorityPhone() { return authorityPhone; }
     public ProvisioningStatus getStatus() { return status; }
     public int getAttemptCount() { return attemptCount; }
+    public int getRequestRevision() { return requestRevision; }
     public String getLastErrorSummary() { return lastErrorSummary; }
+    public String getLastErrorCode() {
+        return lastErrorCode;
+    }
+    public String getLastErrorField() {
+        return lastErrorField;
+    }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 
     public void startAttempt() {
         this.attemptCount++;
+        this.lastErrorCode = null;
+        this.lastErrorField = null;
         this.lastErrorSummary = null;
         this.status = ProvisioningStatus.PENDING;
     }
 
     public void succeed() {
         this.status = ProvisioningStatus.SUCCEEDED;
+        this.lastErrorCode = null;
+        this.lastErrorField = null;
         this.lastErrorSummary = null;
     }
 
-    public void fail(String safeErrorSummary) {
+    public void fail(
+            String errorCode,
+            String errorField,
+            String safeErrorSummary
+    ) {
         this.status = ProvisioningStatus.FAILED;
+        this.lastErrorCode = errorCode;
+        this.lastErrorField = errorField;
         this.lastErrorSummary = safeErrorSummary;
+    }
+
+    public void fail(String safeErrorSummary) {
+        fail(
+                "PROVISIONING_FAILED",
+                null,
+                safeErrorSummary
+        );
+    }
+
+    public void correctAuthority(
+            String firstName,
+            String middleName,
+            String lastName,
+            String username,
+            String email,
+            String phone
+    ) {
+        this.authorityFirstName = firstName;
+        this.authorityMiddleName = middleName;
+        this.authorityLastName = lastName;
+        this.authorityUsername = username;
+        this.authorityEmail = email;
+        this.authorityPhone = phone;
+        this.requestRevision++;
+        this.lastErrorCode = null;
+        this.lastErrorField = null;
+        this.lastErrorSummary = null;
     }
 }
