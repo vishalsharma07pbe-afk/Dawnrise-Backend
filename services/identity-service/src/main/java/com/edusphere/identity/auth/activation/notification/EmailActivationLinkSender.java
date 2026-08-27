@@ -44,7 +44,7 @@ public class EmailActivationLinkSender implements ActivationLinkSender {
 
         message.setFrom(linkProperties.getFromAddress());
         message.setTo(user.getEmail());
-        message.setSubject("Activate your EduSphere account");
+        message.setSubject("Activate your Dawnrise account");
         message.setText(buildEmailBody(user, activationUrl));
 
         mailSender.send(message);
@@ -57,7 +57,7 @@ public class EmailActivationLinkSender implements ActivationLinkSender {
         return """
                 Hello %s,
 
-                Your EduSphere account has been created.
+                Your Dawnrise account has been created.
 
                 Use the link below to create your password and activate your account:
 
@@ -66,8 +66,8 @@ public class EmailActivationLinkSender implements ActivationLinkSender {
                 This activation link is single-use and will expire automatically.
                 If you were not expecting this invitation, you can ignore this email.
 
-                EduSphere
-                From Chaos to Clarity. Powered by EduSphere.
+                Dawnrise
+                From Chaos to Clarity. Powered by Dawnrise.
                 """.formatted(
                 user.getFirstName(),
                 activationUrl

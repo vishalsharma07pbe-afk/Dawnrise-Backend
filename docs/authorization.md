@@ -1,4 +1,4 @@
-# EduSphere Authorization Contract
+# Dawnrise Authorization Contract
 
 Identity service is the authorization authority for identity-scoped actions. It issues access tokens with:
 
