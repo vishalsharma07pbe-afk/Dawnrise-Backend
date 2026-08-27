@@ -16,6 +16,7 @@ import com.edusphere.identity.user.enums.UserStatus;
 import com.edusphere.identity.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -52,7 +53,7 @@ public class AccountActivationServiceImpl
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String generateActivationToken(Long userId) {
         // Activation links are only for accounts waiting to set a password.
         User user = userRepository
