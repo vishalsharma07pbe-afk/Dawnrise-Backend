@@ -85,7 +85,7 @@ security:
       - PARENT
     standard-session-expiration: 30d
     standard-session-absolute-lifetime: 90d
-    cookie-name: edusphere_refresh
+    cookie-name: dawnrise_refresh
     cookie-path: /api/v1/auth
     secure: ${REFRESH_COOKIE_SECURE:false}
     same-site: Strict
@@ -108,7 +108,7 @@ security:
 app:
   activation:
     base-url: ${ACTIVATION_BASE_URL:http://localhost:5174/activate}
-    from-address: ${ACTIVATION_EMAIL_FROM:no-reply@edusphere.com}
+    from-address: ${ACTIVATION_EMAIL_FROM:no-reply@dawnrise.com}
 
   platform-activation:
     base-url: ${PLATFORM_ACTIVATION_BASE_URL:http://localhost:5173/platform/activate}
@@ -116,4 +116,4 @@ app:
 
   password-reset:
     base-url: ${PASSWORD_RESET_BASE_URL:http://localhost:5174/reset-password}
-    from-address: ${PASSWORD_RESET_EMAIL_FROM:${ACTIVATION_EMAIL_FROM:no-reply@edusphere.com}}
+    from-address: ${PASSWORD_RESET_EMAIL_FROM:${ACTIVATION_EMAIL_FROM:no-reply@dawnrise.com}}

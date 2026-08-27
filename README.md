@@ -1,11 +1,11 @@
-# EduSphere Backend
+# Dawnrise Backend
 
-EduSphere Backend is the service layer for a multi-tenant school-management platform. It is being built as a set of Spring Boot services with a security-first identity foundation: organization-scoped users, role and permission governance, token-based authentication, approval workflows for sensitive access, and an append-only security audit trail.
+Dawnrise Backend is the service layer for a multi-tenant school-management platform. It is being built as a set of Spring Boot services with a security-first identity foundation: organization-scoped users, role and permission governance, token-based authentication, approval workflows for sensitive access, and an append-only security audit trail.
 
 ## What This Repository Contains
 
 ```text
-EduSphere-Backend/
+Dawnrise-Backend/
   services/
     identity-service/   Authentication, users, permissions, role governance, audit trail
     school-service/     School-domain service scaffold
@@ -37,7 +37,7 @@ The identity service currently supports:
 
 ## Security Model
 
-EduSphere separates three security questions:
+Dawnrise separates three security questions:
 
 - **Who are you?** JWT subject and user record.
 - **What can you do?** `PermissionCode` authorities.
@@ -152,4 +152,4 @@ Startup verification also confirmed Flyway validation, V19 migration application
 
 ## Project Direction
 
-EduSphere is moving toward a modular school platform where the identity service acts as the authorization authority and domain services enforce their own resource scopes. The current backend emphasizes correctness in tenant isolation, permission checks, approval workflows, token lifecycle, and auditability before broad feature expansion.
+Dawnrise is moving toward a modular school platform where the identity service acts as the authorization authority and domain services enforce their own resource scopes. The current backend emphasizes correctness in tenant isolation, permission checks, approval workflows, token lifecycle, and auditability before broad feature expansion.

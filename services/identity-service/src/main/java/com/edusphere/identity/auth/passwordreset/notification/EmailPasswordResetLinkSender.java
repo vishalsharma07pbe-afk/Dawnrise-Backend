@@ -41,7 +41,7 @@ public class EmailPasswordResetLinkSender
 
         message.setFrom(linkProperties.getFromAddress());
         message.setTo(user.getEmail());
-        message.setSubject("Reset your EduSphere password");
+        message.setSubject("Reset your Dawnrise password");
         message.setText(buildEmailBody(user, resetUrl));
 
         mailSender.send(message);
@@ -51,7 +51,7 @@ public class EmailPasswordResetLinkSender
         return """
                 Hello %s,
 
-                We received a request to reset your EduSphere password.
+                We received a request to reset your Dawnrise password.
 
                 Use the link below to set a new password:
 
@@ -60,8 +60,8 @@ public class EmailPasswordResetLinkSender
                 This password reset link is single-use and will expire automatically.
                 If you did not request this change, you can ignore this email.
 
-                EduSphere
-                From Chaos to Clarity. Powered by EduSphere.
+                Dawnrise
+                From Chaos to Clarity. Powered by Dawnrise.
                 """.formatted(user.getFirstName(), resetUrl);
     }
 }
