@@ -76,7 +76,7 @@ class PasswordResetServiceImplTest {
                 new PasswordResetRequest(1L, "teacher@edusphere.com");
         User user = user(UserStatus.ACTIVE);
 
-        when(userRepository.findByOrganizationIdAndEmail(
+        when(userRepository.findByOrganizationIdAndEmailIgnoreCase(
                 1L,
                 "teacher@edusphere.com"
         )).thenReturn(Optional.of(user));
@@ -93,7 +93,7 @@ class PasswordResetServiceImplTest {
         PasswordResetRequest request =
                 new PasswordResetRequest(1L, "missing@edusphere.com");
 
-        when(userRepository.findByOrganizationIdAndEmail(
+        when(userRepository.findByOrganizationIdAndEmailIgnoreCase(
                 1L,
                 "missing@edusphere.com"
         )).thenReturn(Optional.empty());
@@ -108,7 +108,7 @@ class PasswordResetServiceImplTest {
         PasswordResetRequest request =
                 new PasswordResetRequest(1L, "teacher@edusphere.com");
 
-        when(userRepository.findByOrganizationIdAndEmail(
+        when(userRepository.findByOrganizationIdAndEmailIgnoreCase(
                 1L,
                 "teacher@edusphere.com"
         )).thenReturn(Optional.of(user(UserStatus.PENDING_ACTIVATION)));

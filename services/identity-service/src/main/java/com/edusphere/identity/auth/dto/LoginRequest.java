@@ -1,46 +1,49 @@
 package com.edusphere.identity.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public class LoginRequest {
 
-    @NotNull(message = "Organization ID is required")
-    private Long organizationId;
+    @NotBlank(message = "School code is required")
+    @Size(max = 50, message = "School code is invalid")
+    private String schoolCode;
 
-    @NotBlank(message = "Username is required")
-    private String username;
+    @NotBlank(message = "Username or email is required")
+    @Size(max = 150, message = "Username or email is invalid")
+    private String usernameOrEmail;
 
     @NotBlank(message = "Password is required")
+    @Size(max = 72, message = "Invalid login credentials")
     private String password;
 
     public LoginRequest() {
     }
 
     public LoginRequest(
-            Long organizationId,
-            String username,
+            String schoolCode,
+            String usernameOrEmail,
             String password
     ) {
-        this.organizationId = organizationId;
-        this.username = username;
+        this.schoolCode = schoolCode;
+        this.usernameOrEmail = usernameOrEmail;
         this.password = password;
     }
 
-    public Long getOrganizationId() {
-        return organizationId;
+    public String getSchoolCode() {
+        return schoolCode;
     }
 
-    public void setOrganizationId(Long organizationId) {
-        this.organizationId = organizationId;
+    public void setSchoolCode(String schoolCode) {
+        this.schoolCode = schoolCode;
     }
 
-    public String getUsername() {
-        return username;
+    public String getUsernameOrEmail() {
+        return usernameOrEmail;
     }
 
-    public void setUsername(String username) {
-        this.username = username;
+    public void setUsernameOrEmail(String usernameOrEmail) {
+        this.usernameOrEmail = usernameOrEmail;
     }
 
     public String getPassword() {

@@ -65,6 +65,8 @@ public class EmailPlatformActivationLinkSender
 
                 Your Dawnrise employee account has been created.
 
+                Username: %s
+
                 Use the link below to create your password and activate your account:
 
                 %s
@@ -79,6 +81,7 @@ public class EmailPlatformActivationLinkSender
                 Always one step ahead.
                 """.formatted(
                 platformUser.getFirstName(),
+                platformUser.getUsername(),
                 activationUrl
         );
     }

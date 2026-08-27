@@ -59,7 +59,7 @@ public class PasswordResetServiceImpl implements PasswordResetService {
     public void requestPasswordReset(PasswordResetRequest request) {
         // Always return accepted; only active matching accounts get an email.
         userRepository
-                .findByOrganizationIdAndEmail(
+                .findByOrganizationIdAndEmailIgnoreCase(
                         request.getOrganizationId(),
                         request.getEmail()
                 )

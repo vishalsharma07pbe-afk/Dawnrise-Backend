@@ -14,6 +14,8 @@ import com.edusphere.identity.auth.refreshtoken.model.RefreshTokenRotationResult
 import com.edusphere.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.edusphere.identity.auth.security.JwtService;
 import com.edusphere.identity.common.exception.ResourceNotFoundException;
+import com.edusphere.identity.organization.entity.Organization;
+import com.edusphere.identity.organization.repository.OrganizationRepository;
 import com.edusphere.identity.user.entity.User;
 import com.edusphere.identity.user.enums.UserRole;
 import com.edusphere.identity.user.enums.UserStatus;
@@ -38,6 +40,7 @@ public class AuthServiceImpl implements AuthService {
     private static final String INVALID_CREDENTIALS_MESSAGE =
             "Invalid username or password";
     private final UserRepository userRepository;
+    private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
@@ -48,6 +51,7 @@ public class AuthServiceImpl implements AuthService {
 
     public AuthServiceImpl(
             UserRepository userRepository,
+            OrganizationRepository organizationRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
@@ -57,6 +61,7 @@ public class AuthServiceImpl implements AuthService {
             SecurityAuditService auditService
     ) {
         this.userRepository = userRepository;
+        this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
@@ -72,23 +77,38 @@ public class AuthServiceImpl implements AuthService {
             LoginRequest request
     ) {
         // Use one generic error so login cannot reveal valid usernames.
-        User user = userRepository
-                .findByOrganizationIdAndUsername(
-                        request.getOrganizationId(),
-                        request.getUsername()
-                )
+        Organization organization = organizationRepository
+                .findBySchoolCodeIgnoreCase(request.getSchoolCode().trim())
                 .orElse(null);
 
+        Long organizationId = organization == null
+                ? null
+                : organization.getId();
+        String usernameOrEmail = request.getUsernameOrEmail().trim();
+        User user = organizationId == null
+                ? null
+                : (usernameOrEmail.contains("@")
+                    ? userRepository.findByOrganizationIdAndEmailIgnoreCase(
+                            organizationId,
+                            usernameOrEmail
+                    ).orElse(null)
+                    : userRepository.findByOrganizationIdAndUsername(
+                            organizationId,
+                            usernameOrEmail
+                    ).orElse(null));
+
         if (user == null) {
-            auditService.record(
-                    request.getOrganizationId(),
-                    null,
-                    SecurityAuditAction.LOGIN_FAILURE,
-                    SecurityAuditOutcome.FAILURE,
-                    "USER",
-                    null,
-                    Map.of("reason", "invalid_credentials")
-            );
+            if (organizationId != null) {
+                auditService.record(
+                        organizationId,
+                        null,
+                        SecurityAuditAction.LOGIN_FAILURE,
+                        SecurityAuditOutcome.FAILURE,
+                        "USER",
+                        null,
+                        Map.of("reason", "invalid_credentials")
+                );
+            }
             throw new InvalidCredentialsException(
                     INVALID_CREDENTIALS_MESSAGE
             );

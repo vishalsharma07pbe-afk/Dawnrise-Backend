@@ -28,6 +28,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
             Long userId
     );
 
+    Optional<User> findByOrganizationIdAndEmailIgnoreCase(
+            Long organizationId,
+            String email
+    );
+
+    boolean existsByOrganizationIdAndEmailIgnoreCase(
+            Long organizationId,
+            String email
+    );
+
     boolean existsByOrganizationIdAndUsername(
             Long organizationId,
             String username

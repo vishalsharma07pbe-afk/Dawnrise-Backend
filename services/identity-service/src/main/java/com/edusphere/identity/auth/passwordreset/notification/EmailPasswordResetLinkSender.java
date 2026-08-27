@@ -53,6 +53,8 @@ public class EmailPasswordResetLinkSender
 
                 We received a request to reset your Dawnrise password.
 
+                Username: %s
+
                 Use the link below to set a new password:
 
                 %s
@@ -62,6 +64,10 @@ public class EmailPasswordResetLinkSender
 
                 Dawnrise
                 From Chaos to Clarity. Powered by Dawnrise.
-                """.formatted(user.getFirstName(), resetUrl);
+                """.formatted(
+                user.getFirstName(),
+                user.getUsername(),
+                resetUrl
+        );
     }
 }

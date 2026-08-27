@@ -11,6 +11,10 @@ public interface OrganizationRepository
             String schoolCode
     );
 
+    Optional<Organization> findBySchoolCodeIgnoreCase(
+            String schoolCode
+    );
+
     boolean existsBySchoolCode(
             String schoolCode
     );

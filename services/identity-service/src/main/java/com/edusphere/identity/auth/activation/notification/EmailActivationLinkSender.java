@@ -59,6 +59,8 @@ public class EmailActivationLinkSender implements ActivationLinkSender {
 
                 Your Dawnrise account has been created.
 
+                Username: %s
+
                 Use the link below to create your password and activate your account:
 
                 %s
@@ -70,6 +72,7 @@ public class EmailActivationLinkSender implements ActivationLinkSender {
                 From Chaos to Clarity. Powered by Dawnrise.
                 """.formatted(
                 user.getFirstName(),
+                user.getUsername(),
                 activationUrl
         );
     }

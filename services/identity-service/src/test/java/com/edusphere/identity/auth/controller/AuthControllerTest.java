@@ -54,6 +54,31 @@ class AuthControllerTest {
     }
 
     @Test
+    void login_whenRequiredFieldsMissing_returnsValidationErrors()
+            throws Exception {
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "schoolCode": "",
+                                  "usernameOrEmail": "",
+                                  "password": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Request validation failed"))
+                .andExpect(jsonPath("$.validationErrors.schoolCode")
+                        .value("School code is required"))
+                .andExpect(jsonPath("$.validationErrors.usernameOrEmail")
+                        .value("Username or email is required"))
+                .andExpect(jsonPath("$.validationErrors.password")
+                        .value("Password is required"));
+
+        verify(authService, never()).login(any());
+    }
+
+    @Test
     void changePassword_whenValid_returnsNoContent() throws Exception {
         mockMvc.perform(post("/api/v1/auth/password/change")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -18,6 +18,8 @@ import com.edusphere.identity.auth.security.JwtService;
 import com.edusphere.identity.common.exception.ResourceNotFoundException;
 import com.edusphere.identity.permission.enums.PermissionCode;
 import com.edusphere.identity.permission.service.PermissionService;
+import com.edusphere.identity.organization.entity.Organization;
+import com.edusphere.identity.organization.repository.OrganizationRepository;
 import com.edusphere.identity.securityaudit.service.SecurityAuditService;
 import com.edusphere.identity.securityaudit.enums.SecurityAuditAction;
 import com.edusphere.identity.securityaudit.enums.SecurityAuditOutcome;
@@ -49,6 +51,8 @@ class AuthServiceImplTest {
 
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private OrganizationRepository organizationRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
@@ -83,6 +87,7 @@ class AuthServiceImplTest {
 
         authService = new AuthServiceImpl(
                 userRepository,
+                organizationRepository,
                 passwordEncoder,
                 jwtService,
                 refreshTokenService,
@@ -91,6 +96,16 @@ class AuthServiceImplTest {
                 permissionService,
                 auditService
         );
+
+        Organization organization = new Organization(
+                1L,
+                "SCH001",
+                "Test School",
+                "school@example.com"
+        );
+        lenient().when(organizationRepository
+                        .findBySchoolCodeIgnoreCase("SCH001"))
+                .thenReturn(Optional.of(organization));
     }
 
     @Test
@@ -112,6 +127,48 @@ class AuthServiceImplTest {
                 anySet()
         );
         verifyNoInteractions(refreshTokenService);
+    }
+
+    @Test
+    void login_whenEmailProvided_usesOrganizationEmailLookup() {
+        LoginRequest request = request();
+        request.setUsernameOrEmail("teacher@example.com");
+
+        when(userRepository.findByOrganizationIdAndEmailIgnoreCase(
+                1L,
+                "teacher@example.com"
+        )).thenReturn(Optional.empty());
+
+        assertThrows(
+                InvalidCredentialsException.class,
+                () -> authService.login(request)
+        );
+
+        verify(userRepository).findByOrganizationIdAndEmailIgnoreCase(
+                1L,
+                "teacher@example.com"
+        );
+        verify(userRepository, never())
+                .findByOrganizationIdAndUsername(anyLong(), anyString());
+    }
+
+    @Test
+    void login_whenSchoolCodeMissing_throwsInvalidCredentialsWithoutAudit() {
+        LoginRequest request = request();
+        request.setSchoolCode("UNKNOWN");
+
+        when(organizationRepository.findBySchoolCodeIgnoreCase("UNKNOWN"))
+                .thenReturn(Optional.empty());
+
+        InvalidCredentialsException exception = assertThrows(
+                InvalidCredentialsException.class,
+                () -> authService.login(request)
+        );
+
+        assertEquals("Invalid username or password", exception.getMessage());
+        verifyNoInteractions(userRepository);
+        verifyNoInteractions(passwordEncoder);
+        verifyNoInteractions(auditService);
     }
 
     @Test
@@ -478,8 +535,8 @@ class AuthServiceImplTest {
 
     private static LoginRequest request() {
         LoginRequest request = new LoginRequest();
-        request.setOrganizationId(1L);
-        request.setUsername("teacher01");
+        request.setSchoolCode("SCH001");
+        request.setUsernameOrEmail("teacher01");
         request.setPassword("Teacher@123");
         return request;
     }
