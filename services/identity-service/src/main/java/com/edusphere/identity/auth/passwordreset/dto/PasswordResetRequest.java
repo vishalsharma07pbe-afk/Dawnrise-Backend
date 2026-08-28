@@ -2,33 +2,42 @@ package com.edusphere.identity.auth.passwordreset.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public class PasswordResetRequest {
 
-    @NotNull(message = "Organization ID is required")
-    private Long organizationId;
+    @NotBlank(message = "School code is required")
+    @Size(
+            max = 50,
+            message = "School code is invalid"
+    )
+    private String schoolCode;
 
     @NotBlank(message = "Email is required")
     @Email(message = "Email must be valid")
-    @Size(max = 150, message = "Email cannot exceed 150 characters")
+    @Size(
+            max = 150,
+            message = "Email cannot exceed 150 characters"
+    )
     private String email;
 
     public PasswordResetRequest() {
     }
 
-    public PasswordResetRequest(Long organizationId, String email) {
-        this.organizationId = organizationId;
+    public PasswordResetRequest(
+            String schoolCode,
+            String email
+    ) {
+        this.schoolCode = schoolCode;
         this.email = email;
     }
 
-    public Long getOrganizationId() {
-        return organizationId;
+    public String getSchoolCode() {
+        return schoolCode;
     }
 
-    public void setOrganizationId(Long organizationId) {
-        this.organizationId = organizationId;
+    public void setSchoolCode(String schoolCode) {
+        this.schoolCode = schoolCode;
     }
 
     public String getEmail() {

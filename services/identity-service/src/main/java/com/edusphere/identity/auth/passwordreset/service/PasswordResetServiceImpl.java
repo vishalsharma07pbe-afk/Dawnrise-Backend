@@ -1,6 +1,7 @@
 package com.edusphere.identity.auth.passwordreset.service;
 
 import com.edusphere.identity.auth.activation.exception.PasswordMismatchException;
+import com.edusphere.identity.auth.exception.PasswordChangeNotAllowedException;
 import com.edusphere.identity.auth.activation.security.ActivationTokenCodec;
 import com.edusphere.identity.auth.passwordreset.config.PasswordResetTokenProperties;
 import com.edusphere.identity.auth.passwordreset.dto.CompletePasswordResetRequest;
@@ -9,6 +10,8 @@ import com.edusphere.identity.auth.passwordreset.entity.UserPasswordResetToken;
 import com.edusphere.identity.auth.passwordreset.event.UserPasswordResetRequestedEvent;
 import com.edusphere.identity.auth.passwordreset.exception.InvalidPasswordResetTokenException;
 import com.edusphere.identity.auth.passwordreset.repository.UserPasswordResetTokenRepository;
+import com.edusphere.identity.organization.repository.OrganizationRepository;
+import org.springframework.transaction.annotation.Propagation;
 import com.edusphere.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.edusphere.identity.common.exception.ResourceNotFoundException;
 import com.edusphere.identity.user.entity.User;
@@ -35,10 +38,12 @@ public class PasswordResetServiceImpl implements PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
     private final RefreshTokenService refreshTokenService;
+    private final OrganizationRepository organizationRepository;
 
     public PasswordResetServiceImpl(
             UserPasswordResetTokenRepository resetTokenRepository,
             UserRepository userRepository,
+            OrganizationRepository organizationRepository,
             ActivationTokenCodec tokenCodec,
             PasswordResetTokenProperties tokenProperties,
             PasswordEncoder passwordEncoder,
@@ -47,6 +52,7 @@ public class PasswordResetServiceImpl implements PasswordResetService {
     ) {
         this.resetTokenRepository = resetTokenRepository;
         this.userRepository = userRepository;
+        this.organizationRepository = organizationRepository;
         this.tokenCodec = tokenCodec;
         this.tokenProperties = tokenProperties;
         this.passwordEncoder = passwordEncoder;
@@ -56,22 +62,36 @@ public class PasswordResetServiceImpl implements PasswordResetService {
 
     @Override
     @Transactional
-    public void requestPasswordReset(PasswordResetRequest request) {
-        // Always return accepted; only active matching accounts get an email.
-        userRepository
-                .findByOrganizationIdAndEmailIgnoreCase(
-                        request.getOrganizationId(),
-                        request.getEmail()
+    public void requestPasswordReset(
+            PasswordResetRequest request
+    ) {
+        // Always finish silently so callers cannot discover schools or accounts.
+        organizationRepository
+                .findBySchoolCodeIgnoreCase(
+                        request.getSchoolCode().trim()
                 )
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                .ifPresent(user -> eventPublisher.publishEvent(
-                        new UserPasswordResetRequestedEvent(user.getId())
-                ));
+                .flatMap(organization ->
+                        userRepository
+                                .findByOrganizationIdAndEmailIgnoreCase(
+                                        organization.getId(),
+                                        request.getEmail().trim()
+                                )
+                )
+                .filter(user ->
+                        user.getStatus() == UserStatus.ACTIVE
+                )
+                .ifPresent(user ->
+                        eventPublisher.publishEvent(
+                                new UserPasswordResetRequestedEvent(
+                                        user.getId()
+                                )
+                        )
+                );
     }
 
     @Override
-    @Transactional
-    public String generatePasswordResetToken(Long userId) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public String generatePasswordResetToken(Long userId){
         // Token generation is event-driven after a safe public request.
         User user = userRepository
                 .findById(userId)
@@ -87,10 +107,20 @@ public class PasswordResetServiceImpl implements PasswordResetService {
         OffsetDateTime requestWindowStart =
                 currentTime.minus(tokenProperties.getRequestWindow());
 
+        // A completed reset starts a fresh email allowance. Without this,
+        // emails requested before a successful reset can prevent the user
+        // from recovering the account again for the rest of the window.
+        OffsetDateTime emailLimitWindowStart =
+                user.getPasswordChangedAt() != null
+                        && user.getPasswordChangedAt()
+                        .isAfter(requestWindowStart)
+                        ? user.getPasswordChangedAt()
+                        : requestWindowStart;
+
         long emailsGenerated =
                 resetTokenRepository.countByUserIdAndCreatedAtAfter(
                         userId,
-                        requestWindowStart
+                        emailLimitWindowStart
                 );
 
         if (emailsGenerated
@@ -180,6 +210,16 @@ public class PasswordResetServiceImpl implements PasswordResetService {
 
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw invalidToken();
+        }
+
+        if (user.getPasswordHash() != null
+                && passwordEncoder.matches(
+                request.getPassword(),
+                user.getPasswordHash()
+        )) {
+            throw new PasswordChangeNotAllowedException(
+                    "New password must be different from the current password"
+            );
         }
 
         // Emergency reset bypasses ordinary cooldown but burns the token.
