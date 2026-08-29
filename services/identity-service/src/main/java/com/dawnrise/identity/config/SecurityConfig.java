@@ -137,6 +137,10 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers(
+                                "/api/v1/platform/auth/password-reset/**"
+                        ).permitAll()
+
+                        .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/v1/auth/refresh"
                         ).permitAll()

@@ -37,6 +37,14 @@ public class UserAuthorization {
                     UserRole.HOSTEL_STAFF
             );
 
+    private static final Set<UserRole>
+            GOVERNING_AUTHORITY_ALLOWED_ROLES =
+            Set.of(
+                    UserRole.ADMIN,
+                    UserRole.PRINCIPAL,
+                    UserRole.GOVERNING_AUTHORITY
+            );
+
     private final UserRepository userRepository;
     private final UserStatusAuthorizationPolicy
             statusAuthorizationPolicy;
@@ -66,6 +74,15 @@ public class UserAuthorization {
                 "ROLE_PRINCIPAL"
         )) {
             return true;
+        }
+
+        if (hasRole(
+                authentication,
+                "ROLE_GOVERNING_AUTHORITY"
+        )) {
+            return GOVERNING_AUTHORITY_ALLOWED_ROLES.containsAll(
+                    requestedRoles
+            );
         }
 
         Set<UserRole> allowedRoles = new HashSet<>();

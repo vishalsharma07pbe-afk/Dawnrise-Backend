@@ -1,4 +1,4 @@
--- Rename existing role values to the finalized Dawnrise role names.
+-- Rename existing role values to the finalized EduSphere role names.
 --
 -- Roles are stored as VARCHAR values. Adding GOVERNING_AUTHORITY
 -- does not require a schema alteration; it becomes available when

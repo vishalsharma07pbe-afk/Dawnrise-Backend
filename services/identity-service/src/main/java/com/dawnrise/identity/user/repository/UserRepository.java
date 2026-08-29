@@ -66,4 +66,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("status") UserStatus status,
             @Param("role") UserRole role
     );
+
+    @Query("""
+            select count(user)
+            from User user
+            join user.roles role
+            where user.organizationId = :organizationId
+                and role = :role
+            """)
+    long countByOrganizationIdAndRole(
+            @Param("organizationId") Long organizationId,
+            @Param("role") UserRole role
+    );
 }
