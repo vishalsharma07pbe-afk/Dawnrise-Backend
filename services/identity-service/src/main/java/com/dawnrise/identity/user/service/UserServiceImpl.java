@@ -1,6 +1,7 @@
 package com.dawnrise.identity.user.service;
 
 import com.dawnrise.identity.auth.activation.event.UserActivationRequestedEvent;
+import com.dawnrise.identity.organization.repository.OrganizationRepository;
 import com.dawnrise.identity.auth.security.AuthorizationContext;
 import com.dawnrise.identity.common.dto.PageResponse;
 import com.dawnrise.identity.common.exception.DuplicateResourceException;
@@ -47,6 +48,7 @@ import java.util.Set;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final OrganizationRepository organizationRepository;
     private final UserMapper userMapper;
     private final RoleApprovalPolicy roleApprovalPolicy;
     private final RoleAssignmentRequestRepository roleRequestRepository;
@@ -60,6 +62,7 @@ public class UserServiceImpl implements UserService {
 
     public UserServiceImpl(
             UserRepository userRepository,
+            OrganizationRepository organizationRepository,
             UserMapper userMapper,
             RoleApprovalPolicy roleApprovalPolicy,
             RoleAssignmentRequestRepository roleRequestRepository,
@@ -72,6 +75,7 @@ public class UserServiceImpl implements UserService {
             SecurityAuditService auditService
     ) {
         this.userRepository = userRepository;
+        this.organizationRepository = organizationRepository;
         this.userMapper = userMapper;
         this.roleApprovalPolicy = roleApprovalPolicy;
         this.roleRequestRepository = roleRequestRepository;
@@ -113,6 +117,13 @@ public class UserServiceImpl implements UserService {
             );
         }
 
+        boolean initialAdminBootstrap =
+                isInitialAdminBootstrap(
+                        organizationId,
+                        creator,
+                        request.getRoles()
+                );
+
         // Check username uniqueness within the organization.
         if (userRepository.existsByOrganizationIdAndUsername(
                 organizationId,
@@ -139,10 +150,18 @@ public class UserServiceImpl implements UserService {
 
         // Separate immediately assignable roles from approval-protected roles.
         Set<UserRole> routineRoles =
-                roleApprovalPolicy.getRoutineRoles(request.getRoles());
+                initialAdminBootstrap
+                        ? Set.of(UserRole.ADMIN)
+                        : roleApprovalPolicy.getRoutineRoles(
+                        request.getRoles()
+                );
 
         Set<UserRole> sensitiveRoles =
-                roleApprovalPolicy.getSensitiveRoles(request.getRoles());
+                initialAdminBootstrap
+                        ? Set.of()
+                        : roleApprovalPolicy.getSensitiveRoles(
+                        request.getRoles()
+                );
 
         if (!sensitiveRoles.isEmpty()) {
             requirePermission(
@@ -680,5 +699,35 @@ public class UserServiceImpl implements UserService {
                     "Missing required permission: " + permissionCode
             );
         }
+    }
+
+    private boolean isInitialAdminBootstrap(
+            Long organizationId,
+            User creator,
+            Set<UserRole> requestedRoles
+    ) {
+        if (!creator.getRoles().contains(
+                UserRole.GOVERNING_AUTHORITY
+        )) {
+            return false;
+        }
+
+        if (!Set.of(UserRole.ADMIN).equals(
+                requestedRoles
+        )) {
+            return false;
+        }
+
+        // Serialize first-Admin creation within this organization.
+        organizationRepository.findByIdForUpdate(
+                organizationId
+        ).orElseThrow(() -> new ResourceNotFoundException(
+                "Organization not found"
+        ));
+
+        return userRepository.countByOrganizationIdAndRole(
+                organizationId,
+                UserRole.ADMIN
+        ) == 0;
     }
 }

@@ -116,4 +116,5 @@ app:
 
   password-reset:
     base-url: ${PASSWORD_RESET_BASE_URL:http://localhost:5174/reset-password}
+    platform-base-url: ${PLATFORM_PASSWORD_RESET_BASE_URL:http://localhost:5173/platform/reset-password}
     from-address: ${PASSWORD_RESET_EMAIL_FROM:${ACTIVATION_EMAIL_FROM:no-reply@dawnrise.com}}

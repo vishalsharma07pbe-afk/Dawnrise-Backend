@@ -9,6 +9,7 @@ public class PasswordResetLinkProperties {
 
     private String baseUrl;
     private String fromAddress;
+    private String platformBaseUrl;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -25,4 +26,7 @@ public class PasswordResetLinkProperties {
     public void setFromAddress(String fromAddress) {
         this.fromAddress = fromAddress;
     }
+
+    public String getPlatformBaseUrl() { return platformBaseUrl; }
+    public void setPlatformBaseUrl(String platformBaseUrl) { this.platformBaseUrl = platformBaseUrl; }
 }

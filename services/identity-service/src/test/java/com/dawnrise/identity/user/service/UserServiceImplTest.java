@@ -4,7 +4,10 @@ import com.dawnrise.identity.auth.security.AuthorizationContext;
 import com.dawnrise.identity.common.dto.PageResponse;
 import com.dawnrise.identity.auth.activation.event.UserActivationRequestedEvent;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
+import com.dawnrise.identity.organization.repository.OrganizationRepository;
+import com.dawnrise.identity.organization.entity.Organization;
 import com.dawnrise.identity.permission.enums.PermissionCode;
+import com.dawnrise.identity.roleapproval.dto.CreateRoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.entity.RoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.enums.ApprovalStatus;
 import com.dawnrise.identity.roleapproval.exception.ApprovalNotAllowedException;
@@ -48,6 +51,8 @@ public class UserServiceImplTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private OrganizationRepository organizationRepository;
+    @Mock
     private UserMapper userMapper;
     @Mock
     private RoleApprovalPolicy roleApprovalPolicy;
@@ -72,6 +77,7 @@ public class UserServiceImplTest {
     void setUp() {
         userService = new UserServiceImpl(
                 userRepository,
+                organizationRepository,
                 userMapper,
                 roleApprovalPolicy,
                 roleRequestRepository,
@@ -248,6 +254,199 @@ public class UserServiceImplTest {
                 new UserActivationRequestedEvent(10L)
         );
         verify(userMapper).toResponse(savedUser);
+    }
+
+    @Test
+    void createUser_whenFirstAdminRequestedByGoverningAuthority_bootstrapsAdmin() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setOrganizationId(1L);
+        request.setUsername("admin01");
+        request.setFirstName("Initial");
+        request.setLastName("Admin");
+        request.setEmail("admin@dawnrise.com");
+        request.setRoles(Set.of(UserRole.ADMIN));
+
+        User creator = user(
+                99L,
+                1L,
+                "governing01",
+                "governing@dawnrise.com"
+        );
+        creator.setStatus(UserStatus.ACTIVE);
+        creator.setRoles(Set.of(UserRole.GOVERNING_AUTHORITY));
+
+        User invitedAdmin = new User();
+        invitedAdmin.setUsername("admin01");
+        invitedAdmin.setFirstName("Initial");
+        invitedAdmin.setLastName("Admin");
+        invitedAdmin.setEmail("admin@dawnrise.com");
+        ReflectionTestUtils.setField(invitedAdmin, "id", 10L);
+
+        UserResponse expectedResponse =
+                response(10L, 1L, "admin01");
+
+        when(userRepository.findByOrganizationIdAndId(1L, 99L))
+                .thenReturn(Optional.of(creator));
+
+        when(organizationRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(mock(Organization.class)));
+
+        when(userRepository.countByOrganizationIdAndRole(
+                1L,
+                UserRole.ADMIN
+        )).thenReturn(0L);
+
+        when(userRepository.existsByOrganizationIdAndUsername(
+                1L,
+                "admin01"
+        )).thenReturn(false);
+
+        when(userRepository.existsByOrganizationIdAndEmail(
+                1L,
+                "admin@dawnrise.com"
+        )).thenReturn(false);
+
+        when(userMapper.toEntity(request))
+                .thenReturn(invitedAdmin);
+
+        when(userRepository.save(invitedAdmin))
+                .thenReturn(invitedAdmin);
+
+        when(userMapper.toResponse(invitedAdmin))
+                .thenReturn(expectedResponse);
+
+        UserResponse actualResponse =
+                userService.createUser(
+                        1L,
+                        auth(99L),
+                        request
+                );
+
+        assertSame(expectedResponse, actualResponse);
+        assertEquals(
+                Set.of(UserRole.ADMIN),
+                invitedAdmin.getRoles()
+        );
+        assertEquals(
+                UserStatus.PENDING_ACTIVATION,
+                invitedAdmin.getStatus()
+        );
+
+        verify(organizationRepository)
+                .findByIdForUpdate(1L);
+
+        verify(userRepository)
+                .countByOrganizationIdAndRole(
+                        1L,
+                        UserRole.ADMIN
+                );
+
+        verify(roleRequestRepository, never())
+                .save(any(RoleAssignmentRequest.class));
+
+        verify(eventPublisher).publishEvent(
+                new UserActivationRequestedEvent(10L)
+        );
+    }
+
+    @Test
+    void createUser_whenAdminAlreadyExists_usesApprovalWorkflow() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setOrganizationId(1L);
+        request.setUsername("admin02");
+        request.setFirstName("Second");
+        request.setLastName("Admin");
+        request.setEmail("admin02@dawnrise.com");
+        request.setRoles(Set.of(UserRole.ADMIN));
+
+        User creator = user(
+                99L,
+                1L,
+                "governing01",
+                "governing@dawnrise.com"
+        );
+        creator.setStatus(UserStatus.ACTIVE);
+        creator.setRoles(Set.of(UserRole.GOVERNING_AUTHORITY));
+
+        User candidate = new User();
+        candidate.setUsername("admin02");
+        candidate.setEmail("admin02@dawnrise.com");
+        ReflectionTestUtils.setField(candidate, "id", 11L);
+
+        RoleAssignmentRequest roleRequest =
+                mock(RoleAssignmentRequest.class);
+
+        UserResponse expectedResponse =
+                response(11L, 1L, "admin02");
+
+        when(userRepository.findByOrganizationIdAndId(1L, 99L))
+                .thenReturn(Optional.of(creator));
+
+        when(organizationRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(mock(Organization.class)));
+
+        when(userRepository.countByOrganizationIdAndRole(
+                1L,
+                UserRole.ADMIN
+        )).thenReturn(1L);
+
+        when(userRepository.existsByOrganizationIdAndUsername(
+                1L,
+                "admin02"
+        )).thenReturn(false);
+
+        when(userRepository.existsByOrganizationIdAndEmail(
+                1L,
+                "admin02@dawnrise.com"
+        )).thenReturn(false);
+
+        when(roleApprovalPolicy.getRoutineRoles(
+                Set.of(UserRole.ADMIN)
+        )).thenReturn(Set.of());
+
+        when(roleApprovalPolicy.getSensitiveRoles(
+                Set.of(UserRole.ADMIN)
+        )).thenReturn(Set.of(UserRole.ADMIN));
+
+        when(roleApprovalPolicy.canRequestApproval(
+                Set.of(UserRole.GOVERNING_AUTHORITY),
+                UserRole.ADMIN
+        )).thenReturn(true);
+
+        when(userMapper.toEntity(request))
+                .thenReturn(candidate);
+
+        when(userRepository.save(candidate))
+                .thenReturn(candidate);
+
+        when(roleRequestMapper.toEntity(
+                eq(1L),
+                eq(99L),
+                any(CreateRoleAssignmentRequest.class)
+        )).thenReturn(roleRequest);
+
+        when(userMapper.toResponse(candidate))
+                .thenReturn(expectedResponse);
+
+        UserResponse actualResponse =
+                userService.createUser(
+                        1L,
+                        auth(99L),
+                        request
+                );
+
+        assertSame(expectedResponse, actualResponse);
+        assertTrue(candidate.getRoles().isEmpty());
+        assertEquals(
+                UserStatus.PENDING_APPROVAL,
+                candidate.getStatus()
+        );
+
+        verify(roleRequestRepository).save(roleRequest);
+
+        verify(eventPublisher, never()).publishEvent(
+                any(UserActivationRequestedEvent.class)
+        );
     }
 
     @Test
