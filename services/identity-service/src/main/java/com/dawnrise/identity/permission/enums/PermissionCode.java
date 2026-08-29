@@ -1,0 +1,85 @@
+package com.dawnrise.identity.permission.enums;
+
+public enum PermissionCode {
+
+    /*
+     * Own profile and account
+     */
+    PROFILE_VIEW_SELF,
+    PROFILE_UPDATE_SELF,
+    PASSWORD_CHANGE_SELF,
+    LOGIN_HISTORY_VIEW_SELF,
+    SESSION_VIEW_SELF,
+    SESSION_REVOKE_SELF,
+
+    /*
+     * User account administration
+     */
+    USER_CREATE,
+    USER_VIEW,
+    USER_PROFILE_UPDATE,
+    USER_ACTIVATE,
+    USER_ACTIVATION_RESEND,
+    USER_DEACTIVATE,
+    USER_SUSPEND,
+    USER_REACTIVATE,
+    USER_UNLOCK,
+    USER_PASSWORD_RESET_INITIATE,
+    USER_LOGIN_HISTORY_VIEW,
+    USER_SESSION_REVOKE,
+    USER_EXPORT,
+
+    /*
+     * Role and permission visibility
+     */
+    ROLE_VIEW,
+    PERMISSION_VIEW,
+    ROLE_PERMISSION_VIEW,
+
+    /*
+     * Routine role management
+     */
+    ROLE_ASSIGN_ROUTINE,
+    ROLE_REMOVE_ROUTINE,
+
+    /*
+     * Sensitive role-assignment workflow
+     */
+    ROLE_ASSIGNMENT_REQUEST_CREATE,
+    ROLE_ASSIGNMENT_REQUEST_VIEW,
+    ROLE_ASSIGNMENT_REQUEST_CANCEL,
+    ROLE_ASSIGNMENT_APPROVE,
+
+    /*
+     * Sensitive role-removal workflow
+     *
+     * The role-removal workflow has not been implemented yet,
+     * but these codes reserve the correct authorization model.
+     */
+    ROLE_REMOVAL_REQUEST_CREATE,
+    ROLE_REMOVAL_REQUEST_VIEW,
+    ROLE_REMOVAL_REQUEST_CANCEL,
+    ROLE_REMOVAL_APPROVE,
+
+    /*
+     * Role-permission configuration
+     *
+     * Updating role-permission mappings is highly sensitive.
+     * Initially, mappings will be seeded through Flyway rather
+     * than exposed through a normal administration endpoint.
+     */
+    ROLE_PERMISSION_UPDATE,
+
+    /*
+     * Security monitoring
+     */
+    SECURITY_EVENT_VIEW,
+    SECURITY_AUDIT_VIEW,
+    SECURITY_AUDIT_EXPORT,
+
+    /*
+     * Security policy configuration
+     */
+    SECURITY_POLICY_VIEW,
+    SECURITY_POLICY_UPDATE
+}

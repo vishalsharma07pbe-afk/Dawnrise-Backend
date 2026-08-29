@@ -8,7 +8,7 @@
         <version>4.1.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>com.edusphere</groupId>
+    <groupId>com.dawnrise</groupId>
     <artifactId>identity-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>identity-service</name>
@@ -109,7 +109,7 @@
 
                 <configuration>
                     <mainClass>
-                        com.edusphere.identity.IdentityServiceApplication
+                        com.dawnrise.identity.IdentityServiceApplication
                     </mainClass>
                 </configuration>
             </plugin>
