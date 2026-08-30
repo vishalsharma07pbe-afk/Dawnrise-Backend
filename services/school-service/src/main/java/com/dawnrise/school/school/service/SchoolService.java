@@ -7,10 +7,19 @@ import com.dawnrise.school.school.DTO.SchoolProvisioningResponse;
 import com.dawnrise.school.school.DTO.SchoolResponse;
 import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
 import com.dawnrise.school.school.enums.SchoolStatus;
+import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
+import com.dawnrise.school.school.DTO.SchoolLogoResponse;
 
 public interface SchoolService {
     SchoolResponse getSchoolById(long schoolId);
+    SchoolBrandingResponse getSchoolBranding(long schoolId);
+    SchoolLogoResponse getSchoolLogo(long schoolId);
     SchoolProvisioningResponse onboardSchool(SchoolOnboardingRequest request);
+    SchoolProvisioningResponse onboardSchool(
+            SchoolOnboardingRequest request,
+            byte[] logoData,
+            String logoContentType
+    );
     SchoolProvisioningResponse getProvisioningStatus(long schoolId);
     SchoolProvisioningResponse retryProvisioning(long schoolId);
     SchoolProvisioningResponse correctProvisioningAuthority(

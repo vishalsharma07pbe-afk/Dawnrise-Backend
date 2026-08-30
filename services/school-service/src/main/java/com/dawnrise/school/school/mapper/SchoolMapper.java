@@ -30,6 +30,8 @@ public class SchoolMapper {
         school.setEmail(request.getEmail());
         school.setPhone(request.getPhone());
         school.setAddress(request.getAddress());
+        school.setMotto(request.getMotto());
+        school.setTagline(request.getTagline());
         school.markProvisioningPending();
 
         return school;

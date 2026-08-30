@@ -316,12 +316,18 @@ public class AuthServiceImpl implements AuthService {
                 .map(UserRole::name)
                 .collect(Collectors.toSet());
 
+        String organizationName = organizationRepository
+                .findById(user.getOrganizationId())
+                .map(Organization::getName)
+                .orElse(null);
+
         LoginResponse response = new LoginResponse(
                 accessToken,
                 "Bearer",
                 jwtService.getAccessTokenExpirationSeconds(),
                 user.getId(),
                 user.getOrganizationId(),
+                organizationName,
                 user.getUsername(),
                 roles
         );

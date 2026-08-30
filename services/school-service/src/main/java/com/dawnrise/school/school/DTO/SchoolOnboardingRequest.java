@@ -32,6 +32,12 @@ public class SchoolOnboardingRequest {
     @Size(max = 500, message = "Address cannot exceed 500 characters")
     private String address;
 
+    @Size(max = 180, message = "Motto cannot exceed 180 characters")
+    private String motto;
+
+    @Size(max = 240, message = "Tagline cannot exceed 240 characters")
+    private String tagline;
+
     @Valid
     @NotNull(message = "Initial authority is required")
     private InitialAuthorityRequest initialAuthority;
@@ -46,6 +52,10 @@ public class SchoolOnboardingRequest {
     public void setPhone(String phone) { this.phone = phone; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
+    public String getMotto() { return motto; }
+    public void setMotto(String motto) { this.motto = motto; }
+    public String getTagline() { return tagline; }
+    public void setTagline(String tagline) { this.tagline = tagline; }
     public InitialAuthorityRequest getInitialAuthority() { return initialAuthority; }
     public void setInitialAuthority(InitialAuthorityRequest initialAuthority) {
         this.initialAuthority = initialAuthority;

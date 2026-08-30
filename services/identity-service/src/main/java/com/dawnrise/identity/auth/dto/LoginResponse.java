@@ -9,6 +9,7 @@ public class LoginResponse {
     private long expiresIn;
     private Long userId;
     private Long organizationId;
+    private String organizationName;
     private String username;
     private Set<String> roles;
 
@@ -21,6 +22,7 @@ public class LoginResponse {
             long expiresIn,
             Long userId,
             Long organizationId,
+            String organizationName,
             String username,
             Set<String> roles
     ) {
@@ -29,6 +31,7 @@ public class LoginResponse {
         this.expiresIn = expiresIn;
         this.userId = userId;
         this.organizationId = organizationId;
+        this.organizationName = organizationName;
         this.username = username;
         this.roles = roles;
     }
@@ -71,6 +74,14 @@ public class LoginResponse {
 
     public void setOrganizationId(Long organizationId) {
         this.organizationId = organizationId;
+    }
+
+    public String getOrganizationName() {
+        return organizationName;
+    }
+
+    public void setOrganizationName(String organizationName) {
+        this.organizationName = organizationName;
     }
 
     public String getUsername() {

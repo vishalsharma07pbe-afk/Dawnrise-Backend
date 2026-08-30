@@ -6,6 +6,8 @@ import com.dawnrise.school.school.DTO.InitialAuthorityRequest;
 import com.dawnrise.school.school.DTO.SchoolOnboardingRequest;
 import com.dawnrise.school.school.DTO.SchoolProvisioningResponse;
 import com.dawnrise.school.school.DTO.SchoolResponse;
+import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
+import com.dawnrise.school.school.DTO.SchoolLogoResponse;
 import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
 import com.dawnrise.school.school.entity.School;
 import com.dawnrise.school.school.entity.SchoolProvisioning;
@@ -76,7 +78,39 @@ public class SchoolServiceImpl implements SchoolService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public SchoolBrandingResponse getSchoolBranding(long schoolId) {
+        School school = findSchool(schoolId);
+        return new SchoolBrandingResponse(
+                school.getId(),
+                school.getName(),
+                school.getMotto(),
+                school.getTagline(),
+                school.getLogoData() != null
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SchoolLogoResponse getSchoolLogo(long schoolId) {
+        School school = findSchool(schoolId);
+        if (school.getLogoData() == null || school.getLogoContentType() == null) {
+            throw new ResourceNotFoundException("School logo not found");
+        }
+        return new SchoolLogoResponse(school.getLogoData(), school.getLogoContentType());
+    }
+
+    @Override
     public SchoolProvisioningResponse onboardSchool(SchoolOnboardingRequest request) {
+        return onboardSchool(request, null, null);
+    }
+
+    @Override
+    public SchoolProvisioningResponse onboardSchool(
+            SchoolOnboardingRequest request,
+            byte[] logoData,
+            String logoContentType
+    ) {
         if(schoolRepository.existsBySchoolCode(request.getSchoolCode())) {
             throw new DuplicateResourceException("School code already exists");
         }
@@ -95,6 +129,8 @@ public class SchoolServiceImpl implements SchoolService {
         Long schoolId = transactionTemplate.execute(status -> {
             School school = schoolMapper.toEntity(request);
             school.setPhone(normalizedSchoolPhone);
+            school.setLogoData(logoData);
+            school.setLogoContentType(logoContentType);
             School savedSchool = schoolRepository.save(school);
             InitialAuthorityRequest authority = request.getInitialAuthority();
             provisioningRepository.save(new SchoolProvisioning(

@@ -28,6 +28,18 @@ public class School {
     @Column(name = "address", length = 500)
     private String address;
 
+    @Column(name = "motto", length = 180)
+    private String motto;
+
+    @Column(name = "tagline", length = 240)
+    private String tagline;
+
+    @Column(name = "logo_data")
+    private byte[] logoData;
+
+    @Column(name = "logo_content_type", length = 50)
+    private String logoContentType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private SchoolStatus status = SchoolStatus.PENDING_PROVISIONING;
@@ -123,4 +135,13 @@ public class School {
     public Long getId() {
         return id;
     }
+
+    public String getMotto() { return motto; }
+    public void setMotto(String motto) { this.motto = motto; }
+    public String getTagline() { return tagline; }
+    public void setTagline(String tagline) { this.tagline = tagline; }
+    public byte[] getLogoData() { return logoData; }
+    public void setLogoData(byte[] logoData) { this.logoData = logoData; }
+    public String getLogoContentType() { return logoContentType; }
+    public void setLogoContentType(String logoContentType) { this.logoContentType = logoContentType; }
 }
