@@ -16,8 +16,6 @@ import com.dawnrise.identity.roleapproval.mapper.RoleAssignmentApprovalMapper;
 import com.dawnrise.identity.roleapproval.policy.RoleApprovalPolicy;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentApprovalRepository;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentRequestRepository;
-import com.dawnrise.identity.auth.activation.event.UserActivationRequestedEvent;
-import org.springframework.context.ApplicationEventPublisher;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserRole;
 import com.dawnrise.identity.user.enums.UserStatus;
@@ -29,12 +27,11 @@ import com.dawnrise.identity.securityaudit.service.SecurityAuditService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RoleAssignmentApprovalServiceImpl
@@ -45,8 +42,8 @@ public class RoleAssignmentApprovalServiceImpl
     private final UserRepository userRepository;
     private final RoleApprovalPolicy approvalPolicy;
     private final RoleAssignmentApprovalMapper approvalMapper;
-    private final ApplicationEventPublisher eventPublisher;
     private final SecurityAuditService auditService;
+    private final RoleAssignmentWorkflowService workflowService;
 
     public RoleAssignmentApprovalServiceImpl(
             RoleAssignmentRequestRepository requestRepository,
@@ -54,16 +51,16 @@ public class RoleAssignmentApprovalServiceImpl
             UserRepository userRepository,
             RoleApprovalPolicy approvalPolicy,
             RoleAssignmentApprovalMapper approvalMapper,
-            ApplicationEventPublisher eventPublisher,
-            SecurityAuditService auditService
+            SecurityAuditService auditService,
+            RoleAssignmentWorkflowService workflowService
     ) {
         this.requestRepository = requestRepository;
         this.approvalRepository = approvalRepository;
         this.userRepository = userRepository;
         this.approvalPolicy = approvalPolicy;
         this.approvalMapper = approvalMapper;
-        this.eventPublisher = eventPublisher;
         this.auditService = auditService;
+        this.workflowService = workflowService;
     }
 
     @Override
@@ -206,55 +203,11 @@ public class RoleAssignmentApprovalServiceImpl
 
         satisfiedApproverRoles.add(actingApproverRole);
 
-        Set<UserRole> requiredApproverRoles =
-                approvalPolicy.getRequiredApproverRoles(
-                        roleRequest.getRequestedRole()
-                );
-
-        boolean allRequiredApprovalsReceived =
-                satisfiedApproverRoles.containsAll(
-                        requiredApproverRoles
-                );
-
-        /*
-         * Assign the role only after every required approver role
-         * has submitted an approval.
-         */
-        if (allRequiredApprovalsReceived) {
-            User targetUser = userRepository
-                    .findByOrganizationIdAndId(
-                            organizationId,
-                            roleRequest.getUserId()
-                    )
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Target user not found"
-                    ));
-
-            targetUser.addRole(
-                    roleRequest.getRequestedRole()
-            );
-
-            roleRequest.approve();
-
-            auditService.record(
-                    organizationId,
-                    approver.getId(),
-                    SecurityAuditAction.ROLE_ASSIGNMENT_FINAL_ASSIGN,
-                    SecurityAuditOutcome.SUCCESS,
-                    "USER",
-                    targetUser.getId(),
-                    Map.of(
-                            "requestId", roleRequest.getId(),
-                            "role", roleRequest.getRequestedRole()
-                    )
-            );
-
-            // New sensitive-role users can activate only after approvals finish.
-            updateOnboardingStatusIfComplete(
-                    organizationId,
-                    roleRequest
-            );
-        }
+        workflowService.finalizeIfFullyApproved(
+                organizationId,
+                roleRequest,
+                approver.getId()
+        );
 
         return approvalMapper.toResponse(savedApproval);
     }
@@ -294,66 +247,14 @@ public class RoleAssignmentApprovalServiceImpl
         return PageResponse.from(responsePage);
     }
 
-    /*
-     * This method only changes accounts that are in the onboarding
-     * PENDING_APPROVAL state. Existing ACTIVE users remain ACTIVE
-     * when an additional role request is approved or rejected.
-     */
     private void updateOnboardingStatusIfComplete(
             Long organizationId,
             RoleAssignmentRequest completedRequest
     ) {
-        User targetUser = userRepository
-                .findByOrganizationIdAndId(
-                        organizationId,
-                        completedRequest.getUserId()
-                )
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Target user not found"
-                ));
-
-        if (targetUser.getStatus()
-                != UserStatus.PENDING_APPROVAL) {
-            return;
-        }
-
-        /*
-         * Exclude the request just completed. This prevents the result
-         * from depending on whether Hibernate has flushed its new status.
-         */
-        boolean anotherPendingRequestExists =
-                requestRepository
-                        .existsByOrganizationIdAndUserIdAndStatusAndIdNot(
-                                organizationId,
-                                targetUser.getId(),
-                                ApprovalStatus.PENDING,
-                                completedRequest.getId()
-                        );
-
-        if (anotherPendingRequestExists) {
-            return;
-        }
-
-        /*
-         * At least one assigned role means the account may continue
-         * to password activation. This includes routine roles and any
-         * sensitive roles that were approved.
-         */
-        if (!targetUser.getRoles().isEmpty()) {
-            targetUser.setStatus(
-                    UserStatus.PENDING_ACTIVATION
-            );
-
-            // Send the activation link only after the approval transaction commits.
-            eventPublisher.publishEvent(
-                    new UserActivationRequestedEvent(
-                            targetUser.getId()
-                    )
-            );
-        } else {
-            // Keep accounts without any approved or routine role unusable.
-            targetUser.setStatus(UserStatus.INACTIVE);
-        }
+        workflowService.updateOnboardingStatusIfComplete(
+                organizationId,
+                completedRequest
+        );
     }
 
     private void requirePermission(

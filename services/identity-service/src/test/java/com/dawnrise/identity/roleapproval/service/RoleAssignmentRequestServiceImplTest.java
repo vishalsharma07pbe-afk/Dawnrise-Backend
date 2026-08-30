@@ -54,6 +54,8 @@ class RoleAssignmentRequestServiceImplTest {
     private RoleAssignmentApprovalMapper approvalMapper;
     @Mock
     private SecurityAuditService auditService;
+    @Mock
+    private RoleAssignmentWorkflowService workflowService;
 
     private RoleAssignmentRequestServiceImpl service;
 
@@ -66,7 +68,8 @@ class RoleAssignmentRequestServiceImplTest {
                 approvalPolicy,
                 requestMapper,
                 approvalMapper,
-                auditService
+                auditService,
+                workflowService
         );
     }
 
@@ -213,6 +216,11 @@ class RoleAssignmentRequestServiceImplTest {
 
         assertSame(response, actual);
         verify(requestRepository).save(entity);
+        verify(workflowService).applyRequesterSignOff(
+                1L,
+                entity,
+                requester
+        );
     }
 
     @Test

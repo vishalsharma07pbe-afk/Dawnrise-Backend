@@ -1,4 +1,10 @@
 # IntelliJ IDEA
+# Finder and cloud-sync conflict copies
+**/* [0-9]
+**/* [0-9].*
+**/* copy
+**/* copy.*
+
 .idea/
 *.iml
 

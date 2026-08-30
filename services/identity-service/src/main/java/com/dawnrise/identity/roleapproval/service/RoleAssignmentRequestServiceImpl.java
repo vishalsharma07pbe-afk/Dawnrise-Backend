@@ -45,6 +45,7 @@ public class RoleAssignmentRequestServiceImpl implements RoleAssignmentRequestSe
     private final RoleAssignmentApprovalRepository approvalRepository;
     private final RoleAssignmentApprovalMapper approvalMapper;
     private final SecurityAuditService auditService;
+    private final RoleAssignmentWorkflowService workflowService;
 
     public RoleAssignmentRequestServiceImpl(
             RoleAssignmentRequestRepository requestRepository,
@@ -53,7 +54,8 @@ public class RoleAssignmentRequestServiceImpl implements RoleAssignmentRequestSe
             RoleApprovalPolicy approvalPolicy,
             RoleAssignmentRequestMapper requestMapper,
             RoleAssignmentApprovalMapper approvalMapper,
-            SecurityAuditService auditService
+            SecurityAuditService auditService,
+            RoleAssignmentWorkflowService workflowService
     ) {
         this.requestRepository = requestRepository;
         this.approvalRepository = approvalRepository;
@@ -62,6 +64,7 @@ public class RoleAssignmentRequestServiceImpl implements RoleAssignmentRequestSe
         this.requestMapper = requestMapper;
         this.approvalMapper = approvalMapper;
         this.auditService = auditService;
+        this.workflowService = workflowService;
     }
 
     @Override
@@ -156,6 +159,12 @@ public class RoleAssignmentRequestServiceImpl implements RoleAssignmentRequestSe
                         "targetUserId", targetUser.getId(),
                         "role", request.getRequestedRole()
                 )
+        );
+
+        workflowService.applyRequesterSignOff(
+                organizationId,
+                savedRequest,
+                requester
         );
 
         return requestMapper.toResponse(savedRequest);

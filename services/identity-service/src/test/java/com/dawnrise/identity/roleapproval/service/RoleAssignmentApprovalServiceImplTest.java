@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -52,9 +51,9 @@ class RoleAssignmentApprovalServiceImplTest {
     @Mock
     private RoleAssignmentApprovalMapper approvalMapper;
     @Mock
-    private ApplicationEventPublisher eventPublisher;
-    @Mock
     private SecurityAuditService auditService;
+    @Mock
+    private RoleAssignmentWorkflowService workflowService;
 
     private RoleAssignmentApprovalServiceImpl service;
 
@@ -66,8 +65,8 @@ class RoleAssignmentApprovalServiceImplTest {
                 userRepository,
                 approvalPolicy,
                 approvalMapper,
-                eventPublisher,
-                auditService
+                auditService,
+                workflowService
         );
     }
 
@@ -131,6 +130,34 @@ class RoleAssignmentApprovalServiceImplTest {
     }
 
     @Test
+    void recordDecision_whenApproverIsTargetUser_throwsApprovalNotAllowedException() {
+        RoleAssignmentRequest roleRequest = roleRequest();
+        User approver = user(20L, Set.of(UserRole.ADMIN), UserStatus.ACTIVE);
+
+        when(requestRepository.findByIdAndOrganizationId(100L, 1L))
+                .thenReturn(Optional.of(roleRequest));
+        when(userRepository.findByOrganizationIdAndId(1L, 20L))
+                .thenReturn(Optional.of(approver));
+
+        ApprovalNotAllowedException exception = assertThrows(
+                ApprovalNotAllowedException.class,
+                () -> service.recordDecision(
+                        1L,
+                        100L,
+                        auth(20L),
+                        decision(ApprovalDecision.APPROVED)
+                )
+        );
+
+        assertEquals(
+                "A user cannot approve a role requested for themselves",
+                exception.getMessage()
+        );
+        verify(approvalRepository, never())
+                .existsByRequestIdAndApproverUserId(anyLong(), anyLong());
+    }
+
+    @Test
     void recordDecision_whenAlreadyDecided_throwsDuplicateResourceException() {
         RoleAssignmentRequest roleRequest = roleRequest();
         User approver = user(30L, Set.of(UserRole.ADMIN), UserStatus.ACTIVE);
@@ -162,7 +189,6 @@ class RoleAssignmentApprovalServiceImplTest {
     void recordDecision_whenRejected_savesApprovalAndRejectsRequest() {
         RoleAssignmentRequest roleRequest = roleRequest();
         User approver = user(30L, Set.of(UserRole.ADMIN), UserStatus.ACTIVE);
-        User targetUser = user(20L, Set.of(UserRole.TEACHER), UserStatus.ACTIVE);
         RoleApprovalDecisionRequest decision = decision(ApprovalDecision.REJECTED);
         RoleAssignmentApproval approval = approval(UserRole.ADMIN, ApprovalDecision.REJECTED);
         RoleAssignmentApprovalResponse response = new RoleAssignmentApprovalResponse();
@@ -171,8 +197,6 @@ class RoleAssignmentApprovalServiceImplTest {
                 .thenReturn(Optional.of(roleRequest));
         when(userRepository.findByOrganizationIdAndId(1L, 30L))
                 .thenReturn(Optional.of(approver));
-        when(userRepository.findByOrganizationIdAndId(1L, 20L))
-                .thenReturn(Optional.of(targetUser));
         when(approvalRepository.existsByRequestIdAndApproverUserId(100L, 30L))
                 .thenReturn(false);
         when(approvalRepository.findAllByRequestId(100L)).thenReturn(List.of());
@@ -191,14 +215,16 @@ class RoleAssignmentApprovalServiceImplTest {
 
         assertSame(response, actual);
         assertFalse(roleRequest.isPending());
-        assertEquals(UserStatus.ACTIVE, targetUser.getStatus());
+        verify(workflowService).updateOnboardingStatusIfComplete(
+                1L,
+                roleRequest
+        );
     }
 
     @Test
-    void recordDecision_whenFinalApprovalReceived_addsRoleAndApprovesRequest() {
+    void recordDecision_whenApproved_delegatesFinalizationWorkflow() {
         RoleAssignmentRequest roleRequest = roleRequest();
         User approver = user(40L, Set.of(UserRole.PRINCIPAL), UserStatus.ACTIVE);
-        User targetUser = user(20L, Set.of(UserRole.TEACHER), UserStatus.ACTIVE);
         RoleApprovalDecisionRequest decision = decision(ApprovalDecision.APPROVED);
         RoleAssignmentApproval priorApproval =
                 approval(UserRole.ADMIN, ApprovalDecision.APPROVED);
@@ -222,22 +248,21 @@ class RoleAssignmentApprovalServiceImplTest {
         when(approvalMapper.toEntity(100L, 40L, UserRole.PRINCIPAL, decision))
                 .thenReturn(approval);
         when(approvalRepository.save(approval)).thenReturn(approval);
-        when(approvalPolicy.getRequiredApproverRoles(UserRole.ADMIN))
-                .thenReturn(Set.of(UserRole.ADMIN, UserRole.PRINCIPAL));
-        when(userRepository.findByOrganizationIdAndId(1L, 20L))
-                .thenReturn(Optional.of(targetUser));
         when(approvalMapper.toResponse(approval)).thenReturn(response);
 
         RoleAssignmentApprovalResponse actual =
                 service.recordDecision(1L, 100L, auth(40L), decision);
 
         assertSame(response, actual);
-        assertTrue(targetUser.hasRole(UserRole.ADMIN));
-        assertFalse(roleRequest.isPending());
+        verify(workflowService).finalizeIfFullyApproved(
+                1L,
+                roleRequest,
+                40L
+        );
     }
 
     @Test
-    void recordDecision_whenApprovalStillNeedsAnotherRole_doesNotAddTargetRole() {
+    void recordDecision_whenApprovalStillNeedsAnotherRole_delegatesFinalizationWorkflow() {
         RoleAssignmentRequest roleRequest = roleRequest();
         User approver = user(30L, Set.of(UserRole.ADMIN), UserStatus.ACTIVE);
         RoleApprovalDecisionRequest decision = decision(ApprovalDecision.APPROVED);
@@ -259,15 +284,16 @@ class RoleAssignmentApprovalServiceImplTest {
         when(approvalMapper.toEntity(100L, 30L, UserRole.ADMIN, decision))
                 .thenReturn(approval);
         when(approvalRepository.save(approval)).thenReturn(approval);
-        when(approvalPolicy.getRequiredApproverRoles(UserRole.ADMIN))
-                .thenReturn(Set.of(UserRole.ADMIN, UserRole.PRINCIPAL));
         when(approvalMapper.toResponse(approval))
                 .thenReturn(new RoleAssignmentApprovalResponse());
 
         service.recordDecision(1L, 100L, auth(30L), decision);
 
-        assertTrue(roleRequest.isPending());
-        verify(userRepository, never()).findByOrganizationIdAndId(1L, 20L);
+        verify(workflowService).finalizeIfFullyApproved(
+                1L,
+                roleRequest,
+                30L
+        );
     }
 
     @Test

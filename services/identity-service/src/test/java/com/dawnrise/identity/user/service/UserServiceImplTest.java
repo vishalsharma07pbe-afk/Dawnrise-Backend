@@ -15,6 +15,7 @@ import com.dawnrise.identity.roleapproval.exception.InvalidRoleRequestException;
 import com.dawnrise.identity.roleapproval.mapper.RoleAssignmentRequestMapper;
 import com.dawnrise.identity.roleapproval.policy.RoleApprovalPolicy;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentRequestRepository;
+import com.dawnrise.identity.roleapproval.service.RoleAssignmentWorkflowService;
 import com.dawnrise.identity.roleremoval.repository.RoleRemovalRequestRepository;
 import com.dawnrise.identity.securityaudit.service.SecurityAuditService;
 import com.dawnrise.identity.user.dto.*;
@@ -63,6 +64,8 @@ public class UserServiceImplTest {
     @Mock
     private RoleAssignmentRequestMapper roleRequestMapper;
     @Mock
+    private RoleAssignmentWorkflowService roleAssignmentWorkflowService;
+    @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private UserStatusTransitionPolicy statusTransitionPolicy;
@@ -83,6 +86,7 @@ public class UserServiceImplTest {
                 roleRequestRepository,
                 roleRemovalRequestRepository,
                 roleRequestMapper,
+                roleAssignmentWorkflowService,
                 eventPublisher,
                 statusTransitionPolicy,
                 new UserStatusAuthorizationPolicy(statusTransitionPolicy),
@@ -424,6 +428,8 @@ public class UserServiceImplTest {
                 eq(99L),
                 any(CreateRoleAssignmentRequest.class)
         )).thenReturn(roleRequest);
+        when(roleRequestRepository.save(roleRequest))
+                .thenReturn(roleRequest);
 
         when(userMapper.toResponse(candidate))
                 .thenReturn(expectedResponse);
@@ -443,6 +449,11 @@ public class UserServiceImplTest {
         );
 
         verify(roleRequestRepository).save(roleRequest);
+        verify(roleAssignmentWorkflowService).applyRequesterSignOff(
+                1L,
+                roleRequest,
+                creator
+        );
 
         verify(eventPublisher, never()).publishEvent(
                 any(UserActivationRequestedEvent.class)
@@ -930,6 +941,8 @@ public class UserServiceImplTest {
                 eq(99L),
                 any()
         )).thenReturn(approvalRequest);
+        when(roleRequestRepository.save(approvalRequest))
+                .thenReturn(approvalRequest);
         when(userRepository.save(user)).thenReturn(user);
         when(userMapper.toResponse(user)).thenReturn(expectedResponse);
 
@@ -939,6 +952,11 @@ public class UserServiceImplTest {
         assertSame(expectedResponse, actualResponse);
         assertEquals(Set.of(UserRole.TEACHER), user.getRoles());
         verify(roleRequestRepository).save(approvalRequest);
+        verify(roleAssignmentWorkflowService).applyRequesterSignOff(
+                1L,
+                approvalRequest,
+                updater
+        );
         verify(userRepository).save(user);
         verify(userMapper).toResponse(user);
     }

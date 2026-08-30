@@ -13,6 +13,7 @@ import com.dawnrise.identity.roleapproval.exception.InvalidRoleRequestException;
 import com.dawnrise.identity.roleapproval.mapper.RoleAssignmentRequestMapper;
 import com.dawnrise.identity.roleapproval.policy.RoleApprovalPolicy;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentRequestRepository;
+import com.dawnrise.identity.roleapproval.service.RoleAssignmentWorkflowService;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.permission.enums.PermissionCode;
 import com.dawnrise.identity.roleremoval.repository.RoleRemovalRequestRepository;
@@ -40,6 +41,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dawnrise.identity.roleapproval.exception.ApprovalNotAllowedException;
 
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -54,6 +57,7 @@ public class UserServiceImpl implements UserService {
     private final RoleAssignmentRequestRepository roleRequestRepository;
     private final RoleRemovalRequestRepository roleRemovalRequestRepository;
     private final RoleAssignmentRequestMapper roleRequestMapper;
+    private final RoleAssignmentWorkflowService roleAssignmentWorkflowService;
     private final ApplicationEventPublisher eventPublisher;
     private final UserStatusTransitionPolicy statusTransitionPolicy;
     private final UserStatusAuthorizationPolicy statusAuthorizationPolicy;
@@ -68,6 +72,7 @@ public class UserServiceImpl implements UserService {
             RoleAssignmentRequestRepository roleRequestRepository,
             RoleRemovalRequestRepository roleRemovalRequestRepository,
             RoleAssignmentRequestMapper roleRequestMapper,
+            RoleAssignmentWorkflowService roleAssignmentWorkflowService,
             ApplicationEventPublisher eventPublisher,
             UserStatusTransitionPolicy statusTransitionPolicy,
             UserStatusAuthorizationPolicy statusAuthorizationPolicy,
@@ -81,6 +86,7 @@ public class UserServiceImpl implements UserService {
         this.roleRequestRepository = roleRequestRepository;
         this.roleRemovalRequestRepository = roleRemovalRequestRepository;
         this.roleRequestMapper = roleRequestMapper;
+        this.roleAssignmentWorkflowService = roleAssignmentWorkflowService;
         this.eventPublisher = eventPublisher;
         this.statusTransitionPolicy = statusTransitionPolicy;
         this.statusAuthorizationPolicy = statusAuthorizationPolicy;
@@ -200,6 +206,7 @@ public class UserServiceImpl implements UserService {
         User savedUser = userRepository.save(user);
 
         // Create one independent approval request for every sensitive role.
+        List<RoleAssignmentRequest> savedRoleRequests = new ArrayList<>();
         for (UserRole sensitiveRole : sensitiveRoles) {
             CreateRoleAssignmentRequest approvalRequest =
                     new CreateRoleAssignmentRequest(
@@ -215,7 +222,30 @@ public class UserServiceImpl implements UserService {
                             approvalRequest
                     );
 
-            roleRequestRepository.save(roleRequest);
+            RoleAssignmentRequest savedRoleRequest =
+                    roleRequestRepository.save(roleRequest);
+            savedRoleRequests.add(savedRoleRequest);
+
+            auditService.record(
+                    organizationId,
+                    authorizationContext.getUserId(),
+                    SecurityAuditAction.ROLE_ASSIGNMENT_REQUEST_CREATE,
+                    SecurityAuditOutcome.SUCCESS,
+                    "ROLE_ASSIGNMENT_REQUEST",
+                    savedRoleRequest.getId(),
+                    Map.of(
+                            "targetUserId", savedUser.getId(),
+                            "role", sensitiveRole
+                    )
+            );
+        }
+
+        for (RoleAssignmentRequest savedRoleRequest : savedRoleRequests) {
+            roleAssignmentWorkflowService.applyRequesterSignOff(
+                    organizationId,
+                    savedRoleRequest,
+                    creator
+            );
         }
 
         // Send activation only after a routine-role user is committed successfully.
@@ -492,7 +522,27 @@ public class UserServiceImpl implements UserService {
                             approvalRequest
                     );
 
-            roleRequestRepository.save(roleRequest);
+            RoleAssignmentRequest savedRoleRequest =
+                    roleRequestRepository.save(roleRequest);
+
+            auditService.record(
+                    organizationId,
+                    authorizationContext.getUserId(),
+                    SecurityAuditAction.ROLE_ASSIGNMENT_REQUEST_CREATE,
+                    SecurityAuditOutcome.SUCCESS,
+                    "ROLE_ASSIGNMENT_REQUEST",
+                    savedRoleRequest.getId(),
+                    Map.of(
+                            "targetUserId", targetUser.getId(),
+                            "role", sensitiveRole
+                    )
+            );
+
+            roleAssignmentWorkflowService.applyRequesterSignOff(
+                    organizationId,
+                    savedRoleRequest,
+                    updater
+            );
         }
 
         for (UserRole removedRole : rolesToRemove) {
