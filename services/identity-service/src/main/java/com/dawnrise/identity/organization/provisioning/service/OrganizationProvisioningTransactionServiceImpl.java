@@ -14,6 +14,7 @@ import com.dawnrise.identity.organization.repository.OrganizationRepository;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserRole;
 import com.dawnrise.identity.user.repository.UserRepository;
+import com.dawnrise.identity.user.policy.UsernamePolicy;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
@@ -89,9 +90,17 @@ public class OrganizationProvisioningTransactionServiceImpl
         InitialAuthorityRequest authorityRequest =
                 request.getAuthority();
 
+        String authorityUsername = UsernamePolicy.resolveAvailable(
+                authorityRequest.getUsername(),
+                candidate -> userRepository.existsByOrganizationIdAndUsername(
+                        request.getOrganizationId(),
+                        candidate
+                )
+        );
+
         User authorityUser = new User(
                 request.getOrganizationId(),
-                authorityRequest.getUsername(),
+                authorityUsername,
                 authorityRequest.getFirstName(),
                 Set.of(UserRole.GOVERNING_AUTHORITY)
         );

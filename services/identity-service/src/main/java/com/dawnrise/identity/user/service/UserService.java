@@ -31,6 +31,7 @@ public interface UserService {
 
     UserResponse updateUserProfile(
             Long organizationId,
+            AuthorizationContext authorizationContext,
             Long userId,
             UpdateUserProfileRequest request
     );

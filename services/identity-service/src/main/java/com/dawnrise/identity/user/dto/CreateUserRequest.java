@@ -17,10 +17,6 @@ public class CreateUserRequest {
             max = 100,
             message = "Username must be between 3 and 100 characters"
     )
-    @Pattern(
-            regexp = "^[a-zA-Z0-9._-]+$",
-            message = "Username can contain only letters, numbers, dots, underscores, and hyphens"
-    )
     private String username;
 
     @NotBlank(message = "First name is required")

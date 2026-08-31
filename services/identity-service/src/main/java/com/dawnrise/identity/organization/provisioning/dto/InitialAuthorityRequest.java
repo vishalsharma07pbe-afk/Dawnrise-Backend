@@ -13,10 +13,6 @@ public class InitialAuthorityRequest {
             max = 100,
             message = "Authority username must contain between 3 and 100 characters"
     )
-    @Pattern(
-            regexp = "^[a-zA-Z0-9._-]+$",
-            message = "Authority username contains invalid characters"
-    )
     private String username;
 
     @NotBlank(message = "Authority first name is required")

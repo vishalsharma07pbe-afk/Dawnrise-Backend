@@ -124,12 +124,13 @@ public class UserController {
     public ResponseEntity<UserResponse> updateUserProfile(
             @PathVariable Long organizationId,
             @PathVariable Long userId,
-            @Valid @RequestBody
-            UpdateUserProfileRequest request
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UpdateUserProfileRequest request
     ) {
         UserResponse response =
                 userService.updateUserProfile(
                         organizationId,
+                        AuthorizationContext.fromJwt(jwt),
                         userId,
                         request
                 );

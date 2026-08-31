@@ -7,6 +7,7 @@ import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.organization.repository.OrganizationRepository;
 import com.dawnrise.identity.organization.entity.Organization;
 import com.dawnrise.identity.permission.enums.PermissionCode;
+import com.dawnrise.identity.profilechange.exception.ProfileChangeNotAllowedException;
 import com.dawnrise.identity.roleapproval.dto.CreateRoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.entity.RoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.enums.ApprovalStatus;
@@ -100,12 +101,19 @@ public class UserServiceImplTest {
     }
 
     @Test
-    void createUser_whenUsernameExists_throwsDuplicateResourceException() {
+    void createUser_whenUsernameExists_addsNumericSuffix() {
         CreateUserRequest request = new CreateUserRequest();
         request.setOrganizationId(1L);
         request.setUsername("teacher01");
+        request.setFirstName("Teacher");
+        request.setEmail("teacher@dawnrise.com");
+        request.setRoles(Set.of(UserRole.TEACHER));
         User creator = user(99L, 1L, "admin01", "admin@dawnrise.com");
         creator.setStatus(UserStatus.ACTIVE);
+        User created = new User();
+        created.setUsername("teacher01.2");
+        UserResponse response = new UserResponse();
+        response.setUsername("teacher01.2");
 
         when(userRepository.findByOrganizationIdAndId(1L, 99L))
                 .thenReturn(Optional.of(creator));
@@ -113,24 +121,27 @@ public class UserServiceImplTest {
                 1L,
                 "teacher01"
         )).thenReturn(true);
+        when(userRepository.existsByOrganizationIdAndUsername(1L, "teacher01.2"))
+                .thenReturn(false);
+        when(userRepository.existsByOrganizationIdAndEmail(1L, "teacher@dawnrise.com"))
+                .thenReturn(false);
+        when(roleApprovalPolicy.getRoutineRoles(Set.of(UserRole.TEACHER)))
+                .thenReturn(Set.of(UserRole.TEACHER));
+        when(userMapper.toEntity(request)).thenReturn(created);
+        when(userRepository.save(created)).thenReturn(created);
+        when(userMapper.toResponse(created)).thenReturn(response);
 
-        DuplicateResourceException exception = assertThrows(
-                DuplicateResourceException.class,
-                () -> userService.createUser(1L, auth(99L), request)
-        );
+        UserResponse actual = userService.createUser(1L, auth(99L), request);
 
-        assertEquals(
-                "Username already exists in this organization: teacher01",
-                exception.getMessage()
-        );
+        assertSame(response, actual);
+        assertEquals("teacher01.2", request.getUsername());
 
         verify(userRepository).existsByOrganizationIdAndUsername(
                 1L,
                 "teacher01"
         );
 
-        verify(userRepository, never())
-                .save(any(User.class));
+        verify(userRepository).save(created);
     }
 
     @Test
@@ -569,7 +580,7 @@ public class UserServiceImplTest {
 
         ResourceNotFoundException exception = assertThrows(
                 ResourceNotFoundException.class,
-                () -> userService.updateUserProfile(1L, 10L, request)
+                () -> userService.updateUserProfile(1L, auth(10L), 10L, request)
         );
 
         assertEquals(
@@ -587,18 +598,43 @@ public class UserServiceImplTest {
 
         when(userRepository.findByOrganizationIdAndId(1L, 10L))
                 .thenReturn(Optional.of(user));
-        when(userRepository.existsByOrganizationIdAndEmail(
+        when(userRepository.existsByOrganizationIdAndEmailIgnoreCase(
                 1L,
                 "new@dawnrise.com"
         )).thenReturn(true);
 
         DuplicateResourceException exception = assertThrows(
                 DuplicateResourceException.class,
-                () -> userService.updateUserProfile(1L, 10L, request)
+                () -> userService.updateUserProfile(1L, auth(10L), 10L, request)
         );
 
         assertEquals(
                 "Email already exists in this organization: new@dawnrise.com",
+                exception.getMessage()
+        );
+        verify(userMapper, never())
+                .updateProfile(any(UpdateUserProfileRequest.class),
+                        any(User.class));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void updateUserProfile_whenUpdatingActiveOtherUser_throwsProfileChangeNotAllowedException() {
+        UpdateUserProfileRequest request = new UpdateUserProfileRequest();
+        request.setFirstName("Rohan");
+        User user = user(1L, "teacher01", "old@dawnrise.com");
+        user.setStatus(UserStatus.ACTIVE);
+
+        when(userRepository.findByOrganizationIdAndId(1L, 10L))
+                .thenReturn(Optional.of(user));
+
+        ProfileChangeNotAllowedException exception = assertThrows(
+                ProfileChangeNotAllowedException.class,
+                () -> userService.updateUserProfile(1L, auth(99L), 10L, request)
+        );
+
+        assertEquals(
+                "Changes to an active user's profile require that user's approval",
                 exception.getMessage()
         );
         verify(userMapper, never())
@@ -621,7 +657,7 @@ public class UserServiceImplTest {
         when(userMapper.toResponse(user)).thenReturn(expectedResponse);
 
         UserResponse actualResponse =
-                userService.updateUserProfile(1L, 10L, request);
+                userService.updateUserProfile(1L, auth(10L), 10L, request);
 
         assertSame(expectedResponse, actualResponse);
         verify(userRepository, never())
@@ -641,7 +677,7 @@ public class UserServiceImplTest {
 
         when(userRepository.findByOrganizationIdAndId(1L, 10L))
                 .thenReturn(Optional.of(user));
-        when(userRepository.existsByOrganizationIdAndEmail(
+        when(userRepository.existsByOrganizationIdAndEmailIgnoreCase(
                 1L,
                 "new@dawnrise.com"
         )).thenReturn(false);
@@ -649,7 +685,7 @@ public class UserServiceImplTest {
         when(userMapper.toResponse(user)).thenReturn(expectedResponse);
 
         UserResponse actualResponse =
-                userService.updateUserProfile(1L, 10L, request);
+                userService.updateUserProfile(1L, auth(10L), 10L, request);
 
         assertSame(expectedResponse, actualResponse);
         verify(userMapper).updateProfile(request, user);
@@ -1128,7 +1164,9 @@ public class UserServiceImplTest {
                         PermissionCode.USER_SUSPEND,
                         PermissionCode.USER_DEACTIVATE,
                         PermissionCode.USER_REACTIVATE,
-                        PermissionCode.USER_ACTIVATION_RESEND
+                        PermissionCode.USER_ACTIVATION_RESEND,
+                        PermissionCode.PROFILE_UPDATE_SELF,
+                        PermissionCode.USER_PROFILE_UPDATE
                 )
         );
     }

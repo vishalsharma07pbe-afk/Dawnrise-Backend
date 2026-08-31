@@ -198,7 +198,7 @@ class UserControllerSecurityIntegrationTest {
     @Test
     void updateSelf_withProfileUpdateSelf_succeeds() throws Exception {
         useJwt("token", 1L, 10L, Set.of("TEACHER"), Set.of("PROFILE_UPDATE_SELF"));
-        when(userService.updateUserProfile(eq(1L), eq(10L), any()))
+        when(userService.updateUserProfile(eq(1L), any(), eq(10L), any()))
                 .thenReturn(response(10L, 1L, "teacher01"));
 
         mockMvc.perform(put(BASE_URL + "/{userId}/profile", 1L, 10L)
@@ -223,7 +223,7 @@ class UserControllerSecurityIntegrationTest {
     @Test
     void updateOther_withUserProfileUpdate_succeeds() throws Exception {
         useJwt("token", 1L, 10L, Set.of("HR"), Set.of("USER_PROFILE_UPDATE"));
-        when(userService.updateUserProfile(eq(1L), eq(11L), any()))
+        when(userService.updateUserProfile(eq(1L), any(), eq(11L), any()))
                 .thenReturn(response(11L, 1L, "student01"));
 
         mockMvc.perform(put(BASE_URL + "/{userId}/profile", 1L, 11L)

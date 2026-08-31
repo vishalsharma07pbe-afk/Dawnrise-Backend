@@ -6,6 +6,7 @@ import com.dawnrise.identity.auth.security.AuthorizationContext;
 import com.dawnrise.identity.common.dto.PageResponse;
 import com.dawnrise.identity.common.exception.DuplicateResourceException;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
+import com.dawnrise.identity.profilechange.exception.ProfileChangeNotAllowedException;
 import com.dawnrise.identity.roleapproval.dto.CreateRoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.entity.RoleAssignmentRequest;
 import com.dawnrise.identity.roleapproval.enums.ApprovalStatus;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.dawnrise.identity.user.policy.UsernamePolicy;
 
 @Service
 @Transactional
@@ -130,16 +132,14 @@ public class UserServiceImpl implements UserService {
                         request.getRoles()
                 );
 
-        // Check username uniqueness within the organization.
-        if (userRepository.existsByOrganizationIdAndUsername(
-                organizationId,
-                request.getUsername()
-        )) {
-            throw new DuplicateResourceException(
-                    "Username already exists in this organization: "
-                            + request.getUsername()
-            );
-        }
+        String availableUsername = UsernamePolicy.resolveAvailable(
+                request.getUsername(),
+                candidate -> userRepository.existsByOrganizationIdAndUsername(
+                        organizationId,
+                        candidate
+                )
+        );
+        request.setUsername(availableUsername);
 
         // Check email uniqueness within the organization.
         if (request.getEmail() != null
@@ -308,6 +308,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse updateUserProfile(
             Long organizationId,
+            AuthorizationContext authorizationContext,
             Long userId,
             UpdateUserProfileRequest request
     ) {
@@ -321,13 +322,38 @@ public class UserServiceImpl implements UserService {
                                 + " in organization: " + organizationId
                 ));
 
+        Long currentUserId = authorizationContext.getUserId();
+        boolean selfUpdate = currentUserId.equals(userId);
+
+        if (selfUpdate) {
+            requirePermission(
+                    authorizationContext,
+                    PermissionCode.PROFILE_UPDATE_SELF
+            );
+        } else {
+            requirePermission(
+                    authorizationContext,
+                    PermissionCode.USER_PROFILE_UPDATE
+            );
+
+            boolean onboardingAccount =
+                    user.getStatus() == UserStatus.PENDING_APPROVAL
+                            || user.getStatus() == UserStatus.PENDING_ACTIVATION;
+
+            if (!onboardingAccount) {
+                throw new ProfileChangeNotAllowedException(
+                        "Changes to an active user's profile require that user's approval"
+                );
+            }
+        }
+
         // Prevent duplicate email addresses within the organization.
         if (request.getEmail() != null
                 && !request.getEmail().isBlank()
                 && !request.getEmail().equalsIgnoreCase(user.getEmail())
-                && userRepository.existsByOrganizationIdAndEmail(
+                && userRepository.existsByOrganizationIdAndEmailIgnoreCase(
                 organizationId,
-                request.getEmail()
+                request.getEmail().trim()
         )) {
             throw new DuplicateResourceException(
                     "Email already exists in this organization: "
