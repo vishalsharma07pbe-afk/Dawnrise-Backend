@@ -254,7 +254,7 @@ public class UserServiceControllerTest {
         response.setEmail("rohan@dawnrise.com");
         response.setPhone("+91 9999999999");
 
-        when(userService.updateUserProfile(eq(1L), eq(10L), any()))
+        when(userService.updateUserProfile(eq(1L), any(), eq(10L), any()))
                 .thenReturn(response);
 
         mockMvc.perform(put(BASE_URL + "/{userId}/profile", 1L, 10L)
@@ -273,7 +273,7 @@ public class UserServiceControllerTest {
                 .andExpect(jsonPath("$.email").value("rohan@dawnrise.com"))
                 .andExpect(jsonPath("$.phone").value("+91 9999999999"));
 
-        verify(userService).updateUserProfile(eq(1L), eq(10L), any());
+        verify(userService).updateUserProfile(eq(1L), any(), eq(10L), any());
     }
 
     @Test
@@ -299,7 +299,7 @@ public class UserServiceControllerTest {
                         "Phone number must be valid"));
 
         verify(userService, never())
-                .updateUserProfile(any(), any(), any());
+                .updateUserProfile(any(), any(), any(), any());
     }
 
     @Test

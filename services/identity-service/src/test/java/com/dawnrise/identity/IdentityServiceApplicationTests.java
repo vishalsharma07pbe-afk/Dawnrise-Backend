@@ -12,6 +12,7 @@ import com.dawnrise.identity.platform.auth.refreshtoken.repository.PlatformRefre
 import com.dawnrise.identity.platform.auth.passwordreset.repository.PlatformUserPasswordResetTokenRepository;
 import com.dawnrise.identity.platform.permission.repository.PlatformRolePermissionRepository;
 import com.dawnrise.identity.platform.user.repository.PlatformUserRepository;
+import com.dawnrise.identity.profilechange.repository.ProfileChangeRequestRepository;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentApprovalRepository;
 import com.dawnrise.identity.roleapproval.repository.RoleAssignmentRequestRepository;
 import com.dawnrise.identity.roleremoval.repository.RoleRemovalApprovalRepository;
@@ -39,6 +40,8 @@ class IdentityServiceApplicationTests {
     private RoleRemovalRequestRepository removalRequestRepository;
     @MockitoBean
     private RoleRemovalApprovalRepository removalApprovalRepository;
+    @MockitoBean
+    private ProfileChangeRequestRepository profileChangeRequestRepository;
     @MockitoBean
     private SecurityAuditEventRepository securityAuditEventRepository;
     @MockitoBean

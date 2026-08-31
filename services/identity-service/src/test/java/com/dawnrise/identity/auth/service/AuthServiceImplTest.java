@@ -509,6 +509,28 @@ class AuthServiceImplTest {
     }
 
     @Test
+    void changePassword_whenNewPasswordMatchesCurrent_throwsPasswordChangeNotAllowedException() {
+        ChangePasswordRequest request = changePasswordRequest();
+        User user = user(UserStatus.ACTIVE);
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(anyString(), eq("encoded-password")))
+                .thenReturn(true);
+
+        PasswordChangeNotAllowedException exception = assertThrows(
+                PasswordChangeNotAllowedException.class,
+                () -> authService.changePassword(10L, request)
+        );
+
+        assertEquals(
+                "New password must be different from the current password",
+                exception.getMessage()
+        );
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(refreshTokenService, never()).revokeAllForUser(anyLong());
+    }
+
+    @Test
     void changePassword_whenValid_updatesPasswordAndRevokesSessions() {
         ChangePasswordRequest request = changePasswordRequest();
         User user = user(UserStatus.ACTIVE);

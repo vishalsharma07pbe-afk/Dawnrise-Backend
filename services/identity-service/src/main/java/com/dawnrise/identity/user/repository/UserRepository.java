@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import com.dawnrise.identity.user.enums.UserRole;
 import com.dawnrise.identity.user.enums.UserStatus;
+import java.util.Collection;
+import java.util.List;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
@@ -77,5 +79,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByOrganizationIdAndRole(
             @Param("organizationId") Long organizationId,
             @Param("role") UserRole role
+    );
+
+    List<User> findAllByOrganizationIdAndIdIn(
+            Long organizationId,
+            Collection<Long> userIds
     );
 }

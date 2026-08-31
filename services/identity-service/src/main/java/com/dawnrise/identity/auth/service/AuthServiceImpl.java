@@ -256,6 +256,15 @@ public class AuthServiceImpl implements AuthService {
             );
         }
 
+        if (passwordEncoder.matches(
+                request.getNewPassword(),
+                user.getPasswordHash()
+        )) {
+            throw new PasswordChangeNotAllowedException(
+                    "New password must be different from the current password"
+            );
+        }
+
         enforcePasswordChangeCooldown(user);
 
         user.resetPassword(

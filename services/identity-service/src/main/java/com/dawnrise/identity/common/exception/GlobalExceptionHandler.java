@@ -25,6 +25,8 @@ import com.dawnrise.identity.auth.passwordreset.exception.InvalidPasswordResetTo
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningConflictException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningInProgressException;
+import com.dawnrise.identity.profilechange.exception.InvalidProfileChangeStateException;
+import com.dawnrise.identity.profilechange.exception.ProfileChangeNotAllowedException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -394,6 +396,40 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(response);
+    }
+
+    @ExceptionHandler(ProfileChangeNotAllowedException.class)
+    public ResponseEntity<ApiErrorResponse> handleProfileChangeNotAllowed(
+            ProfileChangeNotAllowedException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(response);
+    }
+
+    @ExceptionHandler(InvalidProfileChangeStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidProfileChangeState(
+            InvalidProfileChangeStateException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
                 .body(response);
     }
 
