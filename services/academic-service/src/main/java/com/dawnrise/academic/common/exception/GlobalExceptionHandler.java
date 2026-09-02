@@ -3,6 +3,9 @@ package com.dawnrise.academic.common.exception;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.gradelevel.exception.GradeLevelConflictException;
+import com.dawnrise.academic.gradelevel.exception.GradeLevelNotFoundException;
+import com.dawnrise.academic.gradelevel.exception.InvalidGradeLevelException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -180,6 +183,45 @@ public class GlobalExceptionHandler {
         return response(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "An unexpected error occurred.",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidGradeLevelException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidGradeLevel(
+            InvalidGradeLevelException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(GradeLevelNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGradeLevelNotFound(
+            GradeLevelNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(GradeLevelConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleGradeLevelConflict(
+            GradeLevelConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
                 request,
                 null
         );

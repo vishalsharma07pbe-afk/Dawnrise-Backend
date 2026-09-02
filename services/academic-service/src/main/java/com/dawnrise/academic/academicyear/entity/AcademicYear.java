@@ -38,6 +38,15 @@ public class AcademicYear {
     @Column(name = "version", nullable = false)
     private Long version;
 
+    @Column(name = "void_reason", length = 500)
+    private String voidReason;
+
+    @Column(name = "voided_at")
+    private OffsetDateTime voidedAt;
+
+    @Column(name = "voided_by_user_id")
+    private Long voidedByUserId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -134,6 +143,47 @@ public class AcademicYear {
         this.endDate = endDate;
     }
 
+    public void voidYear(
+            String reason,
+            Long authenticatedUserId
+    ) {
+        if (status == AcademicYearStatus.ACTIVE) {
+            throw new AcademicYearConflictException(
+                    "An active academic year must be closed before it can be voided"
+            );
+        }
+
+        if (status == AcademicYearStatus.VOIDED) {
+            throw new AcademicYearConflictException(
+                    "Academic year is already voided"
+            );
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw new InvalidAcademicYearException(
+                    "Void reason is required"
+            );
+        }
+
+        String normalizedReason = reason.trim();
+
+        if (normalizedReason.length() > 500) {
+            throw new InvalidAcademicYearException(
+                    "Void reason cannot exceed 500 characters"
+            );
+        }
+
+        if (authenticatedUserId == null || authenticatedUserId <= 0) {
+            throw new InvalidAcademicYearException(
+                    "Authenticated user ID must be greater than zero"
+            );
+        }
+
+        this.status = AcademicYearStatus.VOIDED;
+        this.voidReason = normalizedReason;
+        this.voidedAt = OffsetDateTime.now();
+        this.voidedByUserId = authenticatedUserId;
+    }
 
     public Long getId() {
         return id;
@@ -151,28 +201,28 @@ public class AcademicYear {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
-    }
-
     public LocalDate getStartDate() {
         return startDate;
-    }
-
-    public void setStartDate(LocalDate startDate) {
-        this.startDate = startDate;
     }
 
     public LocalDate getEndDate() {
         return endDate;
     }
 
-    public void setEndDate(LocalDate endDate) {
-        this.endDate = endDate;
-    }
-
     public AcademicYearStatus getStatus() {
         return status;
+    }
+
+    public String getVoidReason() {
+        return voidReason;
+    }
+
+    public OffsetDateTime getVoidedAt() {
+        return voidedAt;
+    }
+
+    public Long getVoidedByUserId() {
+        return voidedByUserId;
     }
 
     public OffsetDateTime getCreatedAt() {

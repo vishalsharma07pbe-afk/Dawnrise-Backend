@@ -78,8 +78,25 @@ public enum PermissionCode {
     SECURITY_AUDIT_EXPORT,
 
     /*
+     * Academic-year management
+     */
+    ACADEMIC_YEAR_VIEW,
+    ACADEMIC_YEAR_CREATE,
+    ACADEMIC_YEAR_UPDATE,
+    ACADEMIC_YEAR_ACTIVATE,
+    ACADEMIC_YEAR_CLOSE,
+    ACADEMIC_YEAR_VOID,
+
+    /*
      * Security policy configuration
      */
     SECURITY_POLICY_VIEW,
-    SECURITY_POLICY_UPDATE
+    SECURITY_POLICY_UPDATE,
+
+    /*
+     * Grade-level management
+     */
+    GRADE_LEVEL_VIEW,
+    GRADE_LEVEL_CREATE,
+    GRADE_LEVEL_UPDATE,
 }

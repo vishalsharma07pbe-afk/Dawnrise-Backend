@@ -14,6 +14,9 @@ public class AcademicYearMapper {
                 academicYear.getStartDate(),
                 academicYear.getEndDate(),
                 academicYear.getStatus(),
+                academicYear.getVoidReason(),
+                academicYear.getVoidedAt(),
+                academicYear.getVoidedByUserId(),
                 academicYear.getVersion(),
                 academicYear.getCreatedAt(),
                 academicYear.getUpdatedAt()

@@ -3,12 +3,14 @@ package com.dawnrise.academic.academicyear.service.impl;
 import com.dawnrise.academic.academicyear.dto.AcademicYearResponse;
 import com.dawnrise.academic.academicyear.dto.CreateAcademicYearRequest;
 import com.dawnrise.academic.academicyear.dto.UpdateAcademicYearRequest;
+import com.dawnrise.academic.academicyear.dto.VoidAcademicYearRequest;
 import com.dawnrise.academic.academicyear.entity.AcademicYear;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.mapper.AcademicYearMapper;
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
+import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -30,13 +32,16 @@ class AcademicYearServiceImplTest {
     private static final LocalDate END_DATE = LocalDate.of(2027, 3, 31);
 
     private RepositoryStub repositoryStub;
+    private GradeLevelRepositoryStub gradeLevelRepositoryStub;
     private AcademicYearServiceImpl service;
 
     @BeforeEach
     void setUp() {
         repositoryStub = new RepositoryStub();
+        gradeLevelRepositoryStub = new GradeLevelRepositoryStub();
         service = new AcademicYearServiceImpl(
                 repositoryStub.repository(),
+                gradeLevelRepositoryStub.repository(),
                 new AcademicYearMapper()
         );
     }
@@ -330,6 +335,80 @@ class AcademicYearServiceImplTest {
                 .hasMessage("Only a planned academic year can be activated");
     }
 
+    @Test
+    void voidSucceedsForClosedYearWithoutGradeLevels() {
+        AcademicYear existing = academicYear(
+                ACADEMIC_YEAR_ID,
+                "2026-2027",
+                START_DATE,
+                END_DATE,
+                AcademicYearStatus.CLOSED,
+                4L
+        );
+        repositoryStub.foundAcademicYear = Optional.of(existing);
+        repositoryStub.savedAcademicYear = existing;
+
+        AcademicYearResponse response = service.voidYear(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                123L,
+                new VoidAcademicYearRequest(" Created in error ", 4L)
+        );
+
+        assertThat(response.status()).isEqualTo(AcademicYearStatus.VOIDED);
+        assertThat(response.voidReason()).isEqualTo("Created in error");
+        assertThat(response.voidedAt()).isNotNull();
+        assertThat(response.voidedByUserId()).isEqualTo(123L);
+        assertThat(gradeLevelRepositoryStub.lastOrganizationId).isEqualTo(ORGANIZATION_ID);
+        assertThat(gradeLevelRepositoryStub.lastAcademicYearId).isEqualTo(ACADEMIC_YEAR_ID);
+    }
+
+    @Test
+    void voidRejectsStaleVersion() {
+        repositoryStub.foundAcademicYear = Optional.of(academicYear(
+                ACADEMIC_YEAR_ID,
+                "2026-2027",
+                START_DATE,
+                END_DATE,
+                AcademicYearStatus.CLOSED,
+                4L
+        ));
+
+        assertThatThrownBy(() -> service.voidYear(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                123L,
+                new VoidAcademicYearRequest("Created in error", 3L)
+        )).isInstanceOf(AcademicYearConflictException.class)
+                .hasMessage("Academic year was modified by another request");
+
+        assertThat(repositoryStub.saveCalls).isZero();
+        assertThat(gradeLevelRepositoryStub.existsCalls).isZero();
+    }
+
+    @Test
+    void voidRejectsAcademicYearWithGradeLevels() {
+        repositoryStub.foundAcademicYear = Optional.of(academicYear(
+                ACADEMIC_YEAR_ID,
+                "2026-2027",
+                START_DATE,
+                END_DATE,
+                AcademicYearStatus.CLOSED,
+                4L
+        ));
+        gradeLevelRepositoryStub.exists = true;
+
+        assertThatThrownBy(() -> service.voidYear(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                123L,
+                new VoidAcademicYearRequest("Created in error", 4L)
+        )).isInstanceOf(AcademicYearConflictException.class)
+                .hasMessage("Academic year cannot be voided because it contains grade levels");
+
+        assertThat(repositoryStub.saveCalls).isZero();
+    }
+
     private static CreateAcademicYearRequest createRequest() {
         return new CreateAcademicYearRequest("2026-2027", START_DATE, END_DATE);
     }
@@ -413,8 +492,8 @@ class AcademicYearServiceImplTest {
                         }
                         case "findAllByOrganizationIdOrderByStartDateDesc" -> allAcademicYears;
                         case "findByOrganizationIdAndStatus" -> activeAcademicYear;
-                        case "existsByOrganizationIdAndNameIgnoreCase" -> duplicateName;
-                        case "existsByOrganizationIdAndNameIgnoreCaseAndIdNot" -> {
+                        case "existsByOrganizationIdAndNameIgnoreCaseAndStatusNot" -> duplicateName;
+                        case "existsByOrganizationIdAndNameIgnoreCaseAndIdNotAndStatusNot" -> {
                             lastDuplicateExclusionId = (Long) args[2];
                             yield duplicateNameExcludingId;
                         }
@@ -431,6 +510,31 @@ class AcademicYearServiceImplTest {
                                     : lastSavedAcademicYear;
                         }
                         case "toString" -> "RepositoryStub";
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    }
+            );
+        }
+    }
+
+    private static class GradeLevelRepositoryStub {
+
+        private boolean exists;
+        private int existsCalls;
+        private long lastOrganizationId;
+        private long lastAcademicYearId;
+
+        private GradeLevelRepository repository() {
+            return (GradeLevelRepository) Proxy.newProxyInstance(
+                    GradeLevelRepository.class.getClassLoader(),
+                    new Class<?>[]{GradeLevelRepository.class},
+                    (proxy, method, args) -> switch (method.getName()) {
+                        case "existsByOrganizationIdAndAcademicYearId" -> {
+                            existsCalls++;
+                            lastOrganizationId = (Long) args[0];
+                            lastAcademicYearId = (Long) args[1];
+                            yield exists;
+                        }
+                        case "toString" -> "GradeLevelRepositoryStub";
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );

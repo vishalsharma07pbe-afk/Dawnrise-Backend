@@ -5,6 +5,7 @@ import com.dawnrise.academic.academicyear.dto.CreateAcademicYearRequest;
 import com.dawnrise.academic.academicyear.dto.UpdateAcademicYearRequest;
 import com.dawnrise.academic.academicyear.service.AcademicYearService;
 import jakarta.validation.Valid;
+import com.dawnrise.academic.academicyear.dto.VoidAcademicYearRequest;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -156,6 +157,28 @@ public class AcademicYearController {
         );
     }
 
+    @PostMapping("/{academicYearId}/void")
+    @PreAuthorize("""
+        @academicTenantSecurity.hasOrganization(authentication)
+        and hasAuthority('ACADEMIC_YEAR_VOID')
+        """)
+    public ResponseEntity<AcademicYearResponse> voidYear(
+            @PathVariable
+            @Positive(message = "Academic year ID must be positive")
+            long academicYearId,
+            @Valid @RequestBody VoidAcademicYearRequest request,
+            JwtAuthenticationToken authentication
+    ) {
+        return ResponseEntity.ok(
+                academicYearService.voidYear(
+                        organizationId(authentication),
+                        academicYearId,
+                        authenticatedUserId(authentication),
+                        request
+                )
+        );
+    }
+
     private static long organizationId(
             JwtAuthenticationToken authentication
     ) {
@@ -163,5 +186,34 @@ public class AcademicYearController {
                 authentication.getToken().getClaim("organizationId");
 
         return organizationId.longValue();
+    }
+
+    private static long authenticatedUserId(
+            JwtAuthenticationToken authentication
+    ) {
+        String subject = authentication.getToken().getSubject();
+
+        if (subject == null || subject.isBlank()) {
+            throw new IllegalStateException(
+                    "Authenticated token does not contain a user ID"
+            );
+        }
+
+        try {
+            long userId = Long.parseLong(subject);
+
+            if (userId <= 0) {
+                throw new IllegalStateException(
+                        "Authenticated user ID must be greater than zero"
+                );
+            }
+
+            return userId;
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException(
+                    "Authenticated token contains an invalid user ID",
+                    exception
+            );
+        }
     }
 }

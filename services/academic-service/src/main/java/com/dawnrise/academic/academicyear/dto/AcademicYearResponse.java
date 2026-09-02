@@ -11,6 +11,9 @@ public record AcademicYearResponse(
         LocalDate startDate,
         LocalDate endDate,
         AcademicYearStatus status,
+        String voidReason,
+        OffsetDateTime voidedAt,
+        Long voidedByUserId,
         Long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt

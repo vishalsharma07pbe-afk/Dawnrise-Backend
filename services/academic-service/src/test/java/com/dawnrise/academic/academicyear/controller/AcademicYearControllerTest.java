@@ -1,6 +1,7 @@
 package com.dawnrise.academic.academicyear.controller;
 
 import com.dawnrise.academic.academicyear.dto.AcademicYearResponse;
+import com.dawnrise.academic.academicyear.dto.VoidAcademicYearRequest;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import com.dawnrise.academic.academicyear.service.AcademicYearService;
 import com.dawnrise.academic.common.exception.GlobalExceptionHandler;
@@ -172,6 +173,28 @@ class AcademicYearControllerTest {
     }
 
     @Test
+    void correctPermissionAndOrganizationIdAllowVoid() throws Exception {
+        academicYearService.response = response(1L, AcademicYearStatus.VOIDED);
+
+        mockMvc.perform(post("/api/v1/academic-years/1/void")
+                        .with(jwtWithOrganizationAndPermission("ACADEMIC_YEAR_VOID"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reason": "Created in error",
+                                  "version": 2
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VOIDED"));
+
+        assertThat(academicYearService.lastOrganizationId).isEqualTo(10L);
+        assertThat(academicYearService.lastAcademicYearId).isEqualTo(1L);
+        assertThat(academicYearService.lastAuthenticatedUserId).isEqualTo(123L);
+        assertThat(academicYearService.lastVoidRequest.reason()).isEqualTo("Created in error");
+    }
+
+    @Test
     void invalidRequestBodiesReturn400() throws Exception {
         mockMvc.perform(post("/api/v1/academic-years")
                         .with(jwtWithOrganizationAndPermission("ACADEMIC_YEAR_CREATE"))
@@ -203,7 +226,9 @@ class AcademicYearControllerTest {
             String permission
     ) {
         return jwt()
-                .jwt(jwt -> jwt.claim("organizationId", 10L))
+                .jwt(jwt -> jwt
+                        .subject("123")
+                        .claim("organizationId", 10L))
                 .authorities(() -> permission);
     }
 
@@ -217,6 +242,9 @@ class AcademicYearControllerTest {
                 LocalDate.of(2026, 4, 1),
                 LocalDate.of(2027, 3, 31),
                 status,
+                null,
+                null,
+                null,
                 0L,
                 OffsetDateTime.parse("2026-04-01T00:00:00Z"),
                 OffsetDateTime.parse("2026-04-01T00:00:00Z")
@@ -246,6 +274,8 @@ class AcademicYearControllerTest {
         private List<AcademicYearResponse> responses = List.of();
         private long lastOrganizationId;
         private long lastAcademicYearId;
+        private long lastAuthenticatedUserId;
+        private VoidAcademicYearRequest lastVoidRequest;
 
         @Override
         public AcademicYearResponse create(
@@ -306,6 +336,20 @@ class AcademicYearControllerTest {
         ) {
             lastOrganizationId = organizationId;
             lastAcademicYearId = academicYearId;
+            return response;
+        }
+
+        @Override
+        public AcademicYearResponse voidYear(
+                long organizationId,
+                long academicYearId,
+                long authenticatedUserId,
+                VoidAcademicYearRequest request
+        ) {
+            lastOrganizationId = organizationId;
+            lastAcademicYearId = academicYearId;
+            lastAuthenticatedUserId = authenticatedUserId;
+            lastVoidRequest = request;
             return response;
         }
     }

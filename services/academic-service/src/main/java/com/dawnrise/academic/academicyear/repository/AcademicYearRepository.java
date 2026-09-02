@@ -28,42 +28,48 @@ public interface AcademicYearRepository
             AcademicYearStatus status
     );
 
-    boolean existsByOrganizationIdAndNameIgnoreCase(
-            Long organizationId,
-            String name
-    );
-
-    boolean existsByOrganizationIdAndNameIgnoreCaseAndIdNot(
+    boolean existsByOrganizationIdAndNameIgnoreCaseAndStatusNot(
             Long organizationId,
             String name,
-            Long academicYearId
+            AcademicYearStatus excludedStatus
+    );
+
+    boolean existsByOrganizationIdAndNameIgnoreCaseAndIdNotAndStatusNot(
+            Long organizationId,
+            String name,
+            Long academicYearId,
+            AcademicYearStatus excludedStatus
     );
 
     @Query("""
-        SELECT COUNT(academicYear) > 0
-        FROM AcademicYear academicYear
-        WHERE academicYear.organizationId = :organizationId
-          AND academicYear.id <> :academicYearId
-          AND academicYear.startDate <= :endDate
-          AND academicYear.endDate >= :startDate
-        """)
+    SELECT COUNT(academicYear) > 0
+    FROM AcademicYear academicYear
+    WHERE academicYear.organizationId = :organizationId
+      AND academicYear.id <> :academicYearId
+      AND academicYear.status <> :excludedStatus
+      AND academicYear.startDate <= :endDate
+      AND academicYear.endDate >= :startDate
+    """)
     boolean existsOverlappingPeriodExcludingId(
             @Param("organizationId") long organizationId,
             @Param("academicYearId") long academicYearId,
             @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate
+            @Param("endDate") LocalDate endDate,
+            @Param("excludedStatus") AcademicYearStatus excludedStatus
     );
 
     @Query("""
-        SELECT COUNT(academicYear) > 0
-        FROM AcademicYear academicYear
-        WHERE academicYear.organizationId = :organizationId
-          AND academicYear.startDate <= :endDate
-          AND academicYear.endDate >= :startDate
-        """)
+    SELECT COUNT(academicYear) > 0
+    FROM AcademicYear academicYear
+    WHERE academicYear.organizationId = :organizationId
+      AND academicYear.status <> :excludedStatus
+      AND academicYear.startDate <= :endDate
+      AND academicYear.endDate >= :startDate
+    """)
     boolean existsOverlappingPeriod(
             @Param("organizationId") long organizationId,
             @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate
+            @Param("endDate") LocalDate endDate,
+            @Param("excludedStatus") AcademicYearStatus excludedStatus
     );
 }

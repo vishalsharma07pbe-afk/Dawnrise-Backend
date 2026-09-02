@@ -13,6 +13,8 @@ import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundExceptio
 import com.dawnrise.academic.academicyear.dto.CreateAcademicYearRequest;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.academicyear.dto.VoidAcademicYearRequest;
+import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 
 import java.time.LocalDate;
 
@@ -29,12 +31,15 @@ public class AcademicYearServiceImpl implements AcademicYearService {
 
     private final AcademicYearRepository academicYearRepository;
     private final AcademicYearMapper academicYearMapper;
+    private final GradeLevelRepository gradeLevelRepository;
 
     public AcademicYearServiceImpl(
             AcademicYearRepository academicYearRepository,
+            GradeLevelRepository gradeLevelRepository,
             AcademicYearMapper academicYearMapper
     ) {
         this.academicYearRepository = academicYearRepository;
+        this.gradeLevelRepository = gradeLevelRepository;
         this.academicYearMapper = academicYearMapper;
     }
 
@@ -51,9 +56,10 @@ public class AcademicYearServiceImpl implements AcademicYearService {
         );
 
         if (academicYearRepository
-                .existsByOrganizationIdAndNameIgnoreCase(
+                .existsByOrganizationIdAndNameIgnoreCaseAndStatusNot(
                         organizationId,
-                        normalizedName
+                        normalizedName,
+                        AcademicYearStatus.VOIDED
                 )) {
             throw new AcademicYearConflictException(
                     "An academic year with this name already exists"
@@ -63,7 +69,8 @@ public class AcademicYearServiceImpl implements AcademicYearService {
         if (academicYearRepository.existsOverlappingPeriod(
                 organizationId,
                 request.startDate(),
-                request.endDate()
+                request.endDate(),
+                AcademicYearStatus.VOIDED
         )) {
             throw new AcademicYearConflictException(
                     "The academic year overlaps an existing academic year"
@@ -160,10 +167,11 @@ public class AcademicYearServiceImpl implements AcademicYearService {
         );
 
         if (academicYearRepository
-                .existsByOrganizationIdAndNameIgnoreCaseAndIdNot(
+                .existsByOrganizationIdAndNameIgnoreCaseAndIdNotAndStatusNot(
                         organizationId,
                         normalizedName,
-                        academicYearId
+                        academicYearId,
+                        AcademicYearStatus.VOIDED
                 )) {
             throw new AcademicYearConflictException(
                     "An academic year with this name already exists"
@@ -175,7 +183,8 @@ public class AcademicYearServiceImpl implements AcademicYearService {
                         organizationId,
                         academicYearId,
                         request.startDate(),
-                        request.endDate()
+                        request.endDate(),
+                        AcademicYearStatus.VOIDED
                 )) {
             throw new AcademicYearConflictException(
                     "The academic year overlaps an existing academic year"
@@ -234,6 +243,48 @@ public class AcademicYearServiceImpl implements AcademicYearService {
         );
 
         academicYear.close();
+
+        AcademicYear savedAcademicYear =
+                academicYearRepository.saveAndFlush(academicYear);
+
+        return academicYearMapper.toResponse(savedAcademicYear);
+    }
+
+    @Override
+    public AcademicYearResponse voidYear(
+            long organizationId,
+            long academicYearId,
+            long authenticatedUserId,
+            VoidAcademicYearRequest request
+    ) {
+        AcademicYear academicYear = findAcademicYear(
+                organizationId,
+                academicYearId
+        );
+
+        if (!Objects.equals(
+                academicYear.getVersion(),
+                request.version()
+        )) {
+            throw new AcademicYearConflictException(
+                    "Academic year was modified by another request"
+            );
+        }
+
+        if (gradeLevelRepository
+                .existsByOrganizationIdAndAcademicYearId(
+                        organizationId,
+                        academicYearId
+                )) {
+            throw new AcademicYearConflictException(
+                    "Academic year cannot be voided because it contains grade levels"
+            );
+        }
+
+        academicYear.voidYear(
+                request.reason(),
+                authenticatedUserId
+        );
 
         AcademicYear savedAcademicYear =
                 academicYearRepository.saveAndFlush(academicYear);
