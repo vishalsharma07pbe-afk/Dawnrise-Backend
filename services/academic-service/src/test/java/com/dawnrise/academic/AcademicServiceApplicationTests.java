@@ -2,6 +2,7 @@ package com.dawnrise.academic;
 
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
+import com.dawnrise.academic.section.repository.SectionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -58,6 +59,26 @@ class AcademicServiceApplicationTests {
 						}
 						if (method.getName().equals("toString")) {
 							return "GradeLevelRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		SectionRepository sectionRepository() {
+			return (SectionRepository) Proxy.newProxyInstance(
+					SectionRepository.class.getClassLoader(),
+					new Class<?>[]{SectionRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "SectionRepositoryStub";
 						}
 						throw new UnsupportedOperationException(method.getName());
 					}

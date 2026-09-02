@@ -3,6 +3,7 @@ package com.dawnrise.academic.gradelevel.service;
 import com.dawnrise.academic.gradelevel.dto.CreateGradeLevelRequest;
 import com.dawnrise.academic.gradelevel.dto.GradeLevelResponse;
 import com.dawnrise.academic.gradelevel.dto.UpdateGradeLevelRequest;
+import com.dawnrise.academic.gradelevel.dto.BulkCreateGradeLevelsRequest;
 
 import java.util.List;
 
@@ -12,6 +13,12 @@ public interface GradeLevelService {
             long organizationId,
             long academicYearId,
             CreateGradeLevelRequest request
+    );
+
+    List<GradeLevelResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateGradeLevelsRequest request
     );
 
     GradeLevelResponse getById(

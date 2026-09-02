@@ -3,6 +3,7 @@ package com.dawnrise.academic.gradelevel.controller;
 import com.dawnrise.academic.gradelevel.dto.CreateGradeLevelRequest;
 import com.dawnrise.academic.gradelevel.dto.GradeLevelResponse;
 import com.dawnrise.academic.gradelevel.dto.UpdateGradeLevelRequest;
+import com.dawnrise.academic.gradelevel.dto.BulkCreateGradeLevelsRequest;
 import com.dawnrise.academic.gradelevel.service.GradeLevelService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -49,6 +50,30 @@ public class GradeLevelController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @PostMapping("/bulk")
+    @PreAuthorize("""
+        @academicTenantSecurity.hasOrganization(authentication)
+        and hasAuthority('GRADE_LEVEL_CREATE')
+        """)
+    public ResponseEntity<List<GradeLevelResponse>> createBulk(
+            @PathVariable
+            @Positive(message = "Academic year ID must be positive")
+            long academicYearId,
+            @Valid @RequestBody BulkCreateGradeLevelsRequest request,
+            JwtAuthenticationToken authentication
+    ) {
+        List<GradeLevelResponse> responses =
+                gradeLevelService.createBulk(
+                        organizationId(authentication),
+                        academicYearId,
+                        request
+                );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(responses);
     }
 
     @GetMapping

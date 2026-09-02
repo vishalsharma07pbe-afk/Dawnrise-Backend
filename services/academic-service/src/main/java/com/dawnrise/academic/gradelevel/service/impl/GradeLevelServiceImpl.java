@@ -12,6 +12,11 @@ import com.dawnrise.academic.gradelevel.mapper.GradeLevelMapper;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import com.dawnrise.academic.gradelevel.exception.GradeLevelConflictException;
+import com.dawnrise.academic.gradelevel.dto.BulkCreateGradeLevelsRequest;
+
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 import java.util.Objects;
 
 import com.dawnrise.academic.gradelevel.service.GradeLevelService;
@@ -91,6 +96,106 @@ public class GradeLevelServiceImpl implements GradeLevelService {
                 gradeLevelRepository.saveAndFlush(gradeLevel);
 
         return gradeLevelMapper.toResponse(savedGradeLevel);
+    }
+
+    @Override
+    public List<GradeLevelResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateGradeLevelsRequest request
+    ) {
+        AcademicYear academicYear =
+                findAcademicYear(organizationId, academicYearId);
+
+        ensureAcademicYearIsModifiable(academicYear);
+
+        List<GradeLevel> proposedGradeLevels = request.gradeLevels()
+                .stream()
+                .map(item -> new GradeLevel(
+                        organizationId,
+                        academicYearId,
+                        item.code(),
+                        item.name(),
+                        item.displayOrder()
+                ))
+                .toList();
+
+        Set<String> requestCodes = new HashSet<>();
+        Set<String> requestNames = new HashSet<>();
+        Set<Integer> requestDisplayOrders = new HashSet<>();
+
+        for (GradeLevel gradeLevel : proposedGradeLevels) {
+            if (!requestCodes.add(gradeLevel.getCode())) {
+                throw new GradeLevelConflictException(
+                        "The bulk request contains a duplicate grade level code"
+                );
+            }
+
+            String normalizedName =
+                    gradeLevel.getName().toLowerCase(Locale.ROOT);
+
+            if (!requestNames.add(normalizedName)) {
+                throw new GradeLevelConflictException(
+                        "The bulk request contains a duplicate grade level name"
+                );
+            }
+
+            if (!requestDisplayOrders.add(
+                    gradeLevel.getDisplayOrder()
+            )) {
+                throw new GradeLevelConflictException(
+                        "The bulk request contains a duplicate display order"
+                );
+            }
+        }
+
+        for (GradeLevel gradeLevel : proposedGradeLevels) {
+            if (gradeLevelRepository
+                    .existsByAcademicYearIdAndCodeIgnoreCase(
+                            academicYearId,
+                            gradeLevel.getCode()
+                    )) {
+                throw new GradeLevelConflictException(
+                        "A grade level with code "
+                                + gradeLevel.getCode()
+                                + " already exists"
+                );
+            }
+
+            if (gradeLevelRepository
+                    .existsByAcademicYearIdAndNameIgnoreCase(
+                            academicYearId,
+                            gradeLevel.getName()
+                    )) {
+                throw new GradeLevelConflictException(
+                        "A grade level with name "
+                                + gradeLevel.getName()
+                                + " already exists"
+                );
+            }
+
+            if (gradeLevelRepository
+                    .existsByAcademicYearIdAndDisplayOrder(
+                            academicYearId,
+                            gradeLevel.getDisplayOrder()
+                    )) {
+                throw new GradeLevelConflictException(
+                        "Display order "
+                                + gradeLevel.getDisplayOrder()
+                                + " already exists"
+                );
+            }
+        }
+
+        List<GradeLevel> savedGradeLevels =
+                gradeLevelRepository.saveAll(proposedGradeLevels);
+
+        gradeLevelRepository.flush();
+
+        return savedGradeLevels
+                .stream()
+                .map(gradeLevelMapper::toResponse)
+                .toList();
     }
 
     @Override

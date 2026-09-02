@@ -4,6 +4,7 @@ import com.dawnrise.academic.academicyear.entity.AcademicYear;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
+import com.dawnrise.academic.gradelevel.dto.BulkCreateGradeLevelsRequest;
 import com.dawnrise.academic.gradelevel.dto.CreateGradeLevelRequest;
 import com.dawnrise.academic.gradelevel.dto.GradeLevelResponse;
 import com.dawnrise.academic.gradelevel.dto.UpdateGradeLevelRequest;
@@ -183,8 +184,161 @@ class GradeLevelServiceImplTest {
                 .hasMessage("Grade level was modified by another request");
     }
 
+    @Test
+    void createBulkSucceedsPreservingRequestOrder() {
+        gradeLevelRepositoryStub.savedGradeLevels = List.of(
+                gradeLevel(1L, "G1", "Grade 1", 1, 0L),
+                gradeLevel(2L, "G2", "Grade 2", 2, 0L)
+        );
+
+        List<GradeLevelResponse> responses = service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateGradeLevelsRequest(List.of(
+                        new CreateGradeLevelRequest(" g1 ", " Grade 1 ", 1),
+                        new CreateGradeLevelRequest(" g2 ", " Grade 2 ", 2)
+                ))
+        );
+
+        assertThat(responses).extracting(GradeLevelResponse::code)
+                .containsExactly("G1", "G2");
+        assertThat(gradeLevelRepositoryStub.lastSavedGradeLevels)
+                .extracting(GradeLevel::getName)
+                .containsExactly("Grade 1", "Grade 2");
+        assertThat(gradeLevelRepositoryStub.flushCalls).isEqualTo(1);
+    }
+
+    @Test
+    void createBulkRejectsDuplicatesInsideRequest() {
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateGradeLevelsRequest(List.of(
+                        new CreateGradeLevelRequest(" g1 ", "Grade 1", 1),
+                        new CreateGradeLevelRequest("G1", "Grade 2", 2)
+                ))
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("The bulk request contains a duplicate grade level code");
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateGradeLevelsRequest(List.of(
+                        new CreateGradeLevelRequest("G1", " Grade 1 ", 1),
+                        new CreateGradeLevelRequest("G2", "grade 1", 2)
+                ))
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("The bulk request contains a duplicate grade level name");
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateGradeLevelsRequest(List.of(
+                        new CreateGradeLevelRequest("G1", "Grade 1", 1),
+                        new CreateGradeLevelRequest("G2", "Grade 2", 1)
+                ))
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("The bulk request contains a duplicate display order");
+
+        assertThat(gradeLevelRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkRejectsDatabaseConflicts() {
+        gradeLevelRepositoryStub.duplicateCode = true;
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                bulkRequest()
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("A grade level with code G1 already exists");
+
+        gradeLevelRepositoryStub.duplicateCode = false;
+        gradeLevelRepositoryStub.duplicateName = true;
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                bulkRequest()
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("A grade level with name Grade 1 already exists");
+
+        gradeLevelRepositoryStub.duplicateName = false;
+        gradeLevelRepositoryStub.duplicateDisplayOrder = true;
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                bulkRequest()
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("Display order 1 already exists");
+
+        assertThat(gradeLevelRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkIsAllowedForPlannedAndActiveYears() {
+        for (AcademicYearStatus status : List.of(
+                AcademicYearStatus.PLANNED,
+                AcademicYearStatus.ACTIVE
+        )) {
+            academicYearRepositoryStub.foundAcademicYear =
+                    Optional.of(academicYear(status));
+            gradeLevelRepositoryStub.savedGradeLevels = List.of(
+                    gradeLevel(1L, "G1", "Grade 1", 1, 0L)
+            );
+
+            List<GradeLevelResponse> responses =
+                    service.createBulk(ORGANIZATION_ID, ACADEMIC_YEAR_ID, bulkRequest());
+
+            assertThat(responses).extracting(GradeLevelResponse::code)
+                    .containsExactly("G1");
+        }
+    }
+
+    @Test
+    void createBulkRejectsClosedAndVoidedYears() {
+        for (AcademicYearStatus status : List.of(
+                AcademicYearStatus.CLOSED,
+                AcademicYearStatus.VOIDED
+        )) {
+            academicYearRepositoryStub.foundAcademicYear =
+                    Optional.of(academicYear(status));
+
+            assertThatThrownBy(() ->
+                    service.createBulk(ORGANIZATION_ID, ACADEMIC_YEAR_ID, bulkRequest())
+            ).isInstanceOf(GradeLevelConflictException.class)
+                    .hasMessage("Grade levels can only be modified for a planned or active academic year");
+        }
+
+        assertThat(gradeLevelRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkDoesNotSaveBeforeAllItemsPassConflictChecks() {
+        gradeLevelRepositoryStub.conflictingDisplayOrders.add(2);
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateGradeLevelsRequest(List.of(
+                        new CreateGradeLevelRequest("G1", "Grade 1", 1),
+                        new CreateGradeLevelRequest("G2", "Grade 2", 2)
+                ))
+        )).isInstanceOf(GradeLevelConflictException.class)
+                .hasMessage("Display order 2 already exists");
+
+        assertThat(gradeLevelRepositoryStub.saveAllCalls).isZero();
+        assertThat(gradeLevelRepositoryStub.flushCalls).isZero();
+    }
+
     private static CreateGradeLevelRequest createRequest() {
         return new CreateGradeLevelRequest("G1", "Grade 1", 1);
+    }
+
+    private static BulkCreateGradeLevelsRequest bulkRequest() {
+        return new BulkCreateGradeLevelsRequest(List.of(createRequest()));
     }
 
     private static UpdateGradeLevelRequest updateRequest(Long version) {
@@ -260,7 +414,9 @@ class GradeLevelServiceImplTest {
         private Optional<GradeLevel> foundGradeLevel = Optional.empty();
         private List<GradeLevel> allGradeLevels = List.of();
         private GradeLevel savedGradeLevel;
+        private List<GradeLevel> savedGradeLevels = List.of();
         private GradeLevel lastSavedGradeLevel;
+        private List<GradeLevel> lastSavedGradeLevels = List.of();
         private long lastFindId;
         private long lastFindAcademicYearId;
         private long lastFindOrganizationId;
@@ -268,6 +424,10 @@ class GradeLevelServiceImplTest {
         private boolean duplicateCode;
         private boolean duplicateName;
         private boolean duplicateDisplayOrder;
+        private final java.util.Set<Integer> conflictingDisplayOrders =
+                new java.util.HashSet<>();
+        private int saveAllCalls;
+        private int flushCalls;
 
         private GradeLevelRepository repository() {
             return (GradeLevelRepository) Proxy.newProxyInstance(
@@ -283,7 +443,9 @@ class GradeLevelServiceImplTest {
                         case "findAllByOrganizationIdAndAcademicYearIdOrderByDisplayOrderAsc" -> allGradeLevels;
                         case "existsByAcademicYearIdAndCodeIgnoreCase" -> duplicateCode;
                         case "existsByAcademicYearIdAndNameIgnoreCase" -> duplicateName;
-                        case "existsByAcademicYearIdAndDisplayOrder" -> duplicateDisplayOrder;
+                        case "existsByAcademicYearIdAndDisplayOrder" ->
+                                duplicateDisplayOrder
+                                        || conflictingDisplayOrders.contains((Integer) args[1]);
                         case "existsByAcademicYearIdAndCodeIgnoreCaseAndIdNot" -> {
                             lastDuplicateExclusionId = (Long) args[2];
                             yield duplicateCode;
@@ -301,6 +463,22 @@ class GradeLevelServiceImplTest {
                             yield savedGradeLevel != null
                                     ? savedGradeLevel
                                     : lastSavedGradeLevel;
+                        }
+                        case "saveAll" -> {
+                            saveAllCalls++;
+                            java.util.ArrayList<GradeLevel> items =
+                                    new java.util.ArrayList<>();
+                            for (GradeLevel gradeLevel : (Iterable<GradeLevel>) args[0]) {
+                                items.add(gradeLevel);
+                            }
+                            lastSavedGradeLevels = List.copyOf(items);
+                            yield savedGradeLevels.isEmpty()
+                                    ? lastSavedGradeLevels
+                                    : savedGradeLevels;
+                        }
+                        case "flush" -> {
+                            flushCalls++;
+                            yield null;
                         }
                         case "toString" -> "GradeLevelRepositoryStub";
                         default -> throw new UnsupportedOperationException(method.getName());

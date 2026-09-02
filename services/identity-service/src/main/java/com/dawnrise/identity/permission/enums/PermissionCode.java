@@ -99,4 +99,11 @@ public enum PermissionCode {
     GRADE_LEVEL_VIEW,
     GRADE_LEVEL_CREATE,
     GRADE_LEVEL_UPDATE,
+
+    /*
+     * Section management
+     */
+    SECTION_VIEW,
+    SECTION_CREATE,
+    SECTION_UPDATE,
 }

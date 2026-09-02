@@ -6,6 +6,9 @@ import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException
 import com.dawnrise.academic.gradelevel.exception.GradeLevelConflictException;
 import com.dawnrise.academic.gradelevel.exception.GradeLevelNotFoundException;
 import com.dawnrise.academic.gradelevel.exception.InvalidGradeLevelException;
+import com.dawnrise.academic.section.exception.InvalidSectionException;
+import com.dawnrise.academic.section.exception.SectionConflictException;
+import com.dawnrise.academic.section.exception.SectionNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -162,7 +165,7 @@ public class GlobalExceptionHandler {
 
         return response(
                 HttpStatus.CONFLICT,
-                "Academic year conflicts with existing or newer data",
+                "Academic data conflicts with existing or newer data",
                 request,
                 null
         );
@@ -217,6 +220,45 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(GradeLevelConflictException.class)
     public ResponseEntity<ApiErrorResponse> handleGradeLevelConflict(
             GradeLevelConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidSectionException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidSection(
+            InvalidSectionException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(SectionNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleSectionNotFound(
+            SectionNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(SectionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleSectionConflict(
+            SectionConflictException exception,
             HttpServletRequest request
     ) {
         return response(
