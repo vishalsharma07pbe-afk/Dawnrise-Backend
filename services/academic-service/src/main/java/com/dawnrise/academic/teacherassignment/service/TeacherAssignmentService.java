@@ -1,5 +1,6 @@
 package com.dawnrise.academic.teacherassignment.service;
 
+import com.dawnrise.academic.teacherassignment.dto.BulkCreateTeacherAssignmentsRequest;
 import com.dawnrise.academic.teacherassignment.dto.CreateTeacherAssignmentRequest;
 import com.dawnrise.academic.teacherassignment.dto.TeacherAssignmentResponse;
 import com.dawnrise.academic.teacherassignment.dto.UpdateTeacherAssignmentRequest;
@@ -14,6 +15,12 @@ public interface TeacherAssignmentService {
             long gradeLevelId,
             long sectionId,
             CreateTeacherAssignmentRequest request
+    );
+
+    List<TeacherAssignmentResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateTeacherAssignmentsRequest request
     );
 
     TeacherAssignmentResponse getById(

@@ -3,6 +3,7 @@ package com.dawnrise.academic.teacherassignment.controller;
 import com.dawnrise.academic.common.exception.GlobalExceptionHandler;
 import com.dawnrise.academic.config.SecurityConfig;
 import com.dawnrise.academic.security.AcademicTenantSecurity;
+import com.dawnrise.academic.teacherassignment.dto.BulkCreateTeacherAssignmentsRequest;
 import com.dawnrise.academic.teacherassignment.dto.CreateTeacherAssignmentRequest;
 import com.dawnrise.academic.teacherassignment.dto.TeacherAssignmentResponse;
 import com.dawnrise.academic.teacherassignment.dto.UpdateTeacherAssignmentRequest;
@@ -32,7 +33,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(TeacherAssignmentController.class)
+@WebMvcTest({
+        TeacherAssignmentController.class,
+        BulkTeacherAssignmentController.class
+})
 @Import({
         SecurityConfig.class,
         AcademicTenantSecurity.class,
@@ -97,11 +101,78 @@ class TeacherAssignmentControllerTest {
     }
 
     @Test
+    void bulkCreateUsesYearRoutePermissionAndJwtOrganization() throws Exception {
+        assignmentService.responses = List.of(
+                response(70L),
+                new TeacherAssignmentResponse(
+                        71L,
+                        20L,
+                        31L,
+                        41L,
+                        51L,
+                        61L,
+                        TeacherAssignmentType.SUBJECT_TEACHER,
+                        0L,
+                        OffsetDateTime.parse("2026-04-01T00:00:00Z"),
+                        OffsetDateTime.parse("2026-04-01T00:00:00Z")
+                )
+        );
+
+        mockMvc.perform(post("/api/v1/academic-years/20/teacher-assignments/bulk")
+                        .with(jwtWithOrganizationAndPermission("TEACHER_ASSIGNMENT_CREATE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assignments": [
+                                    {
+                                      "gradeLevelId": 30,
+                                      "sectionId": 40,
+                                      "gradeLevelSubjectId": null,
+                                      "teacherUserId": 60,
+                                      "assignmentType": "CLASS_TEACHER"
+                                    },
+                                    {
+                                      "gradeLevelId": 31,
+                                      "sectionId": 41,
+                                      "gradeLevelSubjectId": 51,
+                                      "teacherUserId": 61,
+                                      "assignmentType": "SUBJECT_TEACHER"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].id").value(70))
+                .andExpect(jsonPath("$[1].id").value(71));
+
+        assertThat(assignmentService.lastOrganizationId).isEqualTo(10L);
+        assertThat(assignmentService.lastAcademicYearId).isEqualTo(20L);
+    }
+
+    @Test
     void routesRequireCorrectPermissions() throws Exception {
         mockMvc.perform(post("/api/v1/academic-years/20/grade-levels/30/sections/40/teacher-assignments")
                         .with(jwtWithOrganizationAndPermission("TEACHER_ASSIGNMENT_VIEW"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validCreateJson()))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/academic-years/20/teacher-assignments/bulk")
+                        .with(jwtWithOrganizationAndPermission("TEACHER_ASSIGNMENT_VIEW"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assignments": [
+                                    {
+                                      "gradeLevelId": 30,
+                                      "sectionId": 40,
+                                      "gradeLevelSubjectId": null,
+                                      "teacherUserId": 60,
+                                      "assignmentType": "CLASS_TEACHER"
+                                    }
+                                  ]
+                                }
+                                """))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/academic-years/20/grade-levels/30/sections/40/teacher-assignments")
@@ -258,6 +329,17 @@ class TeacherAssignmentControllerTest {
             lastSectionId = sectionId;
             lastAssignmentId = 70L;
             return response;
+        }
+
+        @Override
+        public List<TeacherAssignmentResponse> createBulk(
+                long organizationId,
+                long academicYearId,
+                BulkCreateTeacherAssignmentsRequest request
+        ) {
+            lastOrganizationId = organizationId;
+            lastAcademicYearId = academicYearId;
+            return responses;
         }
 
         @Override

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface SubjectRepository
         extends JpaRepository<Subject, Long> {
@@ -18,6 +19,12 @@ public interface SubjectRepository
     List<Subject> findAllByOrganizationIdAndAcademicYearIdOrderByNameAsc(
             Long organizationId,
             Long academicYearId
+    );
+
+    List<Subject> findAllByOrganizationIdAndAcademicYearIdAndIdIn(
+            Long organizationId,
+            Long academicYearId,
+            Collection<Long> subjectIds
     );
 
     boolean existsByAcademicYearIdAndCodeIgnoreCase(

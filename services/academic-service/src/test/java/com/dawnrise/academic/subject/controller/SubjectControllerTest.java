@@ -3,6 +3,7 @@ package com.dawnrise.academic.subject.controller;
 import com.dawnrise.academic.common.exception.GlobalExceptionHandler;
 import com.dawnrise.academic.config.SecurityConfig;
 import com.dawnrise.academic.security.AcademicTenantSecurity;
+import com.dawnrise.academic.subject.dto.BulkCreateSubjectsRequest;
 import com.dawnrise.academic.subject.dto.CreateSubjectRequest;
 import com.dawnrise.academic.subject.dto.SubjectResponse;
 import com.dawnrise.academic.subject.dto.UpdateSubjectRequest;
@@ -88,6 +89,37 @@ class SubjectControllerTest {
     }
 
     @Test
+    void correctPermissionAndOrganizationIdAllowBulkCreate() throws Exception {
+        subjectService.responses = List.of(response(30L), response(31L));
+
+        mockMvc.perform(post("/api/v1/academic-years/20/subjects/bulk")
+                        .with(jwtWithOrganizationAndPermission("SUBJECT_CREATE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjects": [
+                                    {
+                                      "code": "MATH",
+                                      "name": "Mathematics",
+                                      "description": null
+                                    },
+                                    {
+                                      "code": "SCI",
+                                      "name": "Science",
+                                      "description": null
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].id").value(30))
+                .andExpect(jsonPath("$[1].id").value(31));
+
+        assertThat(subjectService.lastOrganizationId).isEqualTo(10L);
+        assertThat(subjectService.lastAcademicYearId).isEqualTo(20L);
+    }
+
+    @Test
     void correctPermissionAndOrganizationIdAllowGetAll() throws Exception {
         subjectService.responses = List.of(response(30L));
 
@@ -143,6 +175,22 @@ class SubjectControllerTest {
                         .with(jwtWithOrganizationAndPermission("SUBJECT_VIEW"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validCreateJson()))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/academic-years/20/subjects/bulk")
+                        .with(jwtWithOrganizationAndPermission("SUBJECT_VIEW"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjects": [
+                                    {
+                                      "code": "MATH",
+                                      "name": "Mathematics",
+                                      "description": null
+                                    }
+                                  ]
+                                }
+                                """))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/v1/academic-years/20/subjects/30")
@@ -307,6 +355,17 @@ class SubjectControllerTest {
             lastOrganizationId = organizationId;
             lastAcademicYearId = academicYearId;
             return response;
+        }
+
+        @Override
+        public List<SubjectResponse> createBulk(
+                long organizationId,
+                long academicYearId,
+                BulkCreateSubjectsRequest request
+        ) {
+            lastOrganizationId = organizationId;
+            lastAcademicYearId = academicYearId;
+            return responses;
         }
 
         @Override

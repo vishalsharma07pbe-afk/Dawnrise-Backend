@@ -1,5 +1,6 @@
 package com.dawnrise.academic.subject.service;
 
+import com.dawnrise.academic.subject.dto.BulkCreateSubjectsRequest;
 import com.dawnrise.academic.subject.dto.CreateSubjectRequest;
 import com.dawnrise.academic.subject.dto.SubjectResponse;
 import com.dawnrise.academic.subject.dto.UpdateSubjectRequest;
@@ -12,6 +13,12 @@ public interface SubjectService {
             long organizationId,
             long academicYearId,
             CreateSubjectRequest request
+    );
+
+    List<SubjectResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateSubjectsRequest request
     );
 
     SubjectResponse getById(

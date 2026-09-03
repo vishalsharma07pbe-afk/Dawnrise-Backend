@@ -13,6 +13,8 @@ import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepos
 import com.dawnrise.academic.section.entity.Section;
 import com.dawnrise.academic.section.exception.SectionNotFoundException;
 import com.dawnrise.academic.section.repository.SectionRepository;
+import com.dawnrise.academic.teacherassignment.dto.BulkCreateTeacherAssignmentsRequest;
+import com.dawnrise.academic.teacherassignment.dto.BulkTeacherAssignmentItemRequest;
 import com.dawnrise.academic.teacherassignment.dto.CreateTeacherAssignmentRequest;
 import com.dawnrise.academic.teacherassignment.dto.TeacherAssignmentResponse;
 import com.dawnrise.academic.teacherassignment.dto.UpdateTeacherAssignmentRequest;
@@ -21,6 +23,7 @@ import com.dawnrise.academic.teacherassignment.enums.TeacherAssignmentType;
 import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentConflictException;
 import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentNotFoundException;
 import com.dawnrise.academic.teacherassignment.exception.TeacherNotEligibleException;
+import com.dawnrise.academic.teacherassignment.integration.identity.BatchTeachingEligibilityResponse;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityClient;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 import com.dawnrise.academic.teacherassignment.integration.identity.TeachingEligibilityReason;
@@ -73,6 +76,12 @@ class TeacherAssignmentServiceImplTest {
         gradeSubjectRepositoryStub.foundGradeSubject =
                 Optional.of(gradeSubject());
         eligibilityClientStub.response = eligible(TEACHER_USER_ID);
+        eligibilityClientStub.batchResponse =
+                new BatchTeachingEligibilityResponse(
+                        List.of(
+                                eligible(TEACHER_USER_ID)
+                        )
+                );
         service = new TeacherAssignmentServiceImpl(
                 academicYearRepositoryStub.repository(),
                 gradeLevelRepositoryStub.repository(),
@@ -123,6 +132,183 @@ class TeacherAssignmentServiceImplTest {
                 .isEqualTo(TeacherAssignmentType.SUBJECT_TEACHER);
         assertThat(gradeSubjectRepositoryStub.lastFindId)
                 .isEqualTo(GRADE_SUBJECT_ID);
+    }
+
+    @Test
+    void createBulkSucceedsWithOneEligibilityCallAndPreservesOrder() {
+        eligibilityClientStub.batchResponse =
+                new BatchTeachingEligibilityResponse(
+                        List.of(
+                                eligible(TEACHER_USER_ID),
+                                eligible(61L)
+                        )
+                );
+
+        List<TeacherAssignmentResponse> responses = service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        ),
+                        bulkSubjectTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                GRADE_SUBJECT_ID,
+                                61L
+                        )
+                ))
+        );
+
+        assertThat(responses)
+                .extracting(TeacherAssignmentResponse::teacherUserId)
+                .containsExactly(TEACHER_USER_ID, 61L);
+        assertThat(eligibilityClientStub.batchCalls).isEqualTo(1);
+        assertThat(eligibilityClientStub.checkCalls).isZero();
+        assertThat(eligibilityClientStub.lastBatchUserIds)
+                .containsExactly(TEACHER_USER_ID, 61L);
+        assertThat(assignmentRepositoryStub.savedAssignments)
+                .extracting(TeacherAssignment::getTeacherUserId)
+                .containsExactly(TEACHER_USER_ID, 61L);
+    }
+
+    @Test
+    void createBulkRejectsDuplicateLogicalAssignmentsBeforeSave() {
+        BulkCreateTeacherAssignmentsRequest request =
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        ),
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                61L
+                        )
+                ));
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                request
+        ))
+                .isInstanceOf(TeacherAssignmentConflictException.class)
+                .hasMessage("Duplicate teacher assignments are not allowed");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkRejectsHierarchyMismatchBeforeSave() {
+        sectionRepositoryStub.foundSection = Optional.empty();
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkSubjectTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                GRADE_SUBJECT_ID,
+                                TEACHER_USER_ID
+                        )
+                ))
+        ))
+                .isInstanceOf(SectionNotFoundException.class)
+                .hasMessage("Section not found");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkRejectsIneligibleTeacherBeforeSave() {
+        eligibilityClientStub.batchResponse =
+                new BatchTeachingEligibilityResponse(List.of(
+                        ineligible(
+                                TEACHER_USER_ID,
+                                TeachingEligibilityReason.USER_NOT_ACTIVE
+                        )
+                ));
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        )
+                ))
+        ))
+                .isInstanceOf(TeacherNotEligibleException.class)
+                .hasMessage("The selected teacher account is not active");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkFailsClosedForIdentityFailuresAndInvalidResponses() {
+        eligibilityClientStub.batchException =
+                new IdentityTeacherEligibilityException("down", null);
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        )
+                ))
+        ))
+                .isInstanceOf(IdentityTeacherEligibilityException.class);
+
+        eligibilityClientStub.batchException = null;
+        eligibilityClientStub.batchResponse =
+                new BatchTeachingEligibilityResponse(List.of());
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        )
+                ))
+        ))
+                .isInstanceOf(TeacherNotEligibleException.class)
+                .hasMessage("Identity-service returned incomplete teacher information");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkChecksDatabaseConflictsBeforeSaveAll() {
+        assignmentRepositoryStub.duplicateSubjectTeacher = true;
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkSubjectTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                GRADE_SUBJECT_ID,
+                                TEACHER_USER_ID
+                        )
+                ))
+        ))
+                .isInstanceOf(TeacherAssignmentConflictException.class)
+                .hasMessage("This section already has a teacher for this subject");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
     }
 
     @Test
@@ -367,6 +553,35 @@ class TeacherAssignmentServiceImplTest {
         );
     }
 
+    private static BulkTeacherAssignmentItemRequest bulkClassTeacherRequest(
+            Long gradeLevelId,
+            Long sectionId,
+            Long teacherUserId
+    ) {
+        return new BulkTeacherAssignmentItemRequest(
+                gradeLevelId,
+                sectionId,
+                null,
+                teacherUserId,
+                TeacherAssignmentType.CLASS_TEACHER
+        );
+    }
+
+    private static BulkTeacherAssignmentItemRequest bulkSubjectTeacherRequest(
+            Long gradeLevelId,
+            Long sectionId,
+            Long gradeLevelSubjectId,
+            Long teacherUserId
+    ) {
+        return new BulkTeacherAssignmentItemRequest(
+                gradeLevelId,
+                sectionId,
+                gradeLevelSubjectId,
+                teacherUserId,
+                TeacherAssignmentType.SUBJECT_TEACHER
+        );
+    }
+
     private static TeachingEligibilityResponse eligible(Long userId) {
         return new TeachingEligibilityResponse(
                 userId,
@@ -565,6 +780,7 @@ class TeacherAssignmentServiceImplTest {
         private Optional<TeacherAssignment> foundAssignment = Optional.empty();
         private List<TeacherAssignment> allAssignments = List.of();
         private TeacherAssignment savedAssignment;
+        private List<TeacherAssignment> savedAssignments = List.of();
         private TeacherAssignment lastSavedAssignment;
         private TeacherAssignment deletedAssignment;
         private long lastFindId;
@@ -575,6 +791,7 @@ class TeacherAssignmentServiceImplTest {
         private boolean duplicateClassTeacher;
         private boolean duplicateSubjectTeacher;
         private int flushCalls;
+        private int saveAllCalls;
 
         private TeacherAssignmentRepository repository() {
             return (TeacherAssignmentRepository) Proxy.newProxyInstance(
@@ -596,6 +813,11 @@ class TeacherAssignmentServiceImplTest {
                             lastSavedAssignment = (TeacherAssignment) args[0];
                             yield savedAssignment != null ? savedAssignment : lastSavedAssignment;
                         }
+                        case "saveAllAndFlush" -> {
+                            saveAllCalls++;
+                            savedAssignments = (List<TeacherAssignment>) args[0];
+                            yield savedAssignments;
+                        }
                         case "delete" -> {
                             deletedAssignment = (TeacherAssignment) args[0];
                             yield null;
@@ -614,15 +836,21 @@ class TeacherAssignmentServiceImplTest {
     private static class EligibilityClientStub
             implements IdentityTeacherEligibilityClient {
         private TeachingEligibilityResponse response;
+        private BatchTeachingEligibilityResponse batchResponse;
         private RuntimeException exception;
+        private RuntimeException batchException;
         private long lastOrganizationId;
         private long lastUserId;
+        private List<Long> lastBatchUserIds = List.of();
+        private int checkCalls;
+        private int batchCalls;
 
         @Override
         public TeachingEligibilityResponse check(
                 long organizationId,
                 long userId
         ) {
+            checkCalls++;
             lastOrganizationId = organizationId;
             lastUserId = userId;
             if (exception != null) {
@@ -636,9 +864,13 @@ class TeacherAssignmentServiceImplTest {
                 long organizationId,
                 java.util.List<Long> userIds
         ) {
-            throw new UnsupportedOperationException(
-                    "Batch eligibility is not used by these tests"
-            );
+            batchCalls++;
+            lastOrganizationId = organizationId;
+            lastBatchUserIds = userIds;
+            if (batchException != null) {
+                throw batchException;
+            }
+            return batchResponse;
         }
     }
 }

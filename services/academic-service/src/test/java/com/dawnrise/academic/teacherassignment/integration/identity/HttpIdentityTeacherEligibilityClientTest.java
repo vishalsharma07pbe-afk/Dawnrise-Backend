@@ -9,6 +9,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -91,6 +92,85 @@ class HttpIdentityTeacherEligibilityClientTest {
         assertEquals(
                 TeachingEligibilityReason.TEACHER_ROLE_REQUIRED,
                 response.reason()
+        );
+        server.verify();
+    }
+
+    @Test
+    void checkBatchSendsExpectedPathHeadersAndBody() {
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl("http://identity-service");
+        MockRestServiceServer server =
+                MockRestServiceServer.bindTo(builder).build();
+        HttpIdentityTeacherEligibilityClient client =
+                client(builder.build(), "test-key", "academic-service");
+
+        server.expect(requestTo(
+                        "http://identity-service/internal/v1/organizations/10"
+                                + "/users/teaching-eligibility/batch"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header(
+                        "X-Service-Name",
+                        "academic-service"
+                ))
+                .andExpect(header(
+                        "X-Internal-Api-Key",
+                        "test-key"
+                ))
+                .andRespond(withSuccess("""
+                        {
+                          "results": [
+                            {
+                              "userId": 20,
+                              "organizationId": 10,
+                              "displayName": "Anita Sharma",
+                              "eligible": true,
+                              "reason": "ELIGIBLE"
+                            },
+                            {
+                              "userId": 21,
+                              "organizationId": 10,
+                              "displayName": null,
+                              "eligible": false,
+                              "reason": "USER_NOT_FOUND"
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        BatchTeachingEligibilityResponse response =
+                client.checkBatch(10L, List.of(20L, 21L));
+
+        assertEquals(2, response.results().size());
+        assertTrue(response.results().getFirst().eligible());
+        assertFalse(response.results().get(1).eligible());
+        server.verify();
+    }
+
+    @Test
+    void checkBatchRejectsEmptyResponse() {
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl("http://identity-service");
+        MockRestServiceServer server =
+                MockRestServiceServer.bindTo(builder).build();
+        HttpIdentityTeacherEligibilityClient client =
+                client(builder.build(), "test-key", "academic-service");
+
+        server.expect(requestTo(
+                        "http://identity-service/internal/v1/organizations/10"
+                                + "/users/teaching-eligibility/batch"
+                ))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        IdentityTeacherEligibilityException exception = assertThrows(
+                IdentityTeacherEligibilityException.class,
+                () -> client.checkBatch(10L, List.of(20L))
+        );
+
+        assertEquals(
+                "Identity-service returned an empty eligibility response",
+                exception.getMessage()
         );
         server.verify();
     }

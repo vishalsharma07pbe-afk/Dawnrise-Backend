@@ -1,6 +1,9 @@
 package com.dawnrise.academic.gradelevelsubject.service;
 
+import com.dawnrise.academic.gradelevelsubject.dto.ApplyGradeLevelSubjectStructureRequest;
+import com.dawnrise.academic.gradelevelsubject.dto.BulkCreateGradeLevelSubjectsRequest;
 import com.dawnrise.academic.gradelevelsubject.dto.CreateGradeLevelSubjectRequest;
+import com.dawnrise.academic.gradelevelsubject.dto.GradeLevelSubjectStructureResponse;
 import com.dawnrise.academic.gradelevelsubject.dto.GradeLevelSubjectResponse;
 import com.dawnrise.academic.gradelevelsubject.dto.UpdateGradeLevelSubjectRequest;
 
@@ -13,6 +16,19 @@ public interface GradeLevelSubjectService {
             long academicYearId,
             long gradeLevelId,
             CreateGradeLevelSubjectRequest request
+    );
+
+    List<GradeLevelSubjectResponse> assignBulk(
+            long organizationId,
+            long academicYearId,
+            long gradeLevelId,
+            BulkCreateGradeLevelSubjectsRequest request
+    );
+
+    List<GradeLevelSubjectStructureResponse> applyStructure(
+            long organizationId,
+            long academicYearId,
+            ApplyGradeLevelSubjectStructureRequest request
     );
 
     GradeLevelSubjectResponse getById(

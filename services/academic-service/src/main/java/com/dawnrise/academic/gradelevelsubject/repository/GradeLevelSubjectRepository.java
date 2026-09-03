@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface GradeLevelSubjectRepository
         extends JpaRepository<GradeLevelSubject, Long> {
@@ -22,6 +23,13 @@ public interface GradeLevelSubjectRepository
             Long organizationId,
             Long academicYearId,
             Long gradeLevelId
+    );
+
+    List<GradeLevelSubject>
+    findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdIn(
+            Long organizationId,
+            Long academicYearId,
+            Collection<Long> gradeLevelIds
     );
 
     boolean
