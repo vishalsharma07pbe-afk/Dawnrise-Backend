@@ -62,7 +62,9 @@ jwt:
 security:
   internal:
     api-key: ${IDENTITY_INTERNAL_API_KEY}
-    allowed-service-name: school-service
+    allowed-service-names:
+      - school-service
+      - academic-service
 
   activation-token:
     expiration: 24h

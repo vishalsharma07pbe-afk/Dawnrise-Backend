@@ -3,6 +3,7 @@ package com.dawnrise.academic.common.exception;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authorization.AuthorizationDeniedException;
@@ -66,6 +67,18 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message", not(containsString("database password"))));
     }
 
+    @Test
+    void identityTeacherEligibilityFailuresReturn503WithoutExposingInternals()
+            throws Exception {
+        mockMvc.perform(get("/throw/identity-teacher-eligibility"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message")
+                        .value("Teacher eligibility could not be verified"))
+                .andExpect(jsonPath("$.message", not(containsString("test-key"))))
+                .andExpect(jsonPath("$.message", not(containsString("RestClient"))))
+                .andExpect(jsonPath("$.message", not(containsString("identity body"))));
+    }
+
     @RestController
     static class ThrowingController {
 
@@ -92,6 +105,14 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/throw/unexpected")
         void unexpected() {
             throw new IllegalStateException("database password leaked");
+        }
+
+        @GetMapping("/throw/identity-teacher-eligibility")
+        void identityTeacherEligibility() {
+            throw new IdentityTeacherEligibilityException(
+                    "test-key RestClient identity body",
+                    new IllegalStateException("identity body")
+            );
         }
     }
 }

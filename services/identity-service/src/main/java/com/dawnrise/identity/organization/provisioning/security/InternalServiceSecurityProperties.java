@@ -2,11 +2,14 @@ package com.dawnrise.identity.organization.provisioning.security;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @ConfigurationProperties(prefix = "security.internal")
 public class InternalServiceSecurityProperties {
 
     private String apiKey;
-    private String allowedServiceName;
+    private List<String> allowedServiceNames = new ArrayList<>();
 
     public String getApiKey() {
         return apiKey;
@@ -16,13 +19,13 @@ public class InternalServiceSecurityProperties {
         this.apiKey = apiKey;
     }
 
-    public String getAllowedServiceName() {
-        return allowedServiceName;
+    public List<String> getAllowedServiceNames() {
+        return allowedServiceNames;
     }
 
-    public void setAllowedServiceName(
-            String allowedServiceName
+    public void setAllowedServiceNames(
+            List<String> allowedServiceNames
     ) {
-        this.allowedServiceName = allowedServiceName;
+        this.allowedServiceNames = allowedServiceNames;
     }
 }

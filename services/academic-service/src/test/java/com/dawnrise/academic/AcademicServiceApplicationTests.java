@@ -5,10 +5,13 @@ import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
 import com.dawnrise.academic.section.repository.SectionRepository;
 import com.dawnrise.academic.subject.repository.SubjectRepository;
+import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityClient;
+import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 
 import java.lang.reflect.Proxy;
 
@@ -125,6 +128,36 @@ class AcademicServiceApplicationTests {
 						throw new UnsupportedOperationException(method.getName());
 					}
 			);
+		}
+
+		@Bean
+		TeacherAssignmentRepository teacherAssignmentRepository() {
+			return (TeacherAssignmentRepository) Proxy.newProxyInstance(
+					TeacherAssignmentRepository.class.getClassLoader(),
+					new Class<?>[]{TeacherAssignmentRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "TeacherAssignmentRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		@Primary
+		IdentityTeacherEligibilityClient identityTeacherEligibilityClient() {
+			return (organizationId, userId) -> {
+				throw new UnsupportedOperationException(
+						"IdentityTeacherEligibilityClientStub"
+				);
+			};
 		}
 	}
 

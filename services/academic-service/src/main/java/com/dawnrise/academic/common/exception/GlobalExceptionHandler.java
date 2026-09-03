@@ -15,6 +15,10 @@ import com.dawnrise.academic.subject.exception.SubjectNotFoundException;
 import com.dawnrise.academic.gradelevelsubject.exception.GradeLevelSubjectConflictException;
 import com.dawnrise.academic.gradelevelsubject.exception.GradeLevelSubjectNotFoundException;
 import com.dawnrise.academic.gradelevelsubject.exception.InvalidGradeLevelSubjectException;
+import com.dawnrise.academic.teacherassignment.exception.InvalidTeacherAssignmentException;
+import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentConflictException;
+import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentNotFoundException;
+import com.dawnrise.academic.teacherassignment.exception.TeacherNotEligibleException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -29,6 +33,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -343,6 +348,68 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(GradeLevelSubjectConflictException.class)
     public ResponseEntity<ApiErrorResponse> handleGradeLevelSubjectConflict(
             GradeLevelSubjectConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(IdentityTeacherEligibilityException.class)
+    public ResponseEntity<ApiErrorResponse> handleIdentityEligibilityFailure(
+            IdentityTeacherEligibilityException exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.error(
+                "Teacher eligibility verification failed for {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
+
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Teacher eligibility could not be verified",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidTeacherAssignmentException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidTeacherAssignment(
+            InvalidTeacherAssignmentException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(TeacherAssignmentNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTeacherAssignmentNotFound(
+            TeacherAssignmentNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler({
+            TeacherAssignmentConflictException.class,
+            TeacherNotEligibleException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleTeacherAssignmentConflict(
+            RuntimeException exception,
             HttpServletRequest request
     ) {
         return response(

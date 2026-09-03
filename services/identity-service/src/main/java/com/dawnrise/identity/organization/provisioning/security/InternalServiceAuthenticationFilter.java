@@ -50,8 +50,8 @@ public class InternalServiceAuthenticationFilter
     ) throws ServletException, IOException {
 
         String configuredApiKey = properties.getApiKey();
-        String configuredServiceName =
-                properties.getAllowedServiceName();
+        List<String> configuredServiceNames =
+                properties.getAllowedServiceNames();
 
         String submittedApiKey =
                 request.getHeader(API_KEY_HEADER);
@@ -61,8 +61,22 @@ public class InternalServiceAuthenticationFilter
         boolean validConfiguration =
                 configuredApiKey != null
                         && !configuredApiKey.isBlank()
-                        && configuredServiceName != null
-                        && !configuredServiceName.isBlank();
+                        && configuredServiceNames != null
+                        && !configuredServiceNames.isEmpty();
+
+        boolean validServiceName =
+                validConfiguration
+                        && configuredServiceNames.stream()
+                        .filter(serviceName ->
+                                serviceName != null
+                                        && !serviceName.isBlank()
+                        )
+                        .anyMatch(serviceName ->
+                                constantTimeEquals(
+                                        serviceName,
+                                        submittedServiceName
+                                )
+                        );
 
         boolean validCredentials =
                 validConfiguration
@@ -70,10 +84,7 @@ public class InternalServiceAuthenticationFilter
                         configuredApiKey,
                         submittedApiKey
                 )
-                        && constantTimeEquals(
-                        configuredServiceName,
-                        submittedServiceName
-                );
+                        && validServiceName;
 
         if (!validCredentials) {
             SecurityContextHolder.clearContext();

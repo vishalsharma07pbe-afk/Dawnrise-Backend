@@ -9,6 +9,7 @@ import com.dawnrise.identity.roleapproval.exception.InvalidApprovalStateExceptio
 import com.dawnrise.identity.roleremoval.exception.ProtectedRoleRemovalException;
 import com.dawnrise.identity.user.exception.InvalidUserStatusTransitionException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -118,6 +119,33 @@ public class GlobalExceptionHandler {
                         validationErrors.putIfAbsent(
                                 fieldError.getField(),
                                 fieldError.getDefaultMessage()
+                        )
+                );
+
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                "Request validation failed",
+                request.getRequestURI(),
+                validationErrors
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        Map<String, String> validationErrors = new LinkedHashMap<>();
+
+        exception.getConstraintViolations()
+                .forEach(violation ->
+                        validationErrors.putIfAbsent(
+                                violation.getPropertyPath().toString(),
+                                violation.getMessage()
                         )
                 );
 

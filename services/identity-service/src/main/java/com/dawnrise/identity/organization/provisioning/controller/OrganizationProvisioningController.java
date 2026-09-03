@@ -3,6 +3,7 @@ package com.dawnrise.identity.organization.provisioning.controller;
 import com.dawnrise.identity.organization.provisioning.dto.ProvisionOrganizationRequest;
 import com.dawnrise.identity.organization.provisioning.dto.ProvisionOrganizationResponse;
 import com.dawnrise.identity.organization.provisioning.service.OrganizationProvisioningService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +21,10 @@ public class OrganizationProvisioningController {
     }
 
     @PostMapping("/initial-authority")
+    @PreAuthorize("""
+        hasRole('INTERNAL_SERVICE')
+        and authentication.name == 'school-service'
+        """)
     public ResponseEntity<ProvisionOrganizationResponse>
     provisionInitialAuthority(
             @RequestHeader("Idempotency-Key")
