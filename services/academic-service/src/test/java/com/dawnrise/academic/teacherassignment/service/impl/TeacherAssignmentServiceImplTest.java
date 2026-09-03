@@ -630,5 +630,15 @@ class TeacherAssignmentServiceImplTest {
             }
             return response;
         }
+
+        @Override
+        public com.dawnrise.academic.teacherassignment.integration.identity.BatchTeachingEligibilityResponse checkBatch(
+                long organizationId,
+                java.util.List<Long> userIds
+        ) {
+            throw new UnsupportedOperationException(
+                    "Batch eligibility is not used by these tests"
+            );
+        }
     }
 }

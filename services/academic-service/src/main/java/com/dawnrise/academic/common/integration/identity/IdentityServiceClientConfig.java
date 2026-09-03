@@ -1,4 +1,4 @@
-package com.dawnrise.academic.teacherassignment.integration.identity;
+package com.dawnrise.academic.common.integration.identity;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -9,14 +9,12 @@ import org.springframework.web.client.RestClient;
 import java.net.http.HttpClient;
 
 @Configuration
-@EnableConfigurationProperties(
-        IdentityTeacherEligibilityProperties.class
-)
-public class IdentityTeacherEligibilityConfig {
+@EnableConfigurationProperties(IdentityServiceProperties.class)
+public class IdentityServiceClientConfig {
 
     @Bean
-    RestClient identityTeacherEligibilityRestClient(
-            IdentityTeacherEligibilityProperties properties
+    RestClient identityServiceRestClient(
+            IdentityServiceProperties properties
     ) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.getConnectTimeout())

@@ -1,5 +1,6 @@
 package com.dawnrise.academic.teacherassignment.integration.identity;
 
+import com.dawnrise.academic.common.integration.identity.IdentityServiceProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -215,8 +216,8 @@ class HttpIdentityTeacherEligibilityClientTest {
             String apiKey,
             String serviceName
     ) {
-        IdentityTeacherEligibilityProperties properties =
-                new IdentityTeacherEligibilityProperties();
+        IdentityServiceProperties properties =
+                new IdentityServiceProperties();
         properties.setApiKey(apiKey);
         properties.setServiceName(serviceName);
         return new HttpIdentityTeacherEligibilityClient(

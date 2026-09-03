@@ -1,7 +1,7 @@
-package com.dawnrise.academic.teacherassignment.integration.identity;
+package com.dawnrise.academic.studentenrollment.integration.identity;
 
-import com.dawnrise.academic.common.integration.identity.BatchIdentityEligibilityRequest;
 import com.dawnrise.academic.common.integration.identity.IdentityServiceProperties;
+import com.dawnrise.academic.common.integration.identity.BatchIdentityEligibilityRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -9,20 +9,20 @@ import org.springframework.web.client.RestClientException;
 import java.util.List;
 
 @Component
-public class HttpIdentityTeacherEligibilityClient
-        implements IdentityTeacherEligibilityClient {
+public class HttpIdentityStudentEligibilityClient
+        implements IdentityStudentEligibilityClient {
 
     private static final String ELIGIBILITY_PATH =
             "/internal/v1/organizations/{organizationId}"
-                    + "/users/{userId}/teaching-eligibility";
+                    + "/users/{userId}/student-enrollment-eligibility";
     private static final String BATCH_ELIGIBILITY_PATH =
             "/internal/v1/organizations/{organizationId}"
-                    + "/users/teaching-eligibility/batch";
+                    + "/users/student-enrollment-eligibility/batch";
 
     private final RestClient identityServiceRestClient;
     private final IdentityServiceProperties properties;
 
-    public HttpIdentityTeacherEligibilityClient(
+    public HttpIdentityStudentEligibilityClient(
             RestClient identityServiceRestClient,
             IdentityServiceProperties properties
     ) {
@@ -32,14 +32,14 @@ public class HttpIdentityTeacherEligibilityClient
     }
 
     @Override
-    public TeachingEligibilityResponse check(
+    public StudentEnrollmentEligibilityResponse check(
             long organizationId,
             long userId
     ) {
         validateConfiguration();
 
         try {
-            TeachingEligibilityResponse response =
+            StudentEnrollmentEligibilityResponse response =
                     identityServiceRestClient
                             .get()
                             .uri(
@@ -56,35 +56,37 @@ public class HttpIdentityTeacherEligibilityClient
                                     properties.getApiKey()
                             )
                             .retrieve()
-                            .body(TeachingEligibilityResponse.class);
+                            .body(
+                                    StudentEnrollmentEligibilityResponse.class
+                            );
 
             if (response == null) {
-                throw new IdentityTeacherEligibilityException(
-                        "Identity-service returned an empty eligibility response",
+                throw new IdentityStudentEligibilityException(
+                        "Identity-service returned an empty student eligibility response",
                         null
                 );
             }
 
             return response;
-        } catch (IdentityTeacherEligibilityException exception) {
+        } catch (IdentityStudentEligibilityException exception) {
             throw exception;
         } catch (RestClientException exception) {
-            throw new IdentityTeacherEligibilityException(
-                    "Teacher eligibility could not be verified",
+            throw new IdentityStudentEligibilityException(
+                    "Student enrollment eligibility could not be verified",
                     exception
             );
         }
     }
 
     @Override
-    public BatchTeachingEligibilityResponse checkBatch(
+    public BatchStudentEnrollmentEligibilityResponse checkBatch(
             long organizationId,
             List<Long> userIds
     ) {
         validateConfiguration();
 
         try {
-            BatchTeachingEligibilityResponse response =
+            BatchStudentEnrollmentEligibilityResponse response =
                     identityServiceRestClient
                             .post()
                             .uri(
@@ -101,21 +103,23 @@ public class HttpIdentityTeacherEligibilityClient
                             )
                             .body(new BatchIdentityEligibilityRequest(userIds))
                             .retrieve()
-                            .body(BatchTeachingEligibilityResponse.class);
+                            .body(
+                                    BatchStudentEnrollmentEligibilityResponse.class
+                            );
 
             if (response == null || response.results() == null) {
-                throw new IdentityTeacherEligibilityException(
-                        "Identity-service returned an empty eligibility response",
+                throw new IdentityStudentEligibilityException(
+                        "Identity-service returned an empty student eligibility response",
                         null
                 );
             }
 
             return response;
-        } catch (IdentityTeacherEligibilityException exception) {
+        } catch (IdentityStudentEligibilityException exception) {
             throw exception;
         } catch (RestClientException exception) {
-            throw new IdentityTeacherEligibilityException(
-                    "Teacher eligibility could not be verified",
+            throw new IdentityStudentEligibilityException(
+                    "Student enrollment eligibility could not be verified",
                     exception
             );
         }

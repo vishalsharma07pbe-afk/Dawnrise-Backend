@@ -4,6 +4,8 @@ import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
 import com.dawnrise.academic.section.repository.SectionRepository;
+import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStudentEligibilityClient;
+import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.subject.repository.SubjectRepository;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityClient;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
@@ -151,12 +153,74 @@ class AcademicServiceApplicationTests {
 		}
 
 		@Bean
+		StudentEnrollmentRepository studentEnrollmentRepository() {
+			return (StudentEnrollmentRepository) Proxy.newProxyInstance(
+					StudentEnrollmentRepository.class.getClassLoader(),
+					new Class<?>[]{StudentEnrollmentRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "StudentEnrollmentRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
 		@Primary
 		IdentityTeacherEligibilityClient identityTeacherEligibilityClient() {
-			return (organizationId, userId) -> {
-				throw new UnsupportedOperationException(
-						"IdentityTeacherEligibilityClientStub"
-				);
+			return new IdentityTeacherEligibilityClient() {
+				@Override
+				public com.dawnrise.academic.teacherassignment.integration.identity.TeachingEligibilityResponse check(
+						long organizationId,
+						long userId
+				) {
+					throw new UnsupportedOperationException(
+							"IdentityTeacherEligibilityClientStub"
+					);
+				}
+
+				@Override
+				public com.dawnrise.academic.teacherassignment.integration.identity.BatchTeachingEligibilityResponse checkBatch(
+						long organizationId,
+						java.util.List<Long> userIds
+				) {
+					throw new UnsupportedOperationException(
+							"IdentityTeacherEligibilityClientStub"
+					);
+				}
+			};
+		}
+
+		@Bean
+		@Primary
+		IdentityStudentEligibilityClient identityStudentEligibilityClient() {
+			return new IdentityStudentEligibilityClient() {
+				@Override
+				public com.dawnrise.academic.studentenrollment.integration.identity.StudentEnrollmentEligibilityResponse check(
+						long organizationId,
+						long userId
+				) {
+					throw new UnsupportedOperationException(
+							"IdentityStudentEligibilityClientStub"
+					);
+				}
+
+				@Override
+				public com.dawnrise.academic.studentenrollment.integration.identity.BatchStudentEnrollmentEligibilityResponse checkBatch(
+						long organizationId,
+						java.util.List<Long> userIds
+				) {
+					throw new UnsupportedOperationException(
+							"IdentityStudentEligibilityClientStub"
+					);
+				}
 			};
 		}
 	}

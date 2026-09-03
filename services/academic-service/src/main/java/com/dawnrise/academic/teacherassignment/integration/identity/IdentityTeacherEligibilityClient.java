@@ -6,4 +6,9 @@ public interface IdentityTeacherEligibilityClient {
             long organizationId,
             long userId
     );
+
+    BatchTeachingEligibilityResponse checkBatch(
+            long organizationId,
+            java.util.List<Long> userIds
+    );
 }

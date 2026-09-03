@@ -1,4 +1,4 @@
-package com.dawnrise.academic.teacherassignment.integration.identity;
+package com.dawnrise.academic.common.integration.identity;
 
 import org.junit.jupiter.api.Test;
 
@@ -6,12 +6,12 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class IdentityTeacherEligibilityPropertiesTest {
+class IdentityServicePropertiesTest {
 
     @Test
     void defaultsAreFailClosedAndLocal() {
-        IdentityTeacherEligibilityProperties properties =
-                new IdentityTeacherEligibilityProperties();
+        IdentityServiceProperties properties =
+                new IdentityServiceProperties();
 
         assertThat(properties.getBaseUrl())
                 .isEqualTo("http://localhost:8081");
@@ -26,8 +26,8 @@ class IdentityTeacherEligibilityPropertiesTest {
 
     @Test
     void configuredValuesAreRetained() {
-        IdentityTeacherEligibilityProperties properties =
-                new IdentityTeacherEligibilityProperties();
+        IdentityServiceProperties properties =
+                new IdentityServiceProperties();
 
         properties.setBaseUrl("http://identity.internal");
         properties.setConnectTimeout(Duration.ofMillis(500));

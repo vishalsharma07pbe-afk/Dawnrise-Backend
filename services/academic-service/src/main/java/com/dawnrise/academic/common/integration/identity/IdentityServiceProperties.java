@@ -1,13 +1,11 @@
-package com.dawnrise.academic.teacherassignment.integration.identity;
+package com.dawnrise.academic.common.integration.identity;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
-@ConfigurationProperties(
-        prefix = "identity-service.teacher-eligibility"
-)
-public class IdentityTeacherEligibilityProperties {
+@ConfigurationProperties(prefix = "identity-service.internal")
+public class IdentityServiceProperties {
 
     private String baseUrl = "http://localhost:8081";
     private Duration connectTimeout = Duration.ofSeconds(2);

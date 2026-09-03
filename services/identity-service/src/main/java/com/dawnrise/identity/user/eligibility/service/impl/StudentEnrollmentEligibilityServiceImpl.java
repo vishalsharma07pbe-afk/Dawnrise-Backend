@@ -1,8 +1,8 @@
 package com.dawnrise.identity.user.eligibility.service.impl;
 
-import com.dawnrise.identity.user.eligibility.dto.TeachingEligibilityResponse;
-import com.dawnrise.identity.user.eligibility.enums.TeachingEligibilityReason;
-import com.dawnrise.identity.user.eligibility.service.TeachingEligibilityService;
+import com.dawnrise.identity.user.eligibility.dto.StudentEnrollmentEligibilityResponse;
+import com.dawnrise.identity.user.eligibility.enums.StudentEnrollmentEligibilityReason;
+import com.dawnrise.identity.user.eligibility.service.StudentEnrollmentEligibilityService;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserRole;
 import com.dawnrise.identity.user.enums.UserStatus;
@@ -13,25 +13,33 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
 @Transactional(readOnly = true)
-public class TeachingEligibilityServiceImpl
-        implements TeachingEligibilityService {
+public class StudentEnrollmentEligibilityServiceImpl
+        implements StudentEnrollmentEligibilityService {
+
+    private static final Set<UserStatus> ENROLLABLE_STATUSES =
+            Set.of(
+                    UserStatus.ACTIVE,
+                    UserStatus.PENDING_ACTIVATION,
+                    UserStatus.LOCKED
+            );
 
     private final UserRepository userRepository;
 
-    public TeachingEligibilityServiceImpl(
+    public StudentEnrollmentEligibilityServiceImpl(
             UserRepository userRepository
     ) {
         this.userRepository = userRepository;
     }
 
     @Override
-    public TeachingEligibilityResponse check(
+    public StudentEnrollmentEligibilityResponse check(
             long organizationId,
             long userId
     ) {
@@ -42,49 +50,49 @@ public class TeachingEligibilityServiceImpl
                 );
 
         if (optionalUser.isEmpty()) {
-            return new TeachingEligibilityResponse(
+            return new StudentEnrollmentEligibilityResponse(
                     userId,
                     organizationId,
                     null,
                     false,
-                    TeachingEligibilityReason.USER_NOT_FOUND
+                    StudentEnrollmentEligibilityReason.USER_NOT_FOUND
             );
         }
 
         User user = optionalUser.get();
         String displayName = displayName(user);
 
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            return new TeachingEligibilityResponse(
+        if (!ENROLLABLE_STATUSES.contains(user.getStatus())) {
+            return new StudentEnrollmentEligibilityResponse(
                     user.getId(),
                     user.getOrganizationId(),
                     displayName,
                     false,
-                    TeachingEligibilityReason.USER_NOT_ACTIVE
+                    StudentEnrollmentEligibilityReason.USER_NOT_ENROLLABLE
             );
         }
 
-        if (!user.getRoles().contains(UserRole.TEACHER)) {
-            return new TeachingEligibilityResponse(
+        if (!user.getRoles().contains(UserRole.STUDENT)) {
+            return new StudentEnrollmentEligibilityResponse(
                     user.getId(),
                     user.getOrganizationId(),
                     displayName,
                     false,
-                    TeachingEligibilityReason.TEACHER_ROLE_REQUIRED
+                    StudentEnrollmentEligibilityReason.STUDENT_ROLE_REQUIRED
             );
         }
 
-        return new TeachingEligibilityResponse(
+        return new StudentEnrollmentEligibilityResponse(
                 user.getId(),
                 user.getOrganizationId(),
                 displayName,
                 true,
-                TeachingEligibilityReason.ELIGIBLE
+                StudentEnrollmentEligibilityReason.ELIGIBLE
         );
     }
 
     @Override
-    public List<TeachingEligibilityResponse> checkBatch(
+    public List<StudentEnrollmentEligibilityResponse> checkBatch(
             long organizationId,
             List<Long> userIds
     ) {
@@ -108,50 +116,50 @@ public class TeachingEligibilityServiceImpl
                 .toList();
     }
 
-    private TeachingEligibilityResponse eligibilityFor(
+    private StudentEnrollmentEligibilityResponse eligibilityFor(
             long organizationId,
             long userId,
             Optional<User> optionalUser
     ) {
         if (optionalUser.isEmpty()) {
-            return new TeachingEligibilityResponse(
+            return new StudentEnrollmentEligibilityResponse(
                     userId,
                     organizationId,
                     null,
                     false,
-                    TeachingEligibilityReason.USER_NOT_FOUND
+                    StudentEnrollmentEligibilityReason.USER_NOT_FOUND
             );
         }
 
         User user = optionalUser.get();
         String displayName = displayName(user);
 
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            return new TeachingEligibilityResponse(
+        if (!ENROLLABLE_STATUSES.contains(user.getStatus())) {
+            return new StudentEnrollmentEligibilityResponse(
                     user.getId(),
                     user.getOrganizationId(),
                     displayName,
                     false,
-                    TeachingEligibilityReason.USER_NOT_ACTIVE
+                    StudentEnrollmentEligibilityReason.USER_NOT_ENROLLABLE
             );
         }
 
-        if (!user.getRoles().contains(UserRole.TEACHER)) {
-            return new TeachingEligibilityResponse(
+        if (!user.getRoles().contains(UserRole.STUDENT)) {
+            return new StudentEnrollmentEligibilityResponse(
                     user.getId(),
                     user.getOrganizationId(),
                     displayName,
                     false,
-                    TeachingEligibilityReason.TEACHER_ROLE_REQUIRED
+                    StudentEnrollmentEligibilityReason.STUDENT_ROLE_REQUIRED
             );
         }
 
-        return new TeachingEligibilityResponse(
+        return new StudentEnrollmentEligibilityResponse(
                 user.getId(),
                 user.getOrganizationId(),
                 displayName,
                 true,
-                TeachingEligibilityReason.ELIGIBLE
+                StudentEnrollmentEligibilityReason.ELIGIBLE
         );
     }
 
@@ -166,6 +174,6 @@ public class TeachingEligibilityServiceImpl
                 )
                 .map(String::trim)
                 .reduce((left, right) -> left + " " + right)
-                .orElse("Teacher " + user.getId());
+                .orElse("Student " + user.getId());
     }
 }

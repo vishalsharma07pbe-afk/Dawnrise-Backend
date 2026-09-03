@@ -19,6 +19,11 @@ import com.dawnrise.academic.teacherassignment.exception.InvalidTeacherAssignmen
 import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentConflictException;
 import com.dawnrise.academic.teacherassignment.exception.TeacherAssignmentNotFoundException;
 import com.dawnrise.academic.teacherassignment.exception.TeacherNotEligibleException;
+import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStudentEligibilityException;
+import com.dawnrise.academic.studentenrollment.exception.InvalidStudentEnrollmentException;
+import com.dawnrise.academic.studentenrollment.exception.StudentEnrollmentConflictException;
+import com.dawnrise.academic.studentenrollment.exception.StudentEnrollmentNotFoundException;
+import com.dawnrise.academic.studentenrollment.exception.StudentNotEligibleException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -409,6 +414,68 @@ public class GlobalExceptionHandler {
             TeacherNotEligibleException.class
     })
     public ResponseEntity<ApiErrorResponse> handleTeacherAssignmentConflict(
+            RuntimeException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(IdentityStudentEligibilityException.class)
+    public ResponseEntity<ApiErrorResponse> handleStudentEligibilityFailure(
+            IdentityStudentEligibilityException exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.error(
+                "Student eligibility verification failed for {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
+
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Student enrollment eligibility could not be verified",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidStudentEnrollmentException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidStudentEnrollment(
+            InvalidStudentEnrollmentException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(StudentEnrollmentNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleStudentEnrollmentNotFound(
+            StudentEnrollmentNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler({
+            StudentEnrollmentConflictException.class,
+            StudentNotEligibleException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleStudentEnrollmentConflict(
             RuntimeException exception,
             HttpServletRequest request
     ) {
