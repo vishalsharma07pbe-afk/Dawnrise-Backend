@@ -10,6 +10,8 @@ import com.dawnrise.academic.gradelevelsubject.exception.GradeLevelSubjectNotFou
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
 import com.dawnrise.academic.section.exception.SectionNotFoundException;
 import com.dawnrise.academic.section.repository.SectionRepository;
+import com.dawnrise.academic.teacherassignment.dto.BulkCreateTeacherAssignmentsRequest;
+import com.dawnrise.academic.teacherassignment.dto.BulkTeacherAssignmentItemRequest;
 import com.dawnrise.academic.teacherassignment.dto.CreateTeacherAssignmentRequest;
 import com.dawnrise.academic.teacherassignment.dto.TeacherAssignmentResponse;
 import com.dawnrise.academic.teacherassignment.dto.UpdateTeacherAssignmentRequest;
@@ -27,8 +29,12 @@ import com.dawnrise.academic.teacherassignment.service.TeacherAssignmentService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -108,6 +114,67 @@ public class TeacherAssignmentServiceImpl
                 assignmentRepository.saveAndFlush(assignment);
 
         return assignmentMapper.toResponse(savedAssignment);
+    }
+
+    @Override
+    public List<TeacherAssignmentResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateTeacherAssignmentsRequest request
+    ) {
+        AcademicYear academicYear =
+                findAcademicYear(organizationId, academicYearId);
+
+        ensureAcademicYearIsModifiable(academicYear);
+        validateBulkRequest(request);
+
+        List<Long> teacherUserIds = request.assignments()
+                .stream()
+                .map(BulkTeacherAssignmentItemRequest::teacherUserId)
+                .distinct()
+                .toList();
+
+        validateTeacherEligibilityBatch(
+                organizationId,
+                teacherUserIds
+        );
+
+        List<TeacherAssignment> assignments = new ArrayList<>();
+
+        for (BulkTeacherAssignmentItemRequest item
+                : request.assignments()) {
+            findGradeLevel(
+                    organizationId,
+                    academicYearId,
+                    item.gradeLevelId()
+            );
+            findSection(
+                    organizationId,
+                    academicYearId,
+                    item.gradeLevelId(),
+                    item.sectionId()
+            );
+            validateBulkAssignmentTarget(
+                    organizationId,
+                    academicYearId,
+                    item
+            );
+
+            assignments.add(new TeacherAssignment(
+                    organizationId,
+                    academicYearId,
+                    item.gradeLevelId(),
+                    item.sectionId(),
+                    item.gradeLevelSubjectId(),
+                    item.teacherUserId(),
+                    item.assignmentType()
+            ));
+        }
+
+        return assignmentRepository.saveAllAndFlush(assignments)
+                .stream()
+                .map(assignmentMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -293,6 +360,69 @@ public class TeacherAssignmentServiceImpl
         }
     }
 
+    private void validateBulkAssignmentTarget(
+            long organizationId,
+            long academicYearId,
+            BulkTeacherAssignmentItemRequest request
+    ) {
+        if (request.assignmentType()
+                == TeacherAssignmentType.CLASS_TEACHER) {
+
+            if (request.gradeLevelSubjectId() != null) {
+                throw new TeacherAssignmentConflictException(
+                        "A class-teacher assignment cannot contain a subject"
+                );
+            }
+
+            if (assignmentRepository
+                    .existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndAssignmentType(
+                            organizationId,
+                            academicYearId,
+                            request.gradeLevelId(),
+                            request.sectionId(),
+                            TeacherAssignmentType.CLASS_TEACHER
+                    )) {
+                throw new TeacherAssignmentConflictException(
+                        "This section already has a class teacher"
+                );
+            }
+
+            return;
+        }
+
+        if (request.gradeLevelSubjectId() == null) {
+            throw new TeacherAssignmentConflictException(
+                    "A subject-teacher assignment requires a grade subject"
+            );
+        }
+
+        gradeSubjectRepository
+                .findByIdAndGradeLevelIdAndAcademicYearIdAndOrganizationId(
+                        request.gradeLevelSubjectId(),
+                        request.gradeLevelId(),
+                        academicYearId,
+                        organizationId
+                )
+                .orElseThrow(() ->
+                        new GradeLevelSubjectNotFoundException(
+                                "Grade-subject assignment not found"
+                        )
+                );
+
+        if (assignmentRepository
+                .existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndGradeLevelSubjectId(
+                        organizationId,
+                        academicYearId,
+                        request.gradeLevelId(),
+                        request.sectionId(),
+                        request.gradeLevelSubjectId()
+                )) {
+            throw new TeacherAssignmentConflictException(
+                    "This section already has a teacher for this subject"
+            );
+        }
+    }
+
     private void validateTeacherEligibility(
             long organizationId,
             long teacherUserId
@@ -320,6 +450,102 @@ public class TeacherAssignmentServiceImpl
                 != TeachingEligibilityReason.ELIGIBLE) {
             throw new TeacherNotEligibleException(
                     eligibilityMessage(response.reason())
+            );
+        }
+    }
+
+    private void validateTeacherEligibilityBatch(
+            long organizationId,
+            List<Long> teacherUserIds
+    ) {
+        List<TeachingEligibilityResponse> results =
+                eligibilityClient.checkBatch(
+                                organizationId,
+                                teacherUserIds
+                        )
+                        .results();
+
+        if (results == null
+                || results.size() != teacherUserIds.size()) {
+            throw new TeacherNotEligibleException(
+                    "Identity-service returned incomplete teacher information"
+            );
+        }
+
+        Map<Long, TeachingEligibilityResponse> resultsByUserId =
+                new java.util.HashMap<>();
+
+        for (TeachingEligibilityResponse response : results) {
+            if (response == null || response.userId() == null) {
+                throw new TeacherNotEligibleException(
+                        "Identity-service returned incomplete teacher information"
+                );
+            }
+
+            if (resultsByUserId.put(response.userId(), response)
+                    != null) {
+                throw new TeacherNotEligibleException(
+                        "Identity-service returned duplicate teacher information"
+                );
+            }
+        }
+
+        for (Long teacherUserId : teacherUserIds) {
+            TeachingEligibilityResponse response =
+                    resultsByUserId.get(teacherUserId);
+
+            boolean validResponse =
+                    response != null
+                            && response.organizationId() != null
+                            && response.userId() != null
+                            && response.organizationId().longValue()
+                            == organizationId;
+
+            if (!validResponse
+                    || !response.eligible()
+                    || response.reason()
+                    != TeachingEligibilityReason.ELIGIBLE) {
+                throw new TeacherNotEligibleException(
+                        eligibilityMessage(
+                                response == null ? null : response.reason()
+                        )
+                );
+            }
+        }
+    }
+
+    private void validateBulkRequest(
+            BulkCreateTeacherAssignmentsRequest request
+    ) {
+        Set<LogicalAssignmentKey> logicalAssignments =
+                new HashSet<>();
+
+        for (BulkTeacherAssignmentItemRequest item
+                : request.assignments()) {
+            LogicalAssignmentKey key = LogicalAssignmentKey.from(item);
+
+            if (!logicalAssignments.add(key)) {
+                throw new TeacherAssignmentConflictException(
+                        "Duplicate teacher assignments are not allowed"
+                );
+            }
+        }
+    }
+
+    private record LogicalAssignmentKey(
+            Long gradeLevelId,
+            Long sectionId,
+            TeacherAssignmentType assignmentType,
+            Long gradeLevelSubjectId
+    ) {
+        private static LogicalAssignmentKey from(
+                BulkTeacherAssignmentItemRequest item
+        ) {
+            return new LogicalAssignmentKey(
+                    item.gradeLevelId(),
+                    item.sectionId(),
+                    item.assignmentType(),
+                    item.gradeLevelSubjectId()
             );
         }
     }

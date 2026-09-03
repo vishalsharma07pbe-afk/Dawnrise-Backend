@@ -4,6 +4,7 @@ import com.dawnrise.academic.academicyear.entity.AcademicYear;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
+import com.dawnrise.academic.subject.dto.BulkCreateSubjectsRequest;
 import com.dawnrise.academic.subject.dto.CreateSubjectRequest;
 import com.dawnrise.academic.subject.dto.SubjectResponse;
 import com.dawnrise.academic.subject.dto.UpdateSubjectRequest;
@@ -17,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -82,6 +86,81 @@ public class SubjectServiceImpl implements SubjectService {
                 subjectRepository.saveAndFlush(subject);
 
         return subjectMapper.toResponse(savedSubject);
+    }
+
+    @Override
+    public List<SubjectResponse> createBulk(
+            long organizationId,
+            long academicYearId,
+            BulkCreateSubjectsRequest request
+    ) {
+        AcademicYear academicYear = findAcademicYear(
+                organizationId,
+                academicYearId
+        );
+
+        ensureAcademicYearIsModifiable(academicYear);
+
+        List<Subject> proposedSubjects = request.subjects()
+                .stream()
+                .map(item -> new Subject(
+                        organizationId,
+                        academicYearId,
+                        item.code(),
+                        item.name(),
+                        item.description()
+                ))
+                .toList();
+
+        Set<String> requestCodes = new HashSet<>();
+        Set<String> requestNames = new HashSet<>();
+
+        for (Subject subject : proposedSubjects) {
+            if (!requestCodes.add(subject.getCode())) {
+                throw new SubjectConflictException(
+                        "The bulk request contains a duplicate subject code"
+                );
+            }
+
+            if (!requestNames.add(
+                    subject.getName().toLowerCase(Locale.ROOT)
+            )) {
+                throw new SubjectConflictException(
+                        "The bulk request contains a duplicate subject name"
+                );
+            }
+        }
+
+        for (Subject subject : proposedSubjects) {
+            if (subjectRepository
+                    .existsByAcademicYearIdAndCodeIgnoreCase(
+                            academicYearId,
+                            subject.getCode()
+                    )) {
+                throw new SubjectConflictException(
+                        "A subject with code "
+                                + subject.getCode()
+                                + " already exists"
+                );
+            }
+
+            if (subjectRepository
+                    .existsByAcademicYearIdAndNameIgnoreCase(
+                            academicYearId,
+                            subject.getName()
+                    )) {
+                throw new SubjectConflictException(
+                        "A subject with name "
+                                + subject.getName()
+                                + " already exists"
+                );
+            }
+        }
+
+        return subjectRepository.saveAllAndFlush(proposedSubjects)
+                .stream()
+                .map(subjectMapper::toResponse)
+                .toList();
     }
 
     @Override

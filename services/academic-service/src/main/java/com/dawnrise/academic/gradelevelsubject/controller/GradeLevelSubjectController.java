@@ -1,8 +1,6 @@
 package com.dawnrise.academic.gradelevelsubject.controller;
 
-import com.dawnrise.academic.gradelevelsubject.dto.CreateGradeLevelSubjectRequest;
-import com.dawnrise.academic.gradelevelsubject.dto.GradeLevelSubjectResponse;
-import com.dawnrise.academic.gradelevelsubject.dto.UpdateGradeLevelSubjectRequest;
+import com.dawnrise.academic.gradelevelsubject.dto.*;
 import com.dawnrise.academic.gradelevelsubject.service.GradeLevelSubjectService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -52,6 +50,27 @@ public class GradeLevelSubjectController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @PostMapping("/bulk")
+    @PreAuthorize("""
+            @academicTenantSecurity.hasOrganization(authentication)
+            and hasAuthority('GRADE_SUBJECT_ASSIGN')
+            """)
+    public ResponseEntity<List<GradeLevelSubjectResponse>> assignBulk(
+            @PathVariable @Positive long academicYearId,
+            @PathVariable @Positive long gradeLevelId,
+            @Valid @RequestBody BulkCreateGradeLevelSubjectsRequest request,
+            JwtAuthenticationToken authentication
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(assignmentService.assignBulk(
+                        organizationId(authentication),
+                        academicYearId,
+                        gradeLevelId,
+                        request
+                ));
     }
 
     @GetMapping

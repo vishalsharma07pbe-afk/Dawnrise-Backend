@@ -2,8 +2,11 @@ package com.dawnrise.academic.gradelevelsubject.controller;
 
 import com.dawnrise.academic.common.exception.GlobalExceptionHandler;
 import com.dawnrise.academic.config.SecurityConfig;
+import com.dawnrise.academic.gradelevelsubject.dto.ApplyGradeLevelSubjectStructureRequest;
+import com.dawnrise.academic.gradelevelsubject.dto.BulkCreateGradeLevelSubjectsRequest;
 import com.dawnrise.academic.gradelevelsubject.dto.CreateGradeLevelSubjectRequest;
 import com.dawnrise.academic.gradelevelsubject.dto.GradeLevelSubjectResponse;
+import com.dawnrise.academic.gradelevelsubject.dto.GradeLevelSubjectStructureResponse;
 import com.dawnrise.academic.gradelevelsubject.dto.UpdateGradeLevelSubjectRequest;
 import com.dawnrise.academic.gradelevelsubject.service.GradeLevelSubjectService;
 import com.dawnrise.academic.security.AcademicTenantSecurity;
@@ -31,7 +34,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(GradeLevelSubjectController.class)
+@WebMvcTest({
+        GradeLevelSubjectController.class,
+        GradeLevelSubjectStructureController.class
+})
 @Import({
         SecurityConfig.class,
         AcademicTenantSecurity.class,
@@ -81,6 +87,74 @@ class GradeLevelSubjectControllerTest {
         assertThat(assignmentService.lastOrganizationId).isEqualTo(10L);
         assertThat(assignmentService.lastAcademicYearId).isEqualTo(20L);
         assertThat(assignmentService.lastGradeLevelId).isEqualTo(30L);
+    }
+
+    @Test
+    void correctPermissionAndOrganizationIdAllowBulkAssign() throws Exception {
+        assignmentService.responses = List.of(response(50L), response(51L));
+
+        mockMvc.perform(post("/api/v1/academic-years/20/grade-levels/30/subjects/bulk")
+                        .with(jwtWithOrganizationAndPermission("GRADE_SUBJECT_ASSIGN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjects": [
+                                    {
+                                      "subjectId": 40,
+                                      "mandatory": true,
+                                      "displayOrder": 1
+                                    },
+                                    {
+                                      "subjectId": 41,
+                                      "mandatory": false,
+                                      "displayOrder": 2
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].id").value(50))
+                .andExpect(jsonPath("$[1].id").value(51));
+
+        assertThat(assignmentService.lastOrganizationId).isEqualTo(10L);
+        assertThat(assignmentService.lastAcademicYearId).isEqualTo(20L);
+        assertThat(assignmentService.lastGradeLevelId).isEqualTo(30L);
+    }
+
+    @Test
+    void correctPermissionAndOrganizationIdAllowApplyStructure() throws Exception {
+        assignmentService.structureResponses = List.of(
+                new GradeLevelSubjectStructureResponse(
+                        30L,
+                        List.of(response(50L))
+                ),
+                new GradeLevelSubjectStructureResponse(
+                        31L,
+                        List.of(response(51L))
+                )
+        );
+
+        mockMvc.perform(post("/api/v1/academic-years/20/grade-level-subjects/apply-structure")
+                        .with(jwtWithOrganizationAndPermission("GRADE_SUBJECT_ASSIGN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "gradeLevelIds": [30, 31],
+                                  "subjects": [
+                                    {
+                                      "subjectId": 40,
+                                      "mandatory": true,
+                                      "displayOrder": 1
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$[0].gradeLevelId").value(30))
+                .andExpect(jsonPath("$[1].gradeLevelId").value(31));
+
+        assertThat(assignmentService.lastOrganizationId).isEqualTo(10L);
+        assertThat(assignmentService.lastAcademicYearId).isEqualTo(20L);
     }
 
     @Test
@@ -148,6 +222,39 @@ class GradeLevelSubjectControllerTest {
                         .with(jwtWithOrganizationAndPermission("GRADE_SUBJECT_VIEW"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validCreateJson()))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/academic-years/20/grade-levels/30/subjects/bulk")
+                        .with(jwtWithOrganizationAndPermission("GRADE_SUBJECT_VIEW"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "subjects": [
+                                    {
+                                      "subjectId": 40,
+                                      "mandatory": true,
+                                      "displayOrder": 1
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/academic-years/20/grade-level-subjects/apply-structure")
+                        .with(jwtWithOrganizationAndPermission("GRADE_SUBJECT_VIEW"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "gradeLevelIds": [30],
+                                  "subjects": [
+                                    {
+                                      "subjectId": 40,
+                                      "mandatory": true,
+                                      "displayOrder": 1
+                                    }
+                                  ]
+                                }
+                                """))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/v1/academic-years/20/grade-levels/30/subjects/50")
@@ -283,6 +390,8 @@ class GradeLevelSubjectControllerTest {
 
         private GradeLevelSubjectResponse response;
         private List<GradeLevelSubjectResponse> responses = List.of();
+        private List<GradeLevelSubjectStructureResponse>
+                structureResponses = List.of();
         private long lastOrganizationId;
         private long lastAcademicYearId;
         private long lastGradeLevelId;
@@ -300,6 +409,30 @@ class GradeLevelSubjectControllerTest {
             lastAcademicYearId = academicYearId;
             lastGradeLevelId = gradeLevelId;
             return response;
+        }
+
+        @Override
+        public List<GradeLevelSubjectResponse> assignBulk(
+                long organizationId,
+                long academicYearId,
+                long gradeLevelId,
+                BulkCreateGradeLevelSubjectsRequest request
+        ) {
+            lastOrganizationId = organizationId;
+            lastAcademicYearId = academicYearId;
+            lastGradeLevelId = gradeLevelId;
+            return responses;
+        }
+
+        @Override
+        public List<GradeLevelSubjectStructureResponse> applyStructure(
+                long organizationId,
+                long academicYearId,
+                ApplyGradeLevelSubjectStructureRequest request
+        ) {
+            lastOrganizationId = organizationId;
+            lastAcademicYearId = academicYearId;
+            return structureResponses;
         }
 
         @Override

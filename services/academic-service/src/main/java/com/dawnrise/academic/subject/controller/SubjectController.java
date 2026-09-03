@@ -1,5 +1,6 @@
 package com.dawnrise.academic.subject.controller;
 
+import com.dawnrise.academic.subject.dto.BulkCreateSubjectsRequest;
 import com.dawnrise.academic.subject.dto.CreateSubjectRequest;
 import com.dawnrise.academic.subject.dto.SubjectResponse;
 import com.dawnrise.academic.subject.dto.UpdateSubjectRequest;
@@ -49,6 +50,27 @@ public class SubjectController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @PostMapping("/bulk")
+    @PreAuthorize("""
+            @academicTenantSecurity.hasOrganization(authentication)
+            and hasAuthority('SUBJECT_CREATE')
+            """)
+    public ResponseEntity<List<SubjectResponse>> createBulk(
+            @PathVariable
+            @Positive(message = "Academic year ID must be positive")
+            long academicYearId,
+            @Valid @RequestBody BulkCreateSubjectsRequest request,
+            JwtAuthenticationToken authentication
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(subjectService.createBulk(
+                        organizationId(authentication),
+                        academicYearId,
+                        request
+                ));
     }
 
     @GetMapping
