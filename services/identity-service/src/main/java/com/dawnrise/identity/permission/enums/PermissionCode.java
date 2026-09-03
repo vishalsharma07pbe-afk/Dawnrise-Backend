@@ -106,4 +106,19 @@ public enum PermissionCode {
     SECTION_VIEW,
     SECTION_CREATE,
     SECTION_UPDATE,
+
+    /*
+     * Subject management
+     */
+    SUBJECT_VIEW,
+    SUBJECT_CREATE,
+    SUBJECT_UPDATE,
+
+    /*
+     * Grade-level subject assignments
+     */
+    GRADE_SUBJECT_VIEW,
+    GRADE_SUBJECT_ASSIGN,
+    GRADE_SUBJECT_UPDATE,
+    GRADE_SUBJECT_REMOVE,
 }
