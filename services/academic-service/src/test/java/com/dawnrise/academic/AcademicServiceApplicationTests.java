@@ -2,7 +2,9 @@ package com.dawnrise.academic;
 
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
+import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
 import com.dawnrise.academic.section.repository.SectionRepository;
+import com.dawnrise.academic.subject.repository.SubjectRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -79,6 +81,46 @@ class AcademicServiceApplicationTests {
 						}
 						if (method.getName().equals("toString")) {
 							return "SectionRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		SubjectRepository subjectRepository() {
+			return (SubjectRepository) Proxy.newProxyInstance(
+					SubjectRepository.class.getClassLoader(),
+					new Class<?>[]{SubjectRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "SubjectRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		GradeLevelSubjectRepository gradeLevelSubjectRepository() {
+			return (GradeLevelSubjectRepository) Proxy.newProxyInstance(
+					GradeLevelSubjectRepository.class.getClassLoader(),
+					new Class<?>[]{GradeLevelSubjectRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "GradeLevelSubjectRepositoryStub";
 						}
 						throw new UnsupportedOperationException(method.getName());
 					}

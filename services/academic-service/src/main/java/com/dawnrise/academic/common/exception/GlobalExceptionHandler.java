@@ -9,6 +9,12 @@ import com.dawnrise.academic.gradelevel.exception.InvalidGradeLevelException;
 import com.dawnrise.academic.section.exception.InvalidSectionException;
 import com.dawnrise.academic.section.exception.SectionConflictException;
 import com.dawnrise.academic.section.exception.SectionNotFoundException;
+import com.dawnrise.academic.subject.exception.InvalidSubjectException;
+import com.dawnrise.academic.subject.exception.SubjectConflictException;
+import com.dawnrise.academic.subject.exception.SubjectNotFoundException;
+import com.dawnrise.academic.gradelevelsubject.exception.GradeLevelSubjectConflictException;
+import com.dawnrise.academic.gradelevelsubject.exception.GradeLevelSubjectNotFoundException;
+import com.dawnrise.academic.gradelevelsubject.exception.InvalidGradeLevelSubjectException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -259,6 +265,84 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(SectionConflictException.class)
     public ResponseEntity<ApiErrorResponse> handleSectionConflict(
             SectionConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidSubjectException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidSubject(
+            InvalidSubjectException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(SubjectNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleSubjectNotFound(
+            SubjectNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(SubjectConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleSubjectConflict(
+            SubjectConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidGradeLevelSubjectException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidGradeLevelSubject(
+            InvalidGradeLevelSubjectException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(GradeLevelSubjectNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleGradeLevelSubjectNotFound(
+            GradeLevelSubjectNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(GradeLevelSubjectConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleGradeLevelSubjectConflict(
+            GradeLevelSubjectConflictException exception,
             HttpServletRequest request
     ) {
         return response(
