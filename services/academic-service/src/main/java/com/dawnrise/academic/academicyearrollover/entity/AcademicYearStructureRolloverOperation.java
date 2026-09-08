@@ -1,6 +1,8 @@
 package com.dawnrise.academic.academicyearrollover.entity;
 
 import com.dawnrise.academic.academicyearrollover.enums.RolloverOperationStatus;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -46,6 +48,7 @@ public class AcademicYearStructureRolloverOperation {
     @Column(name = "failure_message", length = 500)
     private String failureMessage;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "result_json", columnDefinition = "jsonb")
     private String resultJson;
 
