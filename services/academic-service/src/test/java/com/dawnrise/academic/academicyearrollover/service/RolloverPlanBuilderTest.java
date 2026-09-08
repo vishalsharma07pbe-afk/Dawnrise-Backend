@@ -139,6 +139,78 @@ class RolloverPlanBuilderTest {
     }
 
     @Test
+    void targetBeginningAfterSourceEndsIsAccepted() {
+        RolloverPlan plan = builder.build(
+                10L,
+                2L,
+                new AcademicYearStructureRolloverRequest(
+                        1L,
+                        true,
+                        false,
+                        false,
+                        false,
+                        List.of(),
+                        List.of()
+                )
+        );
+
+        assertThat(plan.sourceAcademicYear().getEndDate())
+                .isBefore(plan.targetAcademicYear().getStartDate());
+    }
+
+    @Test
+    void targetBeginningBeforeSourceIsRejected() {
+        academicYearRepository = chronologicalRepository(
+                LocalDate.of(2025, 1, 1),
+                LocalDate.of(2025, 12, 31),
+                LocalDate.of(2024, 12, 1),
+                LocalDate.of(2025, 11, 30)
+        );
+        builder = newBuilder();
+
+        assertThatThrownBy(() -> builder.build(
+                10L,
+                2L,
+                new AcademicYearStructureRolloverRequest(
+                        1L,
+                        true,
+                        false,
+                        false,
+                        false,
+                        List.of(),
+                        List.of()
+                )
+        )).isInstanceOf(InvalidRolloverRequestException.class)
+                .hasMessage("Target academic year must begin after the source academic year ends");
+    }
+
+    @Test
+    void targetBeginningOnSourceEndDateIsRejected() {
+        academicYearRepository = chronologicalRepository(
+                LocalDate.of(2025, 1, 1),
+                LocalDate.of(2025, 12, 31),
+                LocalDate.of(2025, 12, 31),
+                LocalDate.of(2026, 12, 30)
+        );
+        builder = newBuilder();
+
+        assertThatThrownBy(() -> builder.build(
+                10L,
+                2L,
+                new AcademicYearStructureRolloverRequest(
+                        1L,
+                        true,
+                        false,
+                        false,
+                        false,
+                        List.of(),
+                        List.of()
+                )
+        )).isInstanceOf(InvalidRolloverRequestException.class)
+                .hasMessage("Target academic year must begin after the source academic year ends");
+    }
+
+    @Test
     void invalidDependenciesAreRejected() {
         assertThatThrownBy(() -> builder.normalize(
                 2L,
@@ -189,11 +261,26 @@ class RolloverPlanBuilderTest {
     }
 
     private AcademicYear year(Long id, AcademicYearStatus status) {
+        LocalDate start = id.equals(1L)
+                ? LocalDate.of(2025, 1, 1)
+                : LocalDate.of(2026, 1, 1);
+        LocalDate end = id.equals(1L)
+                ? LocalDate.of(2025, 12, 31)
+                : LocalDate.of(2026, 12, 31);
+        return year(id, status, start, end);
+    }
+
+    private AcademicYear year(
+            Long id,
+            AcademicYearStatus status,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         AcademicYear year = new AcademicYear(
                 10L,
                 "Year " + id,
-                LocalDate.of(2025, 1, 1),
-                LocalDate.of(2025, 12, 31)
+                startDate,
+                endDate
         );
         ReflectionTestUtils.setField(year, "id", id);
         ReflectionTestUtils.setField(year, "status", status);
@@ -218,6 +305,48 @@ class RolloverPlanBuilderTest {
         ReflectionTestUtils.setField(grade, "id", id);
         ReflectionTestUtils.setField(grade, "version", 0L);
         return grade;
+    }
+
+    private AcademicYearRepository chronologicalRepository(
+            LocalDate sourceStart,
+            LocalDate sourceEnd,
+            LocalDate targetStart,
+            LocalDate targetEnd
+    ) {
+        return proxy(
+                AcademicYearRepository.class,
+                (method, args) -> {
+                    if (method.equals("findByIdAndOrganizationId")
+                            && args[0].equals(1L)) {
+                        return Optional.of(year(
+                                1L,
+                                AcademicYearStatus.ACTIVE,
+                                sourceStart,
+                                sourceEnd
+                        ));
+                    }
+                    if (method.equals("findByIdAndOrganizationId")
+                            && args[0].equals(2L)) {
+                        return Optional.of(year(
+                                2L,
+                                AcademicYearStatus.PLANNED,
+                                targetStart,
+                                targetEnd
+                        ));
+                    }
+                    throw new UnsupportedOperationException(method);
+                });
+    }
+
+    private RolloverPlanBuilder newBuilder() {
+        return new RolloverPlanBuilder(
+                academicYearRepository,
+                gradeLevelRepository,
+                sectionRepository,
+                subjectRepository,
+                assignmentRepository,
+                new RolloverFingerprintService()
+        );
     }
 
     @SuppressWarnings("unchecked")

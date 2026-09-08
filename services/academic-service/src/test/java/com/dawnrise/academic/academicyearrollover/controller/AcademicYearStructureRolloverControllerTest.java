@@ -6,6 +6,7 @@ import com.dawnrise.academic.academicyearrollover.service.RolloverConfirmation;
 import com.dawnrise.academic.common.exception.GlobalExceptionHandler;
 import com.dawnrise.academic.config.SecurityConfig;
 import com.dawnrise.academic.security.AcademicTenantSecurity;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -40,6 +41,11 @@ class AcademicYearStructureRolloverControllerTest {
 
     @Autowired
     private StubRolloverService rolloverService;
+
+    @BeforeEach
+    void resetStub() {
+        rolloverService.reset();
+    }
 
     @Test
     void previewRequiresRolloverPermission() throws Exception {
@@ -91,6 +97,22 @@ class AcademicYearStructureRolloverControllerTest {
                         .value("TARGET_GRADE_LEVEL_CODE_EXISTS"));
 
         assertThat(rolloverService.lastOrganizationId).isEqualTo(10L);
+    }
+
+    @Test
+    void previewValidationFailureReturnsBadRequest() throws Exception {
+        rolloverService.exception =
+                new com.dawnrise.academic.academicyearrollover.exception.InvalidRolloverRequestException(
+                        "Target academic year must begin after the source academic year ends"
+                );
+
+        mockMvc.perform(post("/api/v1/academic-years/2/structure-rollovers/preview")
+                        .with(jwtWithPermission())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceAcademicYearId\":1,\"includeGradeLevels\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Target academic year must begin after the source academic year ends"));
     }
 
     @Test
@@ -237,6 +259,16 @@ class AcademicYearStructureRolloverControllerTest {
         AcademicYearStructureRolloverPreviewResponse previewResponse;
         RolloverConfirmation confirmation;
         AcademicYearStructureRolloverOperationResponse operationResponse;
+        RuntimeException exception;
+
+        void reset() {
+            lastOrganizationId = 0L;
+            lastOperationId = 0L;
+            previewResponse = null;
+            confirmation = null;
+            operationResponse = null;
+            exception = null;
+        }
 
         @Override
         public AcademicYearStructureRolloverPreviewResponse preview(
@@ -245,6 +277,9 @@ class AcademicYearStructureRolloverControllerTest {
                 AcademicYearStructureRolloverRequest request
         ) {
             this.lastOrganizationId = organizationId;
+            if (exception != null) {
+                throw exception;
+            }
             return previewResponse;
         }
 
@@ -257,6 +292,9 @@ class AcademicYearStructureRolloverControllerTest {
                 ConfirmAcademicYearStructureRolloverRequest request
         ) {
             this.lastOrganizationId = organizationId;
+            if (exception != null) {
+                throw exception;
+            }
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
                 throw new com.dawnrise.academic.academicyearrollover.exception.InvalidRolloverRequestException(
                         "Idempotency-Key header is required"

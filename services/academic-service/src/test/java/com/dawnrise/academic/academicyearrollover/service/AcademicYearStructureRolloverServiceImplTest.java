@@ -59,6 +59,20 @@ class AcademicYearStructureRolloverServiceImplTest {
     }
 
     @Test
+    void rejectedPreviewPerformsNoWrites() {
+        planBuilder.exception = new InvalidRolloverRequestException(
+                "Target academic year must begin after the source academic year ends"
+        );
+
+        assertThatThrownBy(() -> service.preview(10L, 2L, request()))
+                .isInstanceOf(InvalidRolloverRequestException.class)
+                .hasMessage("Target academic year must begin after the source academic year ends");
+
+        assertThat(lifecycleService.calls).isZero();
+        assertThat(executor.calls).isZero();
+    }
+
+    @Test
     void confirmationRequiresValidIdempotencyKeyBeforeRegistration() {
         assertThatThrownBy(() -> service.confirm(
                 10L,
@@ -68,6 +82,25 @@ class AcademicYearStructureRolloverServiceImplTest {
                 confirmRequest()
         )).isInstanceOf(InvalidRolloverRequestException.class)
                 .hasMessage("Idempotency-Key header is required");
+
+        assertThat(lifecycleService.calls).isZero();
+        assertThat(executor.calls).isZero();
+    }
+
+    @Test
+    void confirmationCannotBypassPlanningValidation() {
+        planBuilder.exception = new InvalidRolloverRequestException(
+                "Target academic year must begin after the source academic year ends"
+        );
+
+        assertThatThrownBy(() -> service.confirm(
+                10L,
+                42L,
+                2L,
+                "key-1",
+                confirmRequest()
+        )).isInstanceOf(InvalidRolloverRequestException.class)
+                .hasMessage("Target academic year must begin after the source academic year ends");
 
         assertThat(lifecycleService.calls).isZero();
         assertThat(executor.calls).isZero();
@@ -224,6 +257,7 @@ class AcademicYearStructureRolloverServiceImplTest {
 
     private static class StubPlanBuilder extends RolloverPlanBuilder {
         long lastOrganizationId;
+        RuntimeException exception;
 
         StubPlanBuilder() {
             super(null, null, null, null, null, new RolloverFingerprintService());
@@ -236,6 +270,9 @@ class AcademicYearStructureRolloverServiceImplTest {
                 AcademicYearStructureRolloverRequest request
         ) {
             lastOrganizationId = organizationId;
+            if (exception != null) {
+                throw exception;
+            }
             return new RolloverPlan(
                     new RolloverOptions(
                             request.sourceAcademicYearId(),

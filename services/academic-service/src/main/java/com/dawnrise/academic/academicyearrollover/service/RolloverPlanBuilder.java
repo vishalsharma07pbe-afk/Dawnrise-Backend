@@ -296,6 +296,11 @@ public class RolloverPlanBuilder {
                     "Target academic year must be planned"
             );
         }
+        if (!target.getStartDate().isAfter(source.getEndDate())) {
+            throw new InvalidRolloverRequestException(
+                    "Target academic year must begin after the source academic year ends"
+            );
+        }
     }
 
     private List<GradeLevel> selectGrades(
