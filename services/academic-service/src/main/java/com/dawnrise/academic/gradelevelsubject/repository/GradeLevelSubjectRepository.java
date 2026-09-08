@@ -32,6 +32,19 @@ public interface GradeLevelSubjectRepository
             Collection<Long> gradeLevelIds
     );
 
+    List<GradeLevelSubject>
+    findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdInOrderByGradeLevelIdAscDisplayOrderAscIdAsc(
+            Long organizationId,
+            Long academicYearId,
+            Collection<Long> gradeLevelIds
+    );
+
+    List<GradeLevelSubject>
+    findAllByOrganizationIdAndAcademicYearIdOrderByGradeLevelIdAscDisplayOrderAscIdAsc(
+            Long organizationId,
+            Long academicYearId
+    );
+
     boolean
     existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSubjectId(
             Long organizationId,

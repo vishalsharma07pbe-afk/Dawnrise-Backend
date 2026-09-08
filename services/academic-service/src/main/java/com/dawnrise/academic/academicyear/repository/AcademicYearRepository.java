@@ -3,9 +3,11 @@ package com.dawnrise.academic.academicyear.repository;
 import com.dawnrise.academic.academicyear.entity.AcademicYear;
 import com.dawnrise.academic.academicyear.enums.AcademicYearStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
 
 import java.util.List;
@@ -17,6 +19,18 @@ public interface AcademicYearRepository
     Optional<AcademicYear> findByIdAndOrganizationId(
             Long id,
             Long organizationId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT academicYear
+    FROM AcademicYear academicYear
+    WHERE academicYear.id = :id
+      AND academicYear.organizationId = :organizationId
+    """)
+    Optional<AcademicYear> findByIdAndOrganizationIdForUpdate(
+            @Param("id") Long id,
+            @Param("organizationId") Long organizationId
     );
 
     List<AcademicYear> findAllByOrganizationIdOrderByStartDateDesc(

@@ -21,6 +21,11 @@ public interface SubjectRepository
             Long academicYearId
     );
 
+    List<Subject> findAllByOrganizationIdAndAcademicYearIdOrderByCodeAscIdAsc(
+            Long organizationId,
+            Long academicYearId
+    );
+
     List<Subject> findAllByOrganizationIdAndAcademicYearIdAndIdIn(
             Long organizationId,
             Long academicYearId,

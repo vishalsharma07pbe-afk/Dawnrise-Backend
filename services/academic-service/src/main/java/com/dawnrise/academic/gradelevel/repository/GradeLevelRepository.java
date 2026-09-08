@@ -23,6 +23,12 @@ public interface GradeLevelRepository
             Long academicYearId
     );
 
+    List<GradeLevel>
+    findAllByOrganizationIdAndAcademicYearIdOrderByDisplayOrderAscIdAsc(
+            Long organizationId,
+            Long academicYearId
+    );
+
     List<GradeLevel> findAllByOrganizationIdAndAcademicYearIdAndIdIn(
             Long organizationId,
             Long academicYearId,

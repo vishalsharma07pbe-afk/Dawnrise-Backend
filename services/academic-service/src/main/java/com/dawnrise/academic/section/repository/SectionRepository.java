@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface SectionRepository
         extends JpaRepository<Section, Long> {
@@ -22,6 +23,19 @@ public interface SectionRepository
             Long organizationId,
             Long academicYearId,
             Long gradeLevelId
+    );
+
+    List<Section>
+    findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdInOrderByGradeLevelIdAscDisplayOrderAscIdAsc(
+            Long organizationId,
+            Long academicYearId,
+            Collection<Long> gradeLevelIds
+    );
+
+    List<Section>
+    findAllByOrganizationIdAndAcademicYearIdOrderByGradeLevelIdAscDisplayOrderAscIdAsc(
+            Long organizationId,
+            Long academicYearId
     );
 
     boolean

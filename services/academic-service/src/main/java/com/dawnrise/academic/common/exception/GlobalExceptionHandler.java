@@ -3,6 +3,9 @@ package com.dawnrise.academic.common.exception;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.academicyearrollover.exception.InvalidRolloverRequestException;
+import com.dawnrise.academic.academicyearrollover.exception.RolloverConflictException;
+import com.dawnrise.academic.academicyearrollover.exception.RolloverOperationNotFoundException;
 import com.dawnrise.academic.gradelevel.exception.GradeLevelConflictException;
 import com.dawnrise.academic.gradelevel.exception.GradeLevelNotFoundException;
 import com.dawnrise.academic.gradelevel.exception.InvalidGradeLevelException;
@@ -57,6 +60,45 @@ public class GlobalExceptionHandler {
     ) {
         return response(
                 HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidRolloverRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRolloverRequest(
+            InvalidRolloverRequestException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(RolloverOperationNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleRolloverOperationNotFound(
+            RolloverOperationNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(RolloverConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleRolloverConflict(
+            RolloverConflictException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
                 exception.getMessage(),
                 request,
                 null
