@@ -1,9 +1,11 @@
 package com.dawnrise.identity.user.repository;
 
 import com.dawnrise.identity.user.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,6 +30,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByOrganizationIdAndId(
             Long organizationId,
             Long userId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select user
+            from User user
+            where user.organizationId = :organizationId
+                and user.id = :userId
+            """)
+    Optional<User> findByOrganizationIdAndIdForUpdate(
+            @Param("organizationId") Long organizationId,
+            @Param("userId") Long userId
     );
 
     Optional<User> findByOrganizationIdAndEmailIgnoreCase(

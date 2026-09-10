@@ -19,6 +19,10 @@ platform:
     email: ${PLATFORM_BOOTSTRAP_EMAIL:}
     phone: ${PLATFORM_BOOTSTRAP_PHONE:}
 
+dawnrise:
+  student-guardian:
+    max-active-guardians-per-student: ${STUDENT_GUARDIAN_MAX_ACTIVE:3}
+
 spring:
   application:
     name: identity-service
