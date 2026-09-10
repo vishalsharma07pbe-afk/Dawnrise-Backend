@@ -3,6 +3,10 @@ package com.dawnrise.academic.common.exception;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.studentprogression.enums.StudentProgressionOperationStatus;
+import com.dawnrise.academic.studentprogression.exception.InvalidStudentProgressionException;
+import com.dawnrise.academic.studentprogression.exception.StudentProgressionConflictException;
+import com.dawnrise.academic.studentprogression.exception.StudentProgressionOperationNotFoundException;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +83,36 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message", not(containsString("identity body"))));
     }
 
+    @Test
+    void invalidStudentProgressionReturns400() throws Exception {
+        mockMvc.perform(get("/throw/invalid-student-progression"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Invalid student progression"));
+    }
+
+    @Test
+    void studentProgressionOperationNotFoundReturns404()
+            throws Exception {
+        mockMvc.perform(get("/throw/student-progression-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Student progression operation not found"));
+    }
+
+    @Test
+    void studentProgressionConflictReturns409WithFailureDetails()
+            throws Exception {
+        mockMvc.perform(get("/throw/student-progression-conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Student progression contains blocking conflicts"))
+                .andExpect(jsonPath("$.validationErrors.operationStatus")
+                        .value("CONFLICTED"))
+                .andExpect(jsonPath("$.validationErrors.failureCode")
+                        .value("PROGRESSION_CONFLICTS"));
+    }
+
     @RestController
     static class ThrowingController {
 
@@ -112,6 +146,29 @@ class GlobalExceptionHandlerTest {
             throw new IdentityTeacherEligibilityException(
                     "test-key RestClient identity body",
                     new IllegalStateException("identity body")
+            );
+        }
+
+        @GetMapping("/throw/invalid-student-progression")
+        void invalidStudentProgression() {
+            throw new InvalidStudentProgressionException(
+                    "Invalid student progression"
+            );
+        }
+
+        @GetMapping("/throw/student-progression-not-found")
+        void studentProgressionNotFound() {
+            throw new StudentProgressionOperationNotFoundException(
+                    "Student progression operation not found"
+            );
+        }
+
+        @GetMapping("/throw/student-progression-conflict")
+        void studentProgressionConflict() {
+            throw new StudentProgressionConflictException(
+                    "Student progression contains blocking conflicts",
+                    StudentProgressionOperationStatus.CONFLICTED,
+                    "PROGRESSION_CONFLICTS"
             );
         }
     }

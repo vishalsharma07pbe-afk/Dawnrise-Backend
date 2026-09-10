@@ -87,6 +87,7 @@ public enum PermissionCode {
     ACADEMIC_YEAR_CLOSE,
     ACADEMIC_YEAR_VOID,
     ACADEMIC_YEAR_STRUCTURE_ROLLOVER,
+    STUDENT_ANNUAL_PROGRESSION,
 
     /*
      * Security policy configuration
