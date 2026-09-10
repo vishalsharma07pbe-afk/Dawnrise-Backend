@@ -3,24 +3,30 @@ package com.dawnrise.school.school.controller;
 import com.dawnrise.school.school.DTO.SchoolOnboardingRequest;
 import com.dawnrise.school.school.DTO.SchoolProvisioningResponse;
 import com.dawnrise.school.school.DTO.SchoolResponse;
+import com.dawnrise.school.school.DTO.SchoolTimeZoneResponse;
 import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
+import com.dawnrise.school.school.DTO.UpdateSchoolTimeZoneRequest;
 import com.dawnrise.school.school.DTO.AuthorityCorrectionRequest;
 import com.dawnrise.school.school.enums.ProvisioningStatus;
 import com.dawnrise.school.school.enums.SchoolStatus;
 import com.dawnrise.school.school.exception.DuplicateResourceException;
 import com.dawnrise.school.school.exception.ResourceNotFoundException;
 import com.dawnrise.school.school.exception.InvalidRequestException;
+import com.dawnrise.school.school.exception.InvalidSchoolTimeZoneException;
 import com.dawnrise.school.school.service.SchoolService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import com.dawnrise.school.common.dto.PageResponse;
 
 import java.util.List;
+import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -304,6 +310,8 @@ class SchoolControllerTest {
                 .andExpect(jsonPath("$.schoolCode").value("SCH001"))
                 .andExpect(jsonPath("$.name")
                         .value("Dawnrise Public School"))
+                .andExpect(jsonPath("$.timeZoneId")
+                        .value("Asia/Kolkata"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
 
         verify(schoolService).getSchoolById(schoolId);
@@ -556,12 +564,122 @@ class SchoolControllerTest {
                 .andExpect(jsonPath("$.schoolCode").value("SCH001"))
                 .andExpect(jsonPath("$.name")
                         .value("Updated Dawnrise School"))
+                .andExpect(jsonPath("$.timeZoneId")
+                        .value("Asia/Kolkata"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
 
         verify(schoolService).updateSchool(
                 eq(schoolId),
                 any(UpdateSchoolRequest.class)
         );
+    }
+
+    @Test
+    void getCurrentTimeZone_returnsCurrentSchoolTimeZone()
+            throws Exception {
+        when(schoolService.getSchoolTimeZone(7L))
+                .thenReturn(new SchoolTimeZoneResponse(
+                        7L,
+                        "Asia/Kolkata"
+                ));
+
+        mockMvc.perform(get(BASE_URL + "/current/time-zone")
+                        .principal(authentication(7L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizationId").value(7))
+                .andExpect(jsonPath("$.timeZoneId").value("Asia/Kolkata"));
+
+        verify(schoolService).getSchoolTimeZone(7L);
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenRequestIsValid_returnsUpdatedTimeZone()
+            throws Exception {
+        when(schoolService.updateSchoolTimeZone(
+                eq(7L),
+                any(UpdateSchoolTimeZoneRequest.class)
+        )).thenReturn(new SchoolTimeZoneResponse(
+                7L,
+                "Europe/London"
+        ));
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .principal(authentication(7L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "Europe/London"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organizationId").value(7))
+                .andExpect(jsonPath("$.timeZoneId").value("Europe/London"));
+
+        verify(schoolService).updateSchoolTimeZone(
+                eq(7L),
+                any(UpdateSchoolTimeZoneRequest.class)
+        );
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenBlank_returnsBadRequest()
+            throws Exception {
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .principal(authentication(7L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": " "
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Request validation failed"));
+
+        verifyNoInteractions(schoolService);
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenInvalid_returnsBadRequest()
+            throws Exception {
+        when(schoolService.updateSchoolTimeZone(
+                eq(7L),
+                any(UpdateSchoolTimeZoneRequest.class)
+        )).thenThrow(new InvalidSchoolTimeZoneException(
+                "Time zone ID must be a valid IANA time zone"
+        ));
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .principal(authentication(7L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "IST"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Time zone ID must be a valid IANA time zone"));
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenOverLength_returnsBadRequest()
+            throws Exception {
+        String overLength = "A".repeat(65);
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .principal(authentication(7L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "%s"
+                                }
+                                """.formatted(overLength)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Request validation failed"));
+
+        verifyNoInteractions(schoolService);
     }
 
     @Test
@@ -734,10 +852,23 @@ class SchoolControllerTest {
                 "school@dawnrise.com",
                 "9876543210",
                 "New Delhi",
+                "Asia/Kolkata",
                 status,
                 null,
                 null
         );
+    }
+
+    private JwtAuthenticationToken authentication(Long organizationId) {
+        Jwt jwt = Jwt.withTokenValue("organization-token")
+                .header("alg", "none")
+                .subject("42")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .claim("organizationId", organizationId)
+                .build();
+
+        return new JwtAuthenticationToken(jwt);
     }
 
     private SchoolProvisioningResponse createProvisioningResponse(

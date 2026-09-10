@@ -1,10 +1,13 @@
 package com.dawnrise.school.school.entity;
 
 import com.dawnrise.school.school.enums.SchoolStatus;
+import com.dawnrise.school.school.exception.InvalidSchoolTimeZoneException;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import java.time.DateTimeException;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "schools")
@@ -27,6 +30,9 @@ public class School {
 
     @Column(name = "address", length = 500)
     private String address;
+
+    @Column(name = "time_zone_id", nullable = false, length = 64)
+    private String timeZoneId;
 
     @Column(name = "motto", length = 180)
     private String motto;
@@ -98,6 +104,41 @@ public class School {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    public String getTimeZoneId() {
+        return timeZoneId;
+    }
+
+    public void applyTimeZone(String timeZoneId) {
+        this.timeZoneId = validateTimeZoneId(timeZoneId);
+    }
+
+    private String validateTimeZoneId(String value) {
+        if (value == null || value.isBlank()) {
+            throw new InvalidSchoolTimeZoneException(
+                    "Time zone ID is required"
+            );
+        }
+
+        String normalized = value.trim();
+
+        if (normalized.length() > 64) {
+            throw new InvalidSchoolTimeZoneException(
+                    "Time zone ID cannot exceed 64 characters"
+            );
+        }
+
+        try {
+            ZoneId.of(normalized);
+        } catch (DateTimeException exception) {
+            throw new InvalidSchoolTimeZoneException(
+                    "Time zone ID must be a valid IANA time zone",
+                    exception
+            );
+        }
+
+        return normalized;
     }
 
     public String getPhone() {

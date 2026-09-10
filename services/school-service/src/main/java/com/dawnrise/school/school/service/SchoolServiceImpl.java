@@ -8,7 +8,10 @@ import com.dawnrise.school.school.DTO.SchoolProvisioningResponse;
 import com.dawnrise.school.school.DTO.SchoolResponse;
 import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
 import com.dawnrise.school.school.DTO.SchoolLogoResponse;
+import com.dawnrise.school.school.DTO.SchoolTimeZoneResponse;
 import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
+import com.dawnrise.school.school.DTO.UpdateSchoolTimeZoneRequest;
+import com.dawnrise.school.school.config.SchoolProperties;
 import com.dawnrise.school.school.entity.School;
 import com.dawnrise.school.school.entity.SchoolProvisioning;
 import com.dawnrise.school.school.enums.ProvisioningStatus;
@@ -52,6 +55,7 @@ public class SchoolServiceImpl implements SchoolService {
     private final IdentityProvisioningClient identityProvisioningClient;
     private final TransactionTemplate transactionTemplate;
     private final PhoneNumberNormalizer phoneNumberNormalizer;
+    private final SchoolProperties schoolProperties;
 
     public SchoolServiceImpl(
             schoolRepository schoolRepository,
@@ -59,7 +63,8 @@ public class SchoolServiceImpl implements SchoolService {
             SchoolMapper schoolMapper,
             IdentityProvisioningClient identityProvisioningClient,
             TransactionTemplate transactionTemplate,
-            PhoneNumberNormalizer phoneNumberNormalizer
+            PhoneNumberNormalizer phoneNumberNormalizer,
+            SchoolProperties schoolProperties
     ) {
         this.schoolRepository = schoolRepository;
         this.provisioningRepository = provisioningRepository;
@@ -67,6 +72,7 @@ public class SchoolServiceImpl implements SchoolService {
         this.identityProvisioningClient = identityProvisioningClient;
         this.transactionTemplate = transactionTemplate;
         this.phoneNumberNormalizer = phoneNumberNormalizer;
+        this.schoolProperties = schoolProperties;
     }
 
     @Override
@@ -101,6 +107,31 @@ public class SchoolServiceImpl implements SchoolService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public SchoolTimeZoneResponse getSchoolTimeZone(long organizationId) {
+        School school = findSchool(organizationId);
+        return new SchoolTimeZoneResponse(
+                school.getId(),
+                school.getTimeZoneId()
+        );
+    }
+
+    @Override
+    @Transactional
+    public SchoolTimeZoneResponse updateSchoolTimeZone(
+            long organizationId,
+            UpdateSchoolTimeZoneRequest request
+    ) {
+        School school = findSchool(organizationId);
+        school.applyTimeZone(request.timeZoneId());
+        School savedSchool = schoolRepository.save(school);
+        return new SchoolTimeZoneResponse(
+                savedSchool.getId(),
+                savedSchool.getTimeZoneId()
+        );
+    }
+
+    @Override
     public SchoolProvisioningResponse onboardSchool(SchoolOnboardingRequest request) {
         return onboardSchool(request, null, null);
     }
@@ -128,6 +159,9 @@ public class SchoolServiceImpl implements SchoolService {
 
         Long schoolId = transactionTemplate.execute(status -> {
             School school = schoolMapper.toEntity(request);
+            school.applyTimeZone(
+                    schoolProperties.getDefaultTimeZone()
+            );
             school.setPhone(normalizedSchoolPhone);
             school.setLogoData(logoData);
             school.setLogoContentType(logoContentType);

@@ -9,11 +9,18 @@ import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
 import com.dawnrise.school.school.enums.SchoolStatus;
 import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
 import com.dawnrise.school.school.DTO.SchoolLogoResponse;
+import com.dawnrise.school.school.DTO.SchoolTimeZoneResponse;
+import com.dawnrise.school.school.DTO.UpdateSchoolTimeZoneRequest;
 
 public interface SchoolService {
     SchoolResponse getSchoolById(long schoolId);
     SchoolBrandingResponse getSchoolBranding(long schoolId);
     SchoolLogoResponse getSchoolLogo(long schoolId);
+    SchoolTimeZoneResponse getSchoolTimeZone(long organizationId);
+    SchoolTimeZoneResponse updateSchoolTimeZone(
+            long organizationId,
+            UpdateSchoolTimeZoneRequest request
+    );
     SchoolProvisioningResponse onboardSchool(SchoolOnboardingRequest request);
     SchoolProvisioningResponse onboardSchool(
             SchoolOnboardingRequest request,

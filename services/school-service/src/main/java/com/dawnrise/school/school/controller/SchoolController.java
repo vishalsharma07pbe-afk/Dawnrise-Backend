@@ -8,6 +8,8 @@ import com.dawnrise.school.school.DTO.SchoolResponse;
 import com.dawnrise.school.school.DTO.UpdateSchoolRequest;
 import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
 import com.dawnrise.school.school.DTO.SchoolLogoResponse;
+import com.dawnrise.school.school.DTO.SchoolTimeZoneResponse;
+import com.dawnrise.school.school.DTO.UpdateSchoolTimeZoneRequest;
 import com.dawnrise.school.school.enums.SchoolStatus;
 import com.dawnrise.school.school.exception.InvalidRequestException;
 import com.dawnrise.school.school.service.SchoolService;
@@ -93,6 +95,38 @@ public class SchoolController {
                 .contentType(MediaType.parseMediaType(logo.contentType()))
                 .cacheControl(org.springframework.http.CacheControl.noCache())
                 .body(logo.data());
+    }
+
+    @PreAuthorize("""
+            @schoolTenantSecurity.hasOrganization(authentication)
+            and hasAuthority('ORGANIZATION_UPDATE')
+            """)
+    @GetMapping("/current/time-zone")
+    public ResponseEntity<SchoolTimeZoneResponse> getCurrentSchoolTimeZone(
+            JwtAuthenticationToken authentication
+    ) {
+        return ResponseEntity.ok(
+                schoolService.getSchoolTimeZone(
+                        organizationId(authentication)
+                )
+        );
+    }
+
+    @PreAuthorize("""
+            @schoolTenantSecurity.hasOrganization(authentication)
+            and hasAuthority('ORGANIZATION_UPDATE')
+            """)
+    @PutMapping("/current/time-zone")
+    public ResponseEntity<SchoolTimeZoneResponse> updateCurrentSchoolTimeZone(
+            JwtAuthenticationToken authentication,
+            @Valid @RequestBody UpdateSchoolTimeZoneRequest request
+    ) {
+        return ResponseEntity.ok(
+                schoolService.updateSchoolTimeZone(
+                        organizationId(authentication),
+                        request
+                )
+        );
     }
 
     @PreAuthorize(
