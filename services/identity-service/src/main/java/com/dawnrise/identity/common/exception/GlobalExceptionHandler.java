@@ -28,6 +28,10 @@ import com.dawnrise.identity.organization.provisioning.exception.ProvisioningCon
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningInProgressException;
 import com.dawnrise.identity.profilechange.exception.InvalidProfileChangeStateException;
 import com.dawnrise.identity.profilechange.exception.ProfileChangeNotAllowedException;
+import com.dawnrise.identity.studentguardian.exception.InvalidStudentGuardianRelationshipException;
+import com.dawnrise.identity.studentguardian.exception.StudentGuardianRelationshipAccessDeniedException;
+import com.dawnrise.identity.studentguardian.exception.StudentGuardianRelationshipConflictException;
+import com.dawnrise.identity.studentguardian.exception.StudentGuardianRelationshipNotFoundException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -75,6 +79,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
             ResourceNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(response);
+    }
+
+    @ExceptionHandler(StudentGuardianRelationshipNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleStudentGuardianRelationshipNotFound(
+            StudentGuardianRelationshipNotFoundException exception,
             HttpServletRequest request
     ) {
         ApiErrorResponse response = createErrorResponse(
@@ -175,6 +197,60 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
+
+    @ExceptionHandler(InvalidStudentGuardianRelationshipException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleInvalidStudentGuardianRelationship(
+            InvalidStudentGuardianRelationshipException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
+
+    @ExceptionHandler(StudentGuardianRelationshipConflictException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleStudentGuardianRelationshipConflict(
+            StudentGuardianRelationshipConflictException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(response);
+    }
+
+    @ExceptionHandler(StudentGuardianRelationshipAccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleStudentGuardianRelationshipAccessDenied(
+            StudentGuardianRelationshipAccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = createErrorResponse(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
                 .body(response);
     }
 

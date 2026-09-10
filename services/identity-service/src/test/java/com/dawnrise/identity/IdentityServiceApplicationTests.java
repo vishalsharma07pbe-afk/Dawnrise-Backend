@@ -18,6 +18,7 @@ import com.dawnrise.identity.roleapproval.repository.RoleAssignmentRequestReposi
 import com.dawnrise.identity.roleremoval.repository.RoleRemovalApprovalRepository;
 import com.dawnrise.identity.roleremoval.repository.RoleRemovalRequestRepository;
 import com.dawnrise.identity.securityaudit.repository.SecurityAuditEventRepository;
+import com.dawnrise.identity.studentguardian.repository.StudentGuardianRelationshipRepository;
 import com.dawnrise.identity.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,6 +45,9 @@ class IdentityServiceApplicationTests {
     private ProfileChangeRequestRepository profileChangeRequestRepository;
     @MockitoBean
     private SecurityAuditEventRepository securityAuditEventRepository;
+    @MockitoBean
+    private StudentGuardianRelationshipRepository
+            studentGuardianRelationshipRepository;
     @MockitoBean
     private UserActivationTokenRepository activationTokenRepository;
     @MockitoBean
