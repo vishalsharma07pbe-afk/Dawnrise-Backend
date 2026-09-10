@@ -27,6 +27,9 @@ import com.dawnrise.academic.studentenrollment.exception.InvalidStudentEnrollmen
 import com.dawnrise.academic.studentenrollment.exception.StudentEnrollmentConflictException;
 import com.dawnrise.academic.studentenrollment.exception.StudentEnrollmentNotFoundException;
 import com.dawnrise.academic.studentenrollment.exception.StudentNotEligibleException;
+import com.dawnrise.academic.studentprogression.exception.InvalidStudentProgressionException;
+import com.dawnrise.academic.studentprogression.exception.StudentProgressionConflictException;
+import com.dawnrise.academic.studentprogression.exception.StudentProgressionOperationNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -526,6 +529,61 @@ public class GlobalExceptionHandler {
                 exception.getMessage(),
                 request,
                 null
+        );
+    }
+
+    @ExceptionHandler(InvalidStudentProgressionException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleInvalidStudentProgression(
+            InvalidStudentProgressionException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(StudentProgressionOperationNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleStudentProgressionOperationNotFound(
+            StudentProgressionOperationNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(StudentProgressionConflictException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleStudentProgressionConflict(
+            StudentProgressionConflictException exception,
+            HttpServletRequest request
+    ) {
+        Map<String, String> conflictDetails =
+                new LinkedHashMap<>();
+
+        conflictDetails.put(
+                "operationStatus",
+                exception.getOperationStatus().name()
+        );
+
+        conflictDetails.put(
+                "failureCode",
+                exception.getFailureCode()
+        );
+
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                conflictDetails
         );
     }
 

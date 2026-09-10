@@ -7,6 +7,8 @@ import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepos
 import com.dawnrise.academic.section.repository.SectionRepository;
 import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStudentEligibilityClient;
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
+import com.dawnrise.academic.studentprogression.repository.StudentProgressionItemRepository;
+import com.dawnrise.academic.studentprogression.repository.StudentProgressionOperationRepository;
 import com.dawnrise.academic.subject.repository.SubjectRepository;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityClient;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
@@ -228,6 +230,59 @@ class AcademicServiceApplicationTests {
 						throw new UnsupportedOperationException(method.getName());
 					}
 			);
+		}
+
+		@Bean
+		StudentProgressionOperationRepository
+		studentProgressionOperationRepository() {
+			return (StudentProgressionOperationRepository)
+					Proxy.newProxyInstance(
+							StudentProgressionOperationRepository.class
+									.getClassLoader(),
+							new Class<?>[]{
+									StudentProgressionOperationRepository.class
+							},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentProgressionOperationRepositoryStub";
+								}
+								throw new UnsupportedOperationException(
+										method.getName()
+								);
+							}
+					);
+		}
+
+		@Bean
+		StudentProgressionItemRepository studentProgressionItemRepository() {
+			return (StudentProgressionItemRepository)
+					Proxy.newProxyInstance(
+							StudentProgressionItemRepository.class
+									.getClassLoader(),
+							new Class<?>[]{
+									StudentProgressionItemRepository.class
+							},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentProgressionItemRepositoryStub";
+								}
+								throw new UnsupportedOperationException(
+										method.getName()
+								);
+							}
+					);
 		}
 
 		@Bean
