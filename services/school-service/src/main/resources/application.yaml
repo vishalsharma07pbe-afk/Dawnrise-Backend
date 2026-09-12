@@ -35,6 +35,10 @@ management:
       exposure:
         include: health,info
 
+dawnrise:
+  school:
+    default-time-zone: ${SCHOOL_DEFAULT_TIME_ZONE:Asia/Kolkata}
+
 identity-service:
   provisioning:
     base-url: ${IDENTITY_SERVICE_BASE_URL:http://localhost:8081}
@@ -42,3 +46,9 @@ identity-service:
     read-timeout: 5s
     api-key: ${IDENTITY_INTERNAL_API_KEY}
     service-name: school-service
+
+security:
+  internal:
+    api-key: ${SCHOOL_INTERNAL_API_KEY}
+    allowed-service-names:
+      - academic-service

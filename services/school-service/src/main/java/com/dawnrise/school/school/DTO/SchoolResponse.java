@@ -10,6 +10,7 @@ public class SchoolResponse {
     private String email;
     private String phone;
     private String address;
+    private String timeZoneId;
     private SchoolStatus status;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -17,13 +18,14 @@ public class SchoolResponse {
     public SchoolResponse() {
     }
 
-    public SchoolResponse(Long id, String schoolCode, String name, String email, String phone, String address, SchoolStatus status, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public SchoolResponse(Long id, String schoolCode, String name, String email, String phone, String address, String timeZoneId, SchoolStatus status, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         this.id = id;
         this.schoolCode = schoolCode;
         this.name = name;
         this.email = email;
         this.phone = phone;
         this.address = address;
+        this.timeZoneId = timeZoneId;
         this.status = status;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -76,6 +78,14 @@ public class SchoolResponse {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    public String getTimeZoneId() {
+        return timeZoneId;
+    }
+
+    public void setTimeZoneId(String timeZoneId) {
+        this.timeZoneId = timeZoneId;
     }
 
     public SchoolStatus getStatus() {

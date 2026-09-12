@@ -49,6 +49,7 @@ public class SchoolMapper {
                 school.getEmail(),
                 school.getPhone(),
                 school.getAddress(),
+                school.getTimeZoneId(),
                 school.getStatus(),
                 school.getCreatedAt(),
                 school.getUpdatedAt()

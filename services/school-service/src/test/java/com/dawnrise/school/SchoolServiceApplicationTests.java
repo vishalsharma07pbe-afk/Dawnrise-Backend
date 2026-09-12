@@ -12,7 +12,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 		"spring.autoconfigure.exclude="
 				+ "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
 				+ "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
-				+ "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"
+				+ "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
+		"security.internal.api-key=test-internal-key",
+		"security.internal.allowed-service-names[0]=academic-service"
 })
 class SchoolServiceApplicationTests {
 

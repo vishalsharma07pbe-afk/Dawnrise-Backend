@@ -3,6 +3,8 @@ package com.dawnrise.school.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -10,19 +12,64 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import com.dawnrise.school.school.config.SchoolProperties;
+import com.dawnrise.school.security.InternalServiceAuthenticationFilter;
+import com.dawnrise.school.security.InternalServiceErrorResponseWriter;
+import com.dawnrise.school.security.InternalServiceSecurityProperties;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
 
 @Configuration
 @EnableMethodSecurity
+@EnableConfigurationProperties({
+        SchoolProperties.class,
+        InternalServiceSecurityProperties.class
+})
 public class SecurityConfig {
+
+    @Bean
+    public InternalServiceErrorResponseWriter
+    internalServiceErrorResponseWriter(
+            ObjectMapper objectMapper
+    ) {
+        return new InternalServiceErrorResponseWriter(objectMapper);
+    }
+
+    @Bean
+    public InternalServiceAuthenticationFilter
+    internalServiceAuthenticationFilter(
+            InternalServiceSecurityProperties properties,
+            InternalServiceErrorResponseWriter errorResponseWriter
+    ) {
+        return new InternalServiceAuthenticationFilter(
+                properties,
+                errorResponseWriter
+        );
+    }
+
+    @Bean
+    public FilterRegistrationBean<InternalServiceAuthenticationFilter>
+    disableInternalServiceFilterRegistration(
+            InternalServiceAuthenticationFilter filter
+    ) {
+        FilterRegistrationBean<InternalServiceAuthenticationFilter>
+                registration =
+                new FilterRegistrationBean<>(filter);
+
+        registration.setEnabled(false);
+
+        return registration;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationConverter jwtAuthenticationConverter
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            InternalServiceAuthenticationFilter internalServiceFilter
     ) throws Exception {
 
         http
@@ -40,7 +87,15 @@ public class SecurityConfig {
                                 "/actuator/info"
                         ).permitAll()
 
+                        .requestMatchers("/internal/**")
+                        .hasRole("INTERNAL_SERVICE")
+
                         .anyRequest().authenticated()
+                )
+
+                .addFilterBefore(
+                        internalServiceFilter,
+                        BearerTokenAuthenticationFilter.class
                 )
 
                 .oauth2ResourceServer(oauth2 -> oauth2

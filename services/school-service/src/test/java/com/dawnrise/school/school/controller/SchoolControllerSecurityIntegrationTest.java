@@ -7,6 +7,7 @@ import com.dawnrise.school.school.enums.SchoolStatus;
 import com.dawnrise.school.school.exception.GlobalExceptionHandler;
 import com.dawnrise.school.school.service.SchoolService;
 import com.dawnrise.school.security.PlatformTokenSecurity;
+import com.dawnrise.school.security.SchoolTenantSecurity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -16,6 +17,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -23,6 +25,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -35,7 +38,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
         SecurityConfig.class,
         PlatformTokenSecurity.class,
+        SchoolTenantSecurity.class,
         GlobalExceptionHandler.class
+})
+@TestPropertySource(properties = {
+        "security.internal.api-key=test-internal-key",
+        "security.internal.allowed-service-names[0]=academic-service"
 })
 class SchoolControllerSecurityIntegrationTest {
 
@@ -257,6 +265,145 @@ class SchoolControllerSecurityIntegrationTest {
         verifyNoInteractions(schoolService);
     }
 
+    @Test
+    void updateCurrentTimeZone_whenOrganizationTokenHasPermission_reachesService()
+            throws Exception {
+        when(jwtDecoder.decode("organization-token"))
+                .thenReturn(jwt(
+                        "organization-token",
+                        "ORGANIZATION_USER",
+                        List.of("school-app"),
+                        Set.of("ORGANIZATION_UPDATE"),
+                        7L
+                ));
+
+        when(schoolService.updateSchoolTimeZone(any(Long.class), any()))
+                .thenReturn(new com.dawnrise.school.school.DTO.SchoolTimeZoneResponse(
+                        7L,
+                        "Asia/Kolkata"
+                ));
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .header(
+                                "Authorization",
+                                "Bearer organization-token"
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "Asia/Kolkata"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(schoolService).updateSchoolTimeZone(eq(7L), any());
+    }
+
+    @Test
+    void getCurrentTimeZone_whenOrganizationTokenHasPermission_reachesService()
+            throws Exception {
+        when(jwtDecoder.decode("organization-token"))
+                .thenReturn(jwt(
+                        "organization-token",
+                        "ORGANIZATION_USER",
+                        List.of("school-app"),
+                        Set.of("ORGANIZATION_UPDATE"),
+                        7L
+                ));
+
+        when(schoolService.getSchoolTimeZone(7L))
+                .thenReturn(new com.dawnrise.school.school.DTO.SchoolTimeZoneResponse(
+                        7L,
+                        "Asia/Kolkata"
+                ));
+
+        mockMvc.perform(get(BASE_URL + "/current/time-zone")
+                        .header(
+                                "Authorization",
+                                "Bearer organization-token"
+                        ))
+                .andExpect(status().isOk());
+
+        verify(schoolService).getSchoolTimeZone(7L);
+    }
+
+    @Test
+    void getCurrentTimeZone_whenPermissionMissing_returnsForbidden()
+            throws Exception {
+        when(jwtDecoder.decode("organization-token"))
+                .thenReturn(jwt(
+                        "organization-token",
+                        "ORGANIZATION_USER",
+                        List.of("school-app"),
+                        Set.of("ORGANIZATION_VIEW"),
+                        7L
+                ));
+
+        mockMvc.perform(get(BASE_URL + "/current/time-zone")
+                        .header(
+                                "Authorization",
+                                "Bearer organization-token"
+                        ))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(schoolService);
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenPermissionMissing_returnsForbidden()
+            throws Exception {
+        when(jwtDecoder.decode("organization-token"))
+                .thenReturn(jwt(
+                        "organization-token",
+                        "ORGANIZATION_USER",
+                        List.of("school-app"),
+                        Set.of("ORGANIZATION_VIEW"),
+                        7L
+                ));
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .header(
+                                "Authorization",
+                                "Bearer organization-token"
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "Asia/Kolkata"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(schoolService);
+    }
+
+    @Test
+    void updateCurrentTimeZone_whenOrganizationClaimMissing_returnsForbidden()
+            throws Exception {
+        when(jwtDecoder.decode("organization-token"))
+                .thenReturn(jwt(
+                        "organization-token",
+                        "ORGANIZATION_USER",
+                        List.of("school-app"),
+                        Set.of("ORGANIZATION_UPDATE")
+                ));
+
+        mockMvc.perform(put(BASE_URL + "/current/time-zone")
+                        .header(
+                                "Authorization",
+                                "Bearer organization-token"
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "timeZoneId": "Asia/Kolkata"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(schoolService);
+    }
+
     private static Jwt jwt(
             String tokenValue,
             String identityType,
@@ -272,6 +419,35 @@ class SchoolControllerSecurityIntegrationTest {
                 .claim("username", "employee01")
                 .claim("roles", Set.of("ONBOARDING_MANAGER"))
                 .claim("permissions", permissions);
+
+        if (identityType != null) {
+            builder.claim("identityType", identityType);
+        }
+
+        if (!audience.isEmpty()) {
+            builder.audience(audience);
+        }
+
+        return builder.build();
+    }
+
+    private static Jwt jwt(
+            String tokenValue,
+            String identityType,
+            List<String> audience,
+            Set<String> permissions,
+            Long organizationId
+    ) {
+        Jwt.Builder builder = Jwt.withTokenValue(tokenValue)
+                .header("alg", "none")
+                .issuer("dawnrise-identity-service")
+                .subject("42")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(900))
+                .claim("username", "employee01")
+                .claim("roles", Set.of("ADMIN"))
+                .claim("permissions", permissions)
+                .claim("organizationId", organizationId);
 
         if (identityType != null) {
             builder.claim("identityType", identityType);

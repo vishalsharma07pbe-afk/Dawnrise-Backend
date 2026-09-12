@@ -10,6 +10,7 @@ import com.dawnrise.academic.studentprogression.exception.StudentProgressionOper
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -113,6 +114,17 @@ class GlobalExceptionHandlerTest {
                         .value("PROGRESSION_CONFLICTS"));
     }
 
+    @Test
+    void optimisticLockingFailureReturns409ApiError() throws Exception {
+        mockMvc.perform(get("/throw/optimistic-lock"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.error").value("Conflict"))
+                .andExpect(jsonPath("$.message")
+                        .value("Academic data conflicts with existing or newer data"))
+                .andExpect(jsonPath("$.path").value("/throw/optimistic-lock"));
+    }
+
     @RestController
     static class ThrowingController {
 
@@ -169,6 +181,14 @@ class GlobalExceptionHandlerTest {
                     "Student progression contains blocking conflicts",
                     StudentProgressionOperationStatus.CONFLICTED,
                     "PROGRESSION_CONFLICTS"
+            );
+        }
+
+        @GetMapping("/throw/optimistic-lock")
+        void optimisticLock() {
+            throw new ObjectOptimisticLockingFailureException(
+                    "StudentAttendancePolicy",
+                    10L
             );
         }
     }

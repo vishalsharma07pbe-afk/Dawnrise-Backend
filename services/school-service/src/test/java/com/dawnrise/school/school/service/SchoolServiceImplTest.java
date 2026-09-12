@@ -13,6 +13,7 @@ import com.dawnrise.school.school.enums.ProvisioningStatus;
 import com.dawnrise.school.school.exception.DuplicateResourceException;
 import com.dawnrise.school.school.exception.ResourceNotFoundException;
 import com.dawnrise.school.school.exception.InvalidRequestException;
+import com.dawnrise.school.school.config.SchoolProperties;
 import com.dawnrise.school.school.mapper.SchoolMapper;
 import com.dawnrise.school.school.phone.PhoneNumberNormalizer;
 import com.dawnrise.school.school.provisioning.IdentityProvisioningClient;
@@ -70,6 +71,7 @@ class SchoolServiceImplTest {
     private PhoneNumberNormalizer phoneNumberNormalizer;
 
     private SchoolServiceImpl schoolService;
+    private SchoolProperties schoolProperties;
 
     @BeforeEach
     void setUp() {
@@ -86,13 +88,17 @@ class SchoolServiceImplTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        schoolProperties = new SchoolProperties();
+        schoolProperties.setDefaultTimeZone("Asia/Kolkata");
+
         schoolService = new SchoolServiceImpl(
                 schoolRepository,
                 provisioningRepository,
                 schoolMapper,
                 identityProvisioningClient,
                 transactionTemplate,
-                phoneNumberNormalizer
+                phoneNumberNormalizer,
+                schoolProperties
         );
 
         when(phoneNumberNormalizer.normalizeRequired(
@@ -178,11 +184,74 @@ class SchoolServiceImplTest {
         verify(schoolRepository).existsBySchoolCode("schC001");
         verify(schoolMapper).toEntity(request);
         verify(schoolRepository).save(school);
+        verify(school).applyTimeZone("Asia/Kolkata");
         verify(identityProvisioningClient).provisionInitialAuthority(
                 any(IdentityProvisioningRequest.class),
                 anyString()
         );
         verify(savedSchool).activate();
+    }
+
+    @Test
+    void onboardSchool_usesConfiguredDefaultTimeZoneForNewSchools() {
+        schoolProperties.setDefaultTimeZone("Europe/London");
+        SchoolOnboardingRequest request = onboardingRequest();
+        School school = mock(School.class);
+        School savedSchool = mock(School.class);
+        SchoolProvisioning provisioning = provisioning();
+
+        when(request.getSchoolCode()).thenReturn("schC001");
+        when(schoolRepository.existsBySchoolCode("schC001")).thenReturn(false);
+        when(schoolMapper.toEntity(request)).thenReturn(school);
+        when(schoolRepository.save(school)).thenReturn(savedSchool);
+        when(savedSchool.getId()).thenReturn(1L);
+        when(schoolRepository.findById(1L)).thenReturn(Optional.of(savedSchool));
+        when(provisioningRepository.findWithLockBySchoolId(1L))
+                .thenReturn(Optional.of(provisioning));
+        when(provisioningRepository.findBySchoolId(1L))
+                .thenReturn(Optional.of(provisioning));
+        when(identityProvisioningClient.provisionInitialAuthority(
+                any(IdentityProvisioningRequest.class),
+                anyString()
+        )).thenReturn(identitySuccessResponse());
+
+        schoolService.onboardSchool(request);
+
+        verify(school).applyTimeZone("Europe/London");
+    }
+
+    @Test
+    void updateSchoolTimeZone_whenSchoolExists_updatesTimeZone() {
+        School school = mock(School.class);
+        when(schoolRepository.findById(1L)).thenReturn(Optional.of(school));
+        when(schoolRepository.save(school)).thenReturn(school);
+        when(school.getId()).thenReturn(1L);
+        when(school.getTimeZoneId()).thenReturn("Europe/London");
+
+        var response = schoolService.updateSchoolTimeZone(
+                1L,
+                new com.dawnrise.school.school.DTO.UpdateSchoolTimeZoneRequest(
+                        "Europe/London"
+                )
+        );
+
+        assertEquals(1L, response.organizationId());
+        assertEquals("Europe/London", response.timeZoneId());
+        verify(school).applyTimeZone("Europe/London");
+        verify(schoolRepository).save(school);
+    }
+
+    @Test
+    void getSchoolTimeZone_whenSchoolExists_returnsTimeZone() {
+        School school = mock(School.class);
+        when(schoolRepository.findById(1L)).thenReturn(Optional.of(school));
+        when(school.getId()).thenReturn(1L);
+        when(school.getTimeZoneId()).thenReturn("Asia/Kolkata");
+
+        var response = schoolService.getSchoolTimeZone(1L);
+
+        assertEquals(1L, response.organizationId());
+        assertEquals("Asia/Kolkata", response.timeZoneId());
     }
 
     @Test
