@@ -37,6 +37,10 @@ import com.dawnrise.academic.academiccalendar.exception.InvalidAcademicCalendarE
 import com.dawnrise.academic.studentattendance.policy.exception.InvalidStudentAttendancePolicyException;
 import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyConflictException;
 import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyNotFoundException;
+import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
+import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceRecordingConflictException;
+import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceSessionNotFoundException;
+import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.persistence.OptimisticLockException;
@@ -298,7 +302,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             InvalidAuthenticatedAcademicActorException.class,
             InvalidAcademicCalendarException.class,
-            InvalidStudentAttendancePolicyException.class
+            InvalidStudentAttendancePolicyException.class,
+            InvalidStudentAttendanceRecordingException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
             RuntimeException exception,
@@ -314,7 +319,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             AcademicCalendarConflictException.class,
-            StudentAttendancePolicyConflictException.class
+            StudentAttendancePolicyConflictException.class,
+            StudentAttendanceRecordingConflictException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceConflict(
             RuntimeException exception,
@@ -330,7 +336,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             AcademicCalendarDayNotFoundException.class,
-            StudentAttendancePolicyNotFoundException.class
+            StudentAttendancePolicyNotFoundException.class,
+            StudentAttendanceSessionNotFoundException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceNotFound(
             RuntimeException exception,
@@ -515,6 +522,26 @@ public class GlobalExceptionHandler {
         return response(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "Teacher eligibility could not be verified",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(SchoolTimeZoneUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleSchoolTimeZoneUnavailable(
+            SchoolTimeZoneUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.error(
+                "School timezone verification failed for {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
+
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "School timezone could not be verified",
                 request,
                 null
         );

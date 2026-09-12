@@ -44,4 +44,12 @@ public interface TeacherAssignmentRepository
             Long sectionId,
             Long gradeLevelSubjectId
     );
+
+    boolean existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserId(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            Long sectionId,
+            Long teacherUserId
+    );
 }

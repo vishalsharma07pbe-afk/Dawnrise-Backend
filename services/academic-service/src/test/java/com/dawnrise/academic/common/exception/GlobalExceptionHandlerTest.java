@@ -3,6 +3,7 @@ package com.dawnrise.academic.common.exception;
 import com.dawnrise.academic.academicyear.exception.AcademicYearConflictException;
 import com.dawnrise.academic.academicyear.exception.AcademicYearNotFoundException;
 import com.dawnrise.academic.academicyear.exception.InvalidAcademicYearException;
+import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import com.dawnrise.academic.studentprogression.enums.StudentProgressionOperationStatus;
 import com.dawnrise.academic.studentprogression.exception.InvalidStudentProgressionException;
 import com.dawnrise.academic.studentprogression.exception.StudentProgressionConflictException;
@@ -85,6 +86,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void schoolTimeZoneFailuresReturn503WithoutExposingInternals()
+            throws Exception {
+        mockMvc.perform(get("/throw/school-time-zone"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message")
+                        .value("School timezone could not be verified"))
+                .andExpect(jsonPath("$.message", not(containsString("test-key"))))
+                .andExpect(jsonPath("$.message", not(containsString("school body"))))
+                .andExpect(jsonPath("$.message", not(containsString("http://school"))));
+    }
+
+    @Test
     void invalidStudentProgressionReturns400() throws Exception {
         mockMvc.perform(get("/throw/invalid-student-progression"))
                 .andExpect(status().isBadRequest())
@@ -158,6 +171,14 @@ class GlobalExceptionHandlerTest {
             throw new IdentityTeacherEligibilityException(
                     "test-key RestClient identity body",
                     new IllegalStateException("identity body")
+            );
+        }
+
+        @GetMapping("/throw/school-time-zone")
+        void schoolTimeZone() {
+            throw new SchoolTimeZoneUnavailableException(
+                    "test-key http://school school body",
+                    new IllegalStateException("school body")
             );
         }
 

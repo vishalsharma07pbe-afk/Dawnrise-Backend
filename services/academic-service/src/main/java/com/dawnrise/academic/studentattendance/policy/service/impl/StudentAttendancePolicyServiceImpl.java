@@ -74,6 +74,10 @@ public class StudentAttendancePolicyServiceImpl
                 properties.getDefaultLateOccurrencesThreshold(),
                 properties.getDefaultLatePenaltyOutcome(),
                 properties.getDefaultLateCountingPeriod(),
+                properties.getDefaultDeferredEntryEnabled(),
+                properties.getDefaultTeacherBackEntryDays(),
+                properties.getDefaultLeadershipBackEntryDays(),
+                properties.getDefaultAutomaticSubmissionEnabled(),
                 actorUserId
         );
 
@@ -133,6 +137,18 @@ public class StudentAttendancePolicyServiceImpl
                 request.lateOccurrencesThreshold(),
                 request.latePenaltyOutcome(),
                 request.lateCountingPeriod(),
+                request.deferredEntryEnabled() == null
+                        ? policy.getDeferredEntryEnabled()
+                        : request.deferredEntryEnabled(),
+                request.teacherBackEntryDays() == null
+                        ? policy.getTeacherBackEntryDays()
+                        : request.teacherBackEntryDays(),
+                request.leadershipBackEntryDays() == null
+                        ? policy.getLeadershipBackEntryDays()
+                        : request.leadershipBackEntryDays(),
+                request.automaticSubmissionEnabled() == null
+                        ? policy.getAutomaticSubmissionEnabled()
+                        : request.automaticSubmissionEnabled(),
                 actorUserId
         );
 
@@ -264,6 +280,10 @@ public class StudentAttendancePolicyServiceImpl
                 policy.getLateOccurrencesThreshold(),
                 policy.getLatePenaltyOutcome(),
                 policy.getLateCountingPeriod(),
+                policy.getDeferredEntryEnabled(),
+                policy.getTeacherBackEntryDays(),
+                policy.getLeadershipBackEntryDays(),
+                policy.getAutomaticSubmissionEnabled(),
                 policy.getVersion(),
                 policy.getCreatedAt(),
                 policy.getUpdatedAt(),

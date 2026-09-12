@@ -12,6 +12,7 @@ import java.util.Collection;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDate;
 
 public interface StudentEnrollmentRepository
         extends JpaRepository<StudentEnrollment, Long> {
@@ -38,6 +39,25 @@ public interface StudentEnrollmentRepository
             Long gradeLevelId,
             Long sectionId,
             StudentEnrollmentStatus status
+    );
+
+    @Query("""
+        SELECT enrollment
+        FROM StudentEnrollment enrollment
+        WHERE enrollment.organizationId = :organizationId
+          AND enrollment.academicYearId = :academicYearId
+          AND enrollment.gradeLevelId = :gradeLevelId
+          AND enrollment.sectionId = :sectionId
+          AND enrollment.enrolledOn <= :attendanceDate
+          AND (enrollment.endedOn IS NULL OR enrollment.endedOn >= :attendanceDate)
+        ORDER BY enrollment.rollNumber ASC, enrollment.id ASC
+        """)
+    List<StudentEnrollment> findEligibleForAttendanceDate(
+            @Param("organizationId") Long organizationId,
+            @Param("academicYearId") Long academicYearId,
+            @Param("gradeLevelId") Long gradeLevelId,
+            @Param("sectionId") Long sectionId,
+            @Param("attendanceDate") LocalDate attendanceDate
     );
 
     List<StudentEnrollment>
@@ -114,6 +134,26 @@ public interface StudentEnrollmentRepository
     findAllByOrganizationIdAndAcademicYearIdAndIdInForUpdate(
             @Param("organizationId") Long organizationId,
             @Param("academicYearId") Long academicYearId,
+            @Param("enrollmentIds") Collection<Long> enrollmentIds
+    );
+
+    @Query("""
+        SELECT enrollment
+        FROM StudentEnrollment enrollment
+        WHERE enrollment.organizationId = :organizationId
+          AND enrollment.academicYearId = :academicYearId
+          AND enrollment.gradeLevelId = :gradeLevelId
+          AND enrollment.sectionId = :sectionId
+          AND enrollment.id IN :enrollmentIds
+          AND enrollment.enrolledOn <= :attendanceDate
+          AND (enrollment.endedOn IS NULL OR enrollment.endedOn >= :attendanceDate)
+        """)
+    List<StudentEnrollment> findEligibleForAttendanceDateByIds(
+            @Param("organizationId") Long organizationId,
+            @Param("academicYearId") Long academicYearId,
+            @Param("gradeLevelId") Long gradeLevelId,
+            @Param("sectionId") Long sectionId,
+            @Param("attendanceDate") LocalDate attendanceDate,
             @Param("enrollmentIds") Collection<Long> enrollmentIds
     );
 }
