@@ -2,6 +2,8 @@ package com.dawnrise.academic.studentattendance.config;
 
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -38,6 +40,14 @@ class StudentAttendancePropertiesTest {
                             .isEqualTo(AttendanceMode.DAILY);
                     assertThat(properties.getDefaultWeekStartDay())
                             .isEqualTo(DayOfWeek.MONDAY);
+                    assertThat(properties.getDefaultLatePenaltyEnabled())
+                            .isFalse();
+                    assertThat(properties.getDefaultLateOccurrencesThreshold())
+                            .isEqualTo(3);
+                    assertThat(properties.getDefaultLatePenaltyOutcome())
+                            .isEqualTo(LatePenaltyOutcome.HALF_DAY);
+                    assertThat(properties.getDefaultLateCountingPeriod())
+                            .isEqualTo(LateCountingPeriod.MONTHLY);
                     assertThat(properties.getDefaultStatusCredits())
                             .containsOnlyKeys(AttendanceStatus.finalStatuses());
                     assertThat(properties.getDefaultStatusCredits()
@@ -63,6 +73,10 @@ class StudentAttendancePropertiesTest {
                         "dawnrise.student-attendance.default-automatic-submission-minutes=20",
                         "dawnrise.student-attendance.default-attendance-mode=DAILY",
                         "dawnrise.student-attendance.default-week-start-day=MONDAY",
+                        "dawnrise.student-attendance.default-late-penalty-enabled=false",
+                        "dawnrise.student-attendance.default-late-occurrences-threshold=3",
+                        "dawnrise.student-attendance.default-late-penalty-outcome=HALF_DAY",
+                        "dawnrise.student-attendance.default-late-counting-period=MONTHLY",
                         "dawnrise.student-attendance.default-status-credits.PRESENT.earned-credit=1.00",
                         "dawnrise.student-attendance.default-status-credits.PRESENT.possible-credit=1.00",
                         "dawnrise.student-attendance.default-status-credits.ABSENT.earned-credit=0.00",
@@ -106,6 +120,51 @@ class StudentAttendancePropertiesTest {
                         ));
     }
 
+    @Test
+    void thresholdZeroPreventsContextStartup() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.default-late-occurrences-threshold=0"
+                )
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining(
+                                "defaultLateOccurrencesThreshold"
+                        ));
+    }
+
+    @Test
+    void thresholdAboveOneHundredPreventsContextStartup() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.default-late-occurrences-threshold=101"
+                )
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining(
+                                "defaultLateOccurrencesThreshold"
+                        ));
+    }
+
+    @Test
+    void bindsValidLatePenaltyEnums() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.default-late-penalty-outcome=ABSENT",
+                        "dawnrise.student-attendance.default-late-counting-period=MONTHLY"
+                )
+                .run(context -> {
+                    StudentAttendanceProperties properties =
+                            context.getBean(StudentAttendanceProperties.class);
+
+                    assertThat(properties.getDefaultLatePenaltyOutcome())
+                            .isEqualTo(LatePenaltyOutcome.ABSENT);
+                    assertThat(properties.getDefaultLateCountingPeriod())
+                            .isEqualTo(LateCountingPeriod.MONTHLY);
+                });
+    }
+
     private static String[] validValues() {
         return new String[]{
                 "dawnrise.student-attendance.max-records-per-request=200",
@@ -114,6 +173,10 @@ class StudentAttendancePropertiesTest {
                 "dawnrise.student-attendance.default-automatic-submission-minutes=20",
                 "dawnrise.student-attendance.default-attendance-mode=DAILY",
                 "dawnrise.student-attendance.default-week-start-day=MONDAY",
+                "dawnrise.student-attendance.default-late-penalty-enabled=false",
+                "dawnrise.student-attendance.default-late-occurrences-threshold=3",
+                "dawnrise.student-attendance.default-late-penalty-outcome=HALF_DAY",
+                "dawnrise.student-attendance.default-late-counting-period=MONTHLY",
                 "dawnrise.student-attendance.default-status-credits.PRESENT.earned-credit=1.00",
                 "dawnrise.student-attendance.default-status-credits.PRESENT.possible-credit=1.00",
                 "dawnrise.student-attendance.default-status-credits.ABSENT.earned-credit=0.00",

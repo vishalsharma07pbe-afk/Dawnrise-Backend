@@ -70,6 +70,10 @@ public class StudentAttendancePolicyServiceImpl
                 properties.getDefaultWeekStartDay(),
                 properties.getDefaultDraftWarningMinutes(),
                 properties.getDefaultAutomaticSubmissionMinutes(),
+                properties.getDefaultLatePenaltyEnabled(),
+                properties.getDefaultLateOccurrencesThreshold(),
+                properties.getDefaultLatePenaltyOutcome(),
+                properties.getDefaultLateCountingPeriod(),
                 actorUserId
         );
 
@@ -125,6 +129,10 @@ public class StudentAttendancePolicyServiceImpl
                 request.weekStartDay(),
                 request.draftWarningMinutes(),
                 request.automaticSubmissionMinutes(),
+                request.latePenaltyEnabled(),
+                request.lateOccurrencesThreshold(),
+                request.latePenaltyOutcome(),
+                request.lateCountingPeriod(),
                 actorUserId
         );
 
@@ -252,6 +260,10 @@ public class StudentAttendancePolicyServiceImpl
                 policy.getWeekStartDay(),
                 policy.getDraftWarningMinutes(),
                 policy.getAutomaticSubmissionMinutes(),
+                policy.getLatePenaltyEnabled(),
+                policy.getLateOccurrencesThreshold(),
+                policy.getLatePenaltyOutcome(),
+                policy.getLateCountingPeriod(),
                 policy.getVersion(),
                 policy.getCreatedAt(),
                 policy.getUpdatedAt(),

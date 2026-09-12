@@ -1,6 +1,8 @@
 package com.dawnrise.academic.studentattendance.policy.entity;
 
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentattendance.policy.exception.InvalidStudentAttendancePolicyException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -37,6 +39,20 @@ public class StudentAttendancePolicy {
     @Column(name = "automatic_submission_minutes", nullable = false)
     private Integer automaticSubmissionMinutes;
 
+    @Column(name = "late_penalty_enabled", nullable = false)
+    private Boolean latePenaltyEnabled;
+
+    @Column(name = "late_occurrences_threshold", nullable = false)
+    private Integer lateOccurrencesThreshold;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "late_penalty_outcome", nullable = false, length = 20)
+    private LatePenaltyOutcome latePenaltyOutcome;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "late_counting_period", nullable = false, length = 20)
+    private LateCountingPeriod lateCountingPeriod;
+
     @Column(name = "created_by_user_id", nullable = false)
     private Long createdByUserId;
 
@@ -64,6 +80,10 @@ public class StudentAttendancePolicy {
             DayOfWeek weekStartDay,
             Integer draftWarningMinutes,
             Integer automaticSubmissionMinutes,
+            Boolean latePenaltyEnabled,
+            Integer lateOccurrencesThreshold,
+            LatePenaltyOutcome latePenaltyOutcome,
+            LateCountingPeriod lateCountingPeriod,
             Long actorUserId
     ) {
         requirePositive(organizationId, "Organization ID must be positive");
@@ -75,6 +95,10 @@ public class StudentAttendancePolicy {
                 weekStartDay,
                 draftWarningMinutes,
                 automaticSubmissionMinutes,
+                latePenaltyEnabled,
+                lateOccurrencesThreshold,
+                latePenaltyOutcome,
+                lateCountingPeriod,
                 actorUserId
         );
     }
@@ -84,6 +108,10 @@ public class StudentAttendancePolicy {
             DayOfWeek weekStartDay,
             Integer draftWarningMinutes,
             Integer automaticSubmissionMinutes,
+            Boolean latePenaltyEnabled,
+            Integer lateOccurrencesThreshold,
+            LatePenaltyOutcome latePenaltyOutcome,
+            LateCountingPeriod lateCountingPeriod,
             Long actorUserId
     ) {
         if (attendanceMode != AttendanceMode.DAILY) {
@@ -110,12 +138,38 @@ public class StudentAttendancePolicy {
                     "Automatic submission minutes must be greater than warning minutes and no more than 480"
             );
         }
+        if (latePenaltyEnabled == null) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Late penalty enabled is required"
+            );
+        }
+        if (lateOccurrencesThreshold == null
+                || lateOccurrencesThreshold < 1
+                || lateOccurrencesThreshold > 100) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Late occurrences threshold must be between 1 and 100"
+            );
+        }
+        if (latePenaltyOutcome == null) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Late penalty outcome is required"
+            );
+        }
+        if (lateCountingPeriod != LateCountingPeriod.MONTHLY) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Late counting period must be MONTHLY"
+            );
+        }
         requirePositive(actorUserId, "Actor user ID must be positive");
 
         this.attendanceMode = attendanceMode;
         this.weekStartDay = weekStartDay;
         this.draftWarningMinutes = draftWarningMinutes;
         this.automaticSubmissionMinutes = automaticSubmissionMinutes;
+        this.latePenaltyEnabled = latePenaltyEnabled;
+        this.lateOccurrencesThreshold = lateOccurrencesThreshold;
+        this.latePenaltyOutcome = latePenaltyOutcome;
+        this.lateCountingPeriod = lateCountingPeriod;
         this.updatedByUserId = actorUserId;
     }
 
@@ -130,6 +184,10 @@ public class StudentAttendancePolicy {
     public DayOfWeek getWeekStartDay() { return weekStartDay; }
     public Integer getDraftWarningMinutes() { return draftWarningMinutes; }
     public Integer getAutomaticSubmissionMinutes() { return automaticSubmissionMinutes; }
+    public Boolean getLatePenaltyEnabled() { return latePenaltyEnabled; }
+    public Integer getLateOccurrencesThreshold() { return lateOccurrencesThreshold; }
+    public LatePenaltyOutcome getLatePenaltyOutcome() { return latePenaltyOutcome; }
+    public LateCountingPeriod getLateCountingPeriod() { return lateCountingPeriod; }
     public Long getCreatedByUserId() { return createdByUserId; }
     public Long getUpdatedByUserId() { return updatedByUserId; }
     public Long getVersion() { return version; }

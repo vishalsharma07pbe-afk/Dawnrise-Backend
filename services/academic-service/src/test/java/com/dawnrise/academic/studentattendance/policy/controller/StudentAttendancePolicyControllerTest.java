@@ -8,6 +8,8 @@ import com.dawnrise.academic.studentattendance.policy.dto.StudentAttendancePolic
 import com.dawnrise.academic.studentattendance.policy.dto.StudentAttendancePolicyResponse;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentattendance.policy.service.StudentAttendancePolicyService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,7 +62,11 @@ class StudentAttendancePolicyControllerTest {
                                 "STUDENT_ATTENDANCE_POLICY_MANAGE"
                         )))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.organizationId").value(10));
+                .andExpect(jsonPath("$.organizationId").value(10))
+                .andExpect(jsonPath("$.latePenaltyEnabled").value(true))
+                .andExpect(jsonPath("$.lateOccurrencesThreshold").value(3))
+                .andExpect(jsonPath("$.latePenaltyOutcome").value("HALF_DAY"))
+                .andExpect(jsonPath("$.lateCountingPeriod").value("MONTHLY"));
     }
 
     @Test
@@ -105,7 +111,11 @@ class StudentAttendancePolicyControllerTest {
                                 "STUDENT_ATTENDANCE_POLICY_VIEW"
                         )))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.organizationId").value(10));
+                .andExpect(jsonPath("$.organizationId").value(10))
+                .andExpect(jsonPath("$.latePenaltyEnabled").value(true))
+                .andExpect(jsonPath("$.lateOccurrencesThreshold").value(3))
+                .andExpect(jsonPath("$.latePenaltyOutcome").value("HALF_DAY"))
+                .andExpect(jsonPath("$.lateCountingPeriod").value("MONTHLY"));
 
         assertThat(service.lastGetOrganizationId).isEqualTo(10L);
     }
@@ -171,10 +181,102 @@ class StudentAttendancePolicyControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validPutJson()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.organizationId").value(10));
+                .andExpect(jsonPath("$.organizationId").value(10))
+                .andExpect(jsonPath("$.latePenaltyEnabled").value(true))
+                .andExpect(jsonPath("$.lateOccurrencesThreshold").value(3))
+                .andExpect(jsonPath("$.latePenaltyOutcome").value("HALF_DAY"))
+                .andExpect(jsonPath("$.lateCountingPeriod").value("MONTHLY"));
 
         assertThat(service.lastUpdateOrganizationId).isEqualTo(10L);
         assertThat(service.lastUpdateActorUserId).isEqualTo(20L);
+    }
+
+    @Test
+    void putRejectsInvalidLateThreshold() throws Exception {
+        service.response = response();
+
+        mockMvc.perform(put("/api/v1/student-attendance/policy")
+                        .with(jwtWithOrganizationUserAndPermission(
+                                "STUDENT_ATTENDANCE_POLICY_MANAGE"
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validPutJson()
+                                .replace("\"lateOccurrencesThreshold\": 3",
+                                        "\"lateOccurrencesThreshold\": 0")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void putRejectsLateThresholdAboveMaximum() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"lateOccurrencesThreshold\": 3",
+                        "\"lateOccurrencesThreshold\": 101"));
+    }
+
+    @Test
+    void putRejectsMissingLatePenaltyEnabled() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("  \"latePenaltyEnabled\": true,\n", ""));
+    }
+
+    @Test
+    void putRejectsNullLatePenaltyEnabled() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"latePenaltyEnabled\": true",
+                        "\"latePenaltyEnabled\": null"));
+    }
+
+    @Test
+    void putRejectsMissingLateOccurrencesThreshold() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("  \"lateOccurrencesThreshold\": 3,\n", ""));
+    }
+
+    @Test
+    void putRejectsNullLateOccurrencesThreshold() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"lateOccurrencesThreshold\": 3",
+                        "\"lateOccurrencesThreshold\": null"));
+    }
+
+    @Test
+    void putRejectsMissingLatePenaltyOutcome() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("  \"latePenaltyOutcome\": \"HALF_DAY\",\n", ""));
+    }
+
+    @Test
+    void putRejectsNullLatePenaltyOutcome() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"latePenaltyOutcome\": \"HALF_DAY\"",
+                        "\"latePenaltyOutcome\": null"));
+    }
+
+    @Test
+    void putRejectsMissingLateCountingPeriod() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("  \"lateCountingPeriod\": \"MONTHLY\",\n", ""));
+    }
+
+    @Test
+    void putRejectsNullLateCountingPeriod() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"lateCountingPeriod\": \"MONTHLY\"",
+                        "\"lateCountingPeriod\": null"));
+    }
+
+    @Test
+    void putRejectsUnsupportedLatePenaltyOutcome() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"latePenaltyOutcome\": \"HALF_DAY\"",
+                        "\"latePenaltyOutcome\": \"LATE\""));
+    }
+
+    @Test
+    void putRejectsUnsupportedLateCountingPeriod() throws Exception {
+        assertPutReturnsBadRequest(validPutJson()
+                .replace("\"lateCountingPeriod\": \"MONTHLY\"",
+                        "\"lateCountingPeriod\": \"WEEKLY\""));
     }
 
     @Test
@@ -202,6 +304,19 @@ class StudentAttendancePolicyControllerTest {
                 .authorities(() -> permission);
     }
 
+    private void assertPutReturnsBadRequest(String requestJson)
+            throws Exception {
+        service.response = response();
+
+        mockMvc.perform(put("/api/v1/student-attendance/policy")
+                        .with(jwtWithOrganizationUserAndPermission(
+                                "STUDENT_ATTENDANCE_POLICY_MANAGE"
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest());
+    }
+
     private static String validPutJson() {
         return """
                 {
@@ -209,6 +324,10 @@ class StudentAttendancePolicyControllerTest {
                   "weekStartDay": "MONDAY",
                   "draftWarningMinutes": 10,
                   "automaticSubmissionMinutes": 20,
+                  "latePenaltyEnabled": true,
+                  "lateOccurrencesThreshold": 3,
+                  "latePenaltyOutcome": "HALF_DAY",
+                  "lateCountingPeriod": "MONTHLY",
                   "expectedVersion": 0,
                   "statusPolicies": [
                     {"attendanceStatus":"PRESENT","earnedCredit":1.00,"possibleCredit":1.00},
@@ -228,6 +347,10 @@ class StudentAttendancePolicyControllerTest {
                 DayOfWeek.MONDAY,
                 10,
                 20,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
                 0L,
                 OffsetDateTime.parse("2026-04-01T00:00:00Z"),
                 OffsetDateTime.parse("2026-04-01T00:00:00Z"),

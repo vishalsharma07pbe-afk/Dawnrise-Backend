@@ -44,6 +44,10 @@ dawnrise:
     max-calendar-days-per-academic-year: ${STUDENT_ATTENDANCE_MAX_CALENDAR_DAYS:400}
     default-attendance-mode: ${STUDENT_ATTENDANCE_DEFAULT_MODE:DAILY}
     default-week-start-day: ${STUDENT_ATTENDANCE_DEFAULT_WEEK_START_DAY:MONDAY}
+    default-late-penalty-enabled: ${STUDENT_ATTENDANCE_DEFAULT_LATE_PENALTY_ENABLED:false}
+    default-late-occurrences-threshold: ${STUDENT_ATTENDANCE_DEFAULT_LATE_OCCURRENCES_THRESHOLD:3}
+    default-late-penalty-outcome: ${STUDENT_ATTENDANCE_DEFAULT_LATE_PENALTY_OUTCOME:HALF_DAY}
+    default-late-counting-period: ${STUDENT_ATTENDANCE_DEFAULT_LATE_COUNTING_PERIOD:MONTHLY}
     default-draft-warning-minutes: ${STUDENT_ATTENDANCE_DEFAULT_WARNING_MINUTES:10}
     default-automatic-submission-minutes: ${STUDENT_ATTENDANCE_DEFAULT_AUTO_SUBMIT_MINUTES:20}
     default-status-credits:

@@ -1,6 +1,8 @@
 package com.dawnrise.academic.studentattendance.policy.dto;
 
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 
 import java.time.DayOfWeek;
 import java.time.OffsetDateTime;
@@ -12,6 +14,10 @@ public record StudentAttendancePolicyResponse(
         DayOfWeek weekStartDay,
         Integer draftWarningMinutes,
         Integer automaticSubmissionMinutes,
+        Boolean latePenaltyEnabled,
+        Integer lateOccurrencesThreshold,
+        LatePenaltyOutcome latePenaltyOutcome,
+        LateCountingPeriod lateCountingPeriod,
         Long version,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,

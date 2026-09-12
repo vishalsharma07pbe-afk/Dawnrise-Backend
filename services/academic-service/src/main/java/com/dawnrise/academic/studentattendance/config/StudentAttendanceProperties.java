@@ -2,6 +2,8 @@ package com.dawnrise.academic.studentattendance.config;
 
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
@@ -46,6 +48,20 @@ public class StudentAttendanceProperties {
 
     @NotNull
     private DayOfWeek defaultWeekStartDay;
+
+    @NotNull
+    private Boolean defaultLatePenaltyEnabled;
+
+    @Min(1)
+    @Max(100)
+    @NotNull
+    private Integer defaultLateOccurrencesThreshold;
+
+    @NotNull
+    private LatePenaltyOutcome defaultLatePenaltyOutcome;
+
+    @NotNull
+    private LateCountingPeriod defaultLateCountingPeriod;
 
     @NotNull
     private Map<AttendanceStatus, @Valid StatusCredit> defaultStatusCredits =
@@ -112,6 +128,47 @@ public class StudentAttendanceProperties {
 
     public void setDefaultWeekStartDay(DayOfWeek defaultWeekStartDay) {
         this.defaultWeekStartDay = defaultWeekStartDay;
+    }
+
+    public Boolean getDefaultLatePenaltyEnabled() {
+        return defaultLatePenaltyEnabled;
+    }
+
+    public void setDefaultLatePenaltyEnabled(
+            Boolean defaultLatePenaltyEnabled
+    ) {
+        this.defaultLatePenaltyEnabled = defaultLatePenaltyEnabled;
+    }
+
+    public Integer getDefaultLateOccurrencesThreshold() {
+        return defaultLateOccurrencesThreshold;
+    }
+
+    public void setDefaultLateOccurrencesThreshold(
+            Integer defaultLateOccurrencesThreshold
+    ) {
+        this.defaultLateOccurrencesThreshold =
+                defaultLateOccurrencesThreshold;
+    }
+
+    public LatePenaltyOutcome getDefaultLatePenaltyOutcome() {
+        return defaultLatePenaltyOutcome;
+    }
+
+    public void setDefaultLatePenaltyOutcome(
+            LatePenaltyOutcome defaultLatePenaltyOutcome
+    ) {
+        this.defaultLatePenaltyOutcome = defaultLatePenaltyOutcome;
+    }
+
+    public LateCountingPeriod getDefaultLateCountingPeriod() {
+        return defaultLateCountingPeriod;
+    }
+
+    public void setDefaultLateCountingPeriod(
+            LateCountingPeriod defaultLateCountingPeriod
+    ) {
+        this.defaultLateCountingPeriod = defaultLateCountingPeriod;
     }
 
     public Map<AttendanceStatus, StatusCredit> getDefaultStatusCredits() {

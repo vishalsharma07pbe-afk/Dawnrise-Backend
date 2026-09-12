@@ -2,6 +2,8 @@ package com.dawnrise.academic.studentattendance.policy.entity;
 
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentattendance.policy.exception.InvalidStudentAttendancePolicyException;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +23,10 @@ class StudentAttendancePolicyTest {
                 DayOfWeek.MONDAY,
                 10,
                 20,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
                 50L
         );
 
@@ -36,6 +42,26 @@ class StudentAttendancePolicyTest {
                 DayOfWeek.MONDAY,
                 20,
                 20,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
+                50L
+        )).isInstanceOf(InvalidStudentAttendancePolicyException.class);
+    }
+
+    @Test
+    void rejectsInvalidLateThreshold() {
+        assertThatThrownBy(() -> new StudentAttendancePolicy(
+                10L,
+                AttendanceMode.DAILY,
+                DayOfWeek.MONDAY,
+                10,
+                20,
+                true,
+                0,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
                 50L
         )).isInstanceOf(InvalidStudentAttendancePolicyException.class);
     }

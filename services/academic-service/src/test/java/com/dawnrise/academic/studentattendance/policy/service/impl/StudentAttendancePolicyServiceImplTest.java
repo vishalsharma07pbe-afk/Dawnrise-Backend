@@ -8,6 +8,8 @@ import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendancePo
 import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendanceStatusPolicy;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentattendance.policy.exception.InvalidStudentAttendancePolicyException;
 import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyConflictException;
 import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyNotFoundException;
@@ -59,6 +61,12 @@ class StudentAttendancePolicyServiceImplTest {
         assertThat(response.weekStartDay()).isEqualTo(DayOfWeek.SUNDAY);
         assertThat(response.draftWarningMinutes()).isEqualTo(17);
         assertThat(response.automaticSubmissionMinutes()).isEqualTo(43);
+        assertThat(response.latePenaltyEnabled()).isTrue();
+        assertThat(response.lateOccurrencesThreshold()).isEqualTo(4);
+        assertThat(response.latePenaltyOutcome())
+                .isEqualTo(LatePenaltyOutcome.ABSENT);
+        assertThat(response.lateCountingPeriod())
+                .isEqualTo(LateCountingPeriod.MONTHLY);
         assertThat(policyRepositoryStub.savedPolicy.getUpdatedByUserId())
                 .isEqualTo(ACTOR_USER_ID);
     }
@@ -344,6 +352,80 @@ class StudentAttendancePolicyServiceImplTest {
     }
 
     @Test
+    void updateChangesLatePolicyFields() {
+        StudentAttendancePolicy policy = existingPolicy();
+        setVersion(policy, 0L);
+        policyRepositoryStub.foundPolicy = Optional.of(policy);
+        policyRepositoryStub.incrementVersionRows = 1;
+        statusRepositoryStub.foundStatuses = initialStatuses();
+
+        StudentAttendancePolicyResponse response = service.update(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                request(
+                        0L,
+                        DayOfWeek.MONDAY,
+                        10,
+                        20,
+                        false,
+                        6,
+                        LatePenaltyOutcome.ABSENT,
+                        LateCountingPeriod.MONTHLY,
+                        standardStatuses()
+                )
+        );
+
+        assertThat(policyRepositoryStub.savedPolicy.getLatePenaltyEnabled())
+                .isFalse();
+        assertThat(policyRepositoryStub.savedPolicy
+                .getLateOccurrencesThreshold()).isEqualTo(6);
+        assertThat(policyRepositoryStub.savedPolicy.getLatePenaltyOutcome())
+                .isEqualTo(LatePenaltyOutcome.ABSENT);
+        assertThat(policyRepositoryStub.incrementVersionCalls).isEqualTo(1);
+        assertThat(response.version()).isEqualTo(1L);
+        assertThat(response.latePenaltyEnabled()).isFalse();
+        assertThat(response.lateOccurrencesThreshold()).isEqualTo(6);
+        assertThat(response.latePenaltyOutcome())
+                .isEqualTo(LatePenaltyOutcome.ABSENT);
+        assertThat(response.lateCountingPeriod())
+                .isEqualTo(LateCountingPeriod.MONTHLY);
+        assertThat(response.statusPolicies()).hasSize(5);
+        assertThat(response.statusPolicies())
+                .filteredOn(status -> status.attendanceStatus()
+                        == AttendanceStatus.LATE)
+                .singleElement()
+                .satisfies(status -> {
+                    assertThat(status.earnedCredit())
+                            .isEqualByComparingTo(new BigDecimal("0.50"));
+                    assertThat(status.possibleCredit())
+                            .isEqualByComparingTo(new BigDecimal("1.00"));
+                });
+    }
+
+    @Test
+    void invalidLateThresholdIsRejected() {
+        StudentAttendancePolicy policy = existingPolicy();
+        setVersion(policy, 0L);
+        policyRepositoryStub.foundPolicy = Optional.of(policy);
+
+        assertThatThrownBy(() -> service.update(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                request(
+                        0L,
+                        DayOfWeek.MONDAY,
+                        10,
+                        20,
+                        true,
+                        0,
+                        LatePenaltyOutcome.HALF_DAY,
+                        LateCountingPeriod.MONTHLY,
+                        standardStatuses()
+                )
+        )).isInstanceOf(InvalidStudentAttendancePolicyException.class);
+    }
+
+    @Test
     void getPerformsNoWrites() {
         policyRepositoryStub.foundPolicy = Optional.of(existingPolicy());
         statusRepositoryStub.foundStatuses = initialStatuses();
@@ -362,6 +444,10 @@ class StudentAttendancePolicyServiceImplTest {
                 DayOfWeek.MONDAY,
                 10,
                 20,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
                 standardStatuses()
         );
     }
@@ -373,11 +459,39 @@ class StudentAttendancePolicyServiceImplTest {
             int automaticSubmissionMinutes,
             List<AttendanceStatusPolicyRequest> statusPolicies
     ) {
+        return request(
+                version,
+                weekStartDay,
+                draftWarningMinutes,
+                automaticSubmissionMinutes,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
+                statusPolicies
+        );
+    }
+
+    private static StudentAttendancePolicyRequest request(
+            Long version,
+            DayOfWeek weekStartDay,
+            int draftWarningMinutes,
+            int automaticSubmissionMinutes,
+            boolean latePenaltyEnabled,
+            int lateOccurrencesThreshold,
+            LatePenaltyOutcome latePenaltyOutcome,
+            LateCountingPeriod lateCountingPeriod,
+            List<AttendanceStatusPolicyRequest> statusPolicies
+    ) {
         return new StudentAttendancePolicyRequest(
                 AttendanceMode.DAILY,
                 weekStartDay,
                 draftWarningMinutes,
                 automaticSubmissionMinutes,
+                latePenaltyEnabled,
+                lateOccurrencesThreshold,
+                latePenaltyOutcome,
+                lateCountingPeriod,
                 version,
                 statusPolicies
         );
@@ -412,6 +526,10 @@ class StudentAttendancePolicyServiceImplTest {
                 DayOfWeek.MONDAY,
                 10,
                 20,
+                true,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
                 ACTOR_USER_ID
         );
     }
@@ -479,6 +597,10 @@ class StudentAttendancePolicyServiceImplTest {
         properties.setDefaultWeekStartDay(DayOfWeek.SUNDAY);
         properties.setDefaultDraftWarningMinutes(17);
         properties.setDefaultAutomaticSubmissionMinutes(43);
+        properties.setDefaultLatePenaltyEnabled(true);
+        properties.setDefaultLateOccurrencesThreshold(4);
+        properties.setDefaultLatePenaltyOutcome(LatePenaltyOutcome.ABSENT);
+        properties.setDefaultLateCountingPeriod(LateCountingPeriod.MONTHLY);
         properties.setDefaultWorkingDayWeight(new BigDecimal("1.00"));
         properties.setDefaultStatusCredits(MapFactory.defaultCredits());
         return properties;
@@ -572,6 +694,18 @@ class StudentAttendancePolicyServiceImplTest {
                         case "incrementVersionIfCurrent" -> {
                             incrementVersionCalls++;
                             lastIncrementExpectedVersion = (Long) args[1];
+                            if (incrementVersionRows > 0
+                                    && savedPolicy != null
+                                    && savedPolicy.getVersion() != null
+                                    && reloadedPolicy == null
+                                    && savedPolicy.getVersion()
+                                    .equals(lastIncrementExpectedVersion)) {
+                                setVersion(
+                                        savedPolicy,
+                                        lastIncrementExpectedVersion + 1
+                                );
+                                reloadedPolicy = savedPolicy;
+                            }
                             yield incrementVersionRows;
                         }
                         case "toString" -> "PolicyRepositoryStub";
