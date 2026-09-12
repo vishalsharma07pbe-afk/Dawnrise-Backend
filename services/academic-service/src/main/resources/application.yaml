@@ -37,3 +37,29 @@ management:
     web:
       exposure:
         include: health,info
+
+dawnrise:
+  student-attendance:
+    max-records-per-request: ${STUDENT_ATTENDANCE_MAX_RECORDS:200}
+    max-calendar-days-per-academic-year: ${STUDENT_ATTENDANCE_MAX_CALENDAR_DAYS:400}
+    default-attendance-mode: ${STUDENT_ATTENDANCE_DEFAULT_MODE:DAILY}
+    default-week-start-day: ${STUDENT_ATTENDANCE_DEFAULT_WEEK_START_DAY:MONDAY}
+    default-draft-warning-minutes: ${STUDENT_ATTENDANCE_DEFAULT_WARNING_MINUTES:10}
+    default-automatic-submission-minutes: ${STUDENT_ATTENDANCE_DEFAULT_AUTO_SUBMIT_MINUTES:20}
+    default-status-credits:
+      PRESENT:
+        earned-credit: ${STUDENT_ATTENDANCE_PRESENT_EARNED_CREDIT:1.00}
+        possible-credit: ${STUDENT_ATTENDANCE_PRESENT_POSSIBLE_CREDIT:1.00}
+      ABSENT:
+        earned-credit: ${STUDENT_ATTENDANCE_ABSENT_EARNED_CREDIT:0.00}
+        possible-credit: ${STUDENT_ATTENDANCE_ABSENT_POSSIBLE_CREDIT:1.00}
+      LATE:
+        earned-credit: ${STUDENT_ATTENDANCE_LATE_EARNED_CREDIT:1.00}
+        possible-credit: ${STUDENT_ATTENDANCE_LATE_POSSIBLE_CREDIT:1.00}
+      HALF_DAY:
+        earned-credit: ${STUDENT_ATTENDANCE_HALF_DAY_EARNED_CREDIT:0.50}
+        possible-credit: ${STUDENT_ATTENDANCE_HALF_DAY_POSSIBLE_CREDIT:1.00}
+      EXCUSED:
+        earned-credit: ${STUDENT_ATTENDANCE_EXCUSED_EARNED_CREDIT:0.00}
+        possible-credit: ${STUDENT_ATTENDANCE_EXCUSED_POSSIBLE_CREDIT:0.00}
+    default-working-day-weight: ${STUDENT_ATTENDANCE_DEFAULT_WORKING_DAY_WEIGHT:1.00}

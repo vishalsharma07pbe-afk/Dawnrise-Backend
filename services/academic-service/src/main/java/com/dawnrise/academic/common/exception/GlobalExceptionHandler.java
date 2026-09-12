@@ -12,6 +12,7 @@ import com.dawnrise.academic.gradelevel.exception.InvalidGradeLevelException;
 import com.dawnrise.academic.section.exception.InvalidSectionException;
 import com.dawnrise.academic.section.exception.SectionConflictException;
 import com.dawnrise.academic.section.exception.SectionNotFoundException;
+import com.dawnrise.academic.security.InvalidAuthenticatedAcademicActorException;
 import com.dawnrise.academic.subject.exception.InvalidSubjectException;
 import com.dawnrise.academic.subject.exception.SubjectConflictException;
 import com.dawnrise.academic.subject.exception.SubjectNotFoundException;
@@ -30,16 +31,25 @@ import com.dawnrise.academic.studentenrollment.exception.StudentNotEligibleExcep
 import com.dawnrise.academic.studentprogression.exception.InvalidStudentProgressionException;
 import com.dawnrise.academic.studentprogression.exception.StudentProgressionConflictException;
 import com.dawnrise.academic.studentprogression.exception.StudentProgressionOperationNotFoundException;
+import com.dawnrise.academic.academiccalendar.exception.AcademicCalendarConflictException;
+import com.dawnrise.academic.academiccalendar.exception.AcademicCalendarDayNotFoundException;
+import com.dawnrise.academic.academiccalendar.exception.InvalidAcademicCalendarException;
+import com.dawnrise.academic.studentattendance.policy.exception.InvalidStudentAttendancePolicyException;
+import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyConflictException;
+import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendancePolicyNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.persistence.OptimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -197,6 +207,38 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.warn(
+                "Unsupported request method for {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
+
+        ResponseEntity<ApiErrorResponse> entity = response(
+                HttpStatus.METHOD_NOT_ALLOWED,
+                "Request method is not supported",
+                request,
+                null
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        String[] supportedMethods = exception.getSupportedMethods();
+        if (supportedMethods != null && supportedMethods.length > 0) {
+            headers.setAllow(exception.getSupportedHttpMethods());
+        }
+
+        return new ResponseEntity<>(
+                entity.getBody(),
+                headers,
+                HttpStatus.METHOD_NOT_ALLOWED
+        );
+    }
+
     @ExceptionHandler(AuthorizationDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAuthorizationDenied(
             AuthorizationDeniedException exception,
@@ -212,10 +254,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             DataIntegrityViolationException.class,
-            ObjectOptimisticLockingFailureException.class
+            OptimisticLockingFailureException.class,
+            OptimisticLockException.class
     })
-    public ResponseEntity<ApiErrorResponse> handleDatabaseConflict(
-            RuntimeException exception,
+    public ResponseEntity<ApiErrorResponse> handlePersistenceConflict(
+            Exception exception,
             HttpServletRequest request
     ) {
         LOGGER.warn(
@@ -247,6 +290,55 @@ public class GlobalExceptionHandler {
         return response(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "An unexpected error occurred.",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler({
+            InvalidAuthenticatedAcademicActorException.class,
+            InvalidAcademicCalendarException.class,
+            InvalidStudentAttendancePolicyException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
+            RuntimeException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler({
+            AcademicCalendarConflictException.class,
+            StudentAttendancePolicyConflictException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleAttendanceConflict(
+            RuntimeException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler({
+            AcademicCalendarDayNotFoundException.class,
+            StudentAttendancePolicyNotFoundException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleAttendanceNotFound(
+            RuntimeException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage(),
                 request,
                 null
         );
