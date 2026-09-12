@@ -2,7 +2,9 @@ package com.dawnrise.academic.studentattendance.recording.repository;
 
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceRecord;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +20,27 @@ public interface StudentAttendanceRecordRepository
     List<StudentAttendanceRecord> findAllByAttendanceSessionIdAndStudentEnrollmentIdIn(
             Long attendanceSessionId,
             Collection<Long> studentEnrollmentIds
+    );
+
+    List<StudentAttendanceRecord> findAllByOrganizationIdAndAttendanceSessionIdAndIdIn(
+            Long organizationId,
+            Long attendanceSessionId,
+            Collection<Long> ids
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT record
+        FROM StudentAttendanceRecord record
+        WHERE record.organizationId = :organizationId
+          AND record.attendanceSessionId = :attendanceSessionId
+          AND record.id IN :ids
+        ORDER BY record.id ASC
+        """)
+    List<StudentAttendanceRecord> findAllByOrganizationIdAndAttendanceSessionIdAndIdInForUpdate(
+            @Param("organizationId") Long organizationId,
+            @Param("attendanceSessionId") Long attendanceSessionId,
+            @Param("ids") Collection<Long> ids
     );
 
     long countByAttendanceSessionId(Long attendanceSessionId);

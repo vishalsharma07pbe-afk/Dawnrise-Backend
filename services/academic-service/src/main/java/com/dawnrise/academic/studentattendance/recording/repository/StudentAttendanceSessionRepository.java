@@ -28,6 +28,18 @@ public interface StudentAttendanceSessionRepository
             Long organizationId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT session
+        FROM StudentAttendanceSession session
+        WHERE session.id = :id
+          AND session.organizationId = :organizationId
+        """)
+    Optional<StudentAttendanceSession> findByIdAndOrganizationIdForUpdate(
+            @Param("id") Long id,
+            @Param("organizationId") Long organizationId
+    );
+
     @Query("""
         SELECT session.id AS id, session.organizationId AS organizationId
         FROM StudentAttendanceSession session

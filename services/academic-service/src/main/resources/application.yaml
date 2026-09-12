@@ -11,7 +11,7 @@ school-service:
     base-url: ${SCHOOL_SERVICE_BASE_URL:http://localhost:8080}
     connect-timeout: 2s
     read-timeout: 5s
-    api-key: ${INTERNAL_API_KEY}
+    api-key: ${SCHOOL_INTERNAL_API_KEY}
     service-name: academic-service
 
 server:

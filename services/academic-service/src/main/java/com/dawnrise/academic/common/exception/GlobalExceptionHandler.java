@@ -40,6 +40,9 @@ import com.dawnrise.academic.studentattendance.policy.exception.StudentAttendanc
 import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
 import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceRecordingConflictException;
 import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceSessionNotFoundException;
+import com.dawnrise.academic.studentattendance.correction.exception.InvalidStudentAttendanceCorrectionException;
+import com.dawnrise.academic.studentattendance.correction.exception.StudentAttendanceCorrectionConflictException;
+import com.dawnrise.academic.studentattendance.correction.exception.StudentAttendanceCorrectionNotFoundException;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -303,7 +306,8 @@ public class GlobalExceptionHandler {
             InvalidAuthenticatedAcademicActorException.class,
             InvalidAcademicCalendarException.class,
             InvalidStudentAttendancePolicyException.class,
-            InvalidStudentAttendanceRecordingException.class
+            InvalidStudentAttendanceRecordingException.class,
+            InvalidStudentAttendanceCorrectionException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
             RuntimeException exception,
@@ -320,7 +324,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             AcademicCalendarConflictException.class,
             StudentAttendancePolicyConflictException.class,
-            StudentAttendanceRecordingConflictException.class
+            StudentAttendanceRecordingConflictException.class,
+            StudentAttendanceCorrectionConflictException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceConflict(
             RuntimeException exception,
@@ -337,7 +342,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             AcademicCalendarDayNotFoundException.class,
             StudentAttendancePolicyNotFoundException.class,
-            StudentAttendanceSessionNotFoundException.class
+            StudentAttendanceSessionNotFoundException.class,
+            StudentAttendanceCorrectionNotFoundException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceNotFound(
             RuntimeException exception,

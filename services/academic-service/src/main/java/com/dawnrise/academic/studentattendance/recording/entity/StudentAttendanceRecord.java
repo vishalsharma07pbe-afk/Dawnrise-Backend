@@ -101,6 +101,19 @@ public class StudentAttendanceRecord {
                 latePenaltyApplied, remarks, actorUserId);
     }
 
+    public void applyApprovedCorrection(
+            AttendanceStatus recordedStatus,
+            AttendanceStatus effectiveStatus,
+            BigDecimal earnedCredit,
+            BigDecimal possibleCredit,
+            boolean latePenaltyApplied,
+            String remarks,
+            Long actorUserId
+    ) {
+        apply(recordedStatus, effectiveStatus, earnedCredit, possibleCredit,
+                latePenaltyApplied, remarks, actorUserId);
+    }
+
     private void apply(
             AttendanceStatus recordedStatus,
             AttendanceStatus effectiveStatus,
