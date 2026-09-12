@@ -21,7 +21,40 @@ public record StudentAttendancePolicyRequest(
         @NotNull @Min(1) @Max(100) Integer lateOccurrencesThreshold,
         @NotNull LatePenaltyOutcome latePenaltyOutcome,
         @NotNull LateCountingPeriod lateCountingPeriod,
+        Boolean deferredEntryEnabled,
+        @Min(0) @Max(365) Integer teacherBackEntryDays,
+        @Min(0) @Max(365) Integer leadershipBackEntryDays,
+        Boolean automaticSubmissionEnabled,
         @NotNull @Min(0) Long expectedVersion,
         @NotEmpty List<@Valid AttendanceStatusPolicyRequest> statusPolicies
 ) {
+    public StudentAttendancePolicyRequest(
+            AttendanceMode attendanceMode,
+            DayOfWeek weekStartDay,
+            Integer draftWarningMinutes,
+            Integer automaticSubmissionMinutes,
+            Boolean latePenaltyEnabled,
+            Integer lateOccurrencesThreshold,
+            LatePenaltyOutcome latePenaltyOutcome,
+            LateCountingPeriod lateCountingPeriod,
+            Long expectedVersion,
+            List<AttendanceStatusPolicyRequest> statusPolicies
+    ) {
+        this(
+                attendanceMode,
+                weekStartDay,
+                draftWarningMinutes,
+                automaticSubmissionMinutes,
+                latePenaltyEnabled,
+                lateOccurrencesThreshold,
+                latePenaltyOutcome,
+                lateCountingPeriod,
+                true,
+                0,
+                30,
+                false,
+                expectedVersion,
+                statusPolicies
+        );
+    }
 }

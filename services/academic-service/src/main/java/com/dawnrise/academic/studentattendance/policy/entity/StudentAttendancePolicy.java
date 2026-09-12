@@ -53,6 +53,18 @@ public class StudentAttendancePolicy {
     @Column(name = "late_counting_period", nullable = false, length = 20)
     private LateCountingPeriod lateCountingPeriod;
 
+    @Column(name = "deferred_entry_enabled", nullable = false)
+    private Boolean deferredEntryEnabled;
+
+    @Column(name = "teacher_back_entry_days", nullable = false)
+    private Integer teacherBackEntryDays;
+
+    @Column(name = "leadership_back_entry_days", nullable = false)
+    private Integer leadershipBackEntryDays;
+
+    @Column(name = "automatic_submission_enabled", nullable = false)
+    private Boolean automaticSubmissionEnabled;
+
     @Column(name = "created_by_user_id", nullable = false)
     private Long createdByUserId;
 
@@ -84,6 +96,10 @@ public class StudentAttendancePolicy {
             Integer lateOccurrencesThreshold,
             LatePenaltyOutcome latePenaltyOutcome,
             LateCountingPeriod lateCountingPeriod,
+            Boolean deferredEntryEnabled,
+            Integer teacherBackEntryDays,
+            Integer leadershipBackEntryDays,
+            Boolean automaticSubmissionEnabled,
             Long actorUserId
     ) {
         requirePositive(organizationId, "Organization ID must be positive");
@@ -99,6 +115,40 @@ public class StudentAttendancePolicy {
                 lateOccurrencesThreshold,
                 latePenaltyOutcome,
                 lateCountingPeriod,
+                deferredEntryEnabled,
+                teacherBackEntryDays,
+                leadershipBackEntryDays,
+                automaticSubmissionEnabled,
+                actorUserId
+        );
+    }
+
+    public StudentAttendancePolicy(
+            Long organizationId,
+            AttendanceMode attendanceMode,
+            DayOfWeek weekStartDay,
+            Integer draftWarningMinutes,
+            Integer automaticSubmissionMinutes,
+            Boolean latePenaltyEnabled,
+            Integer lateOccurrencesThreshold,
+            LatePenaltyOutcome latePenaltyOutcome,
+            LateCountingPeriod lateCountingPeriod,
+            Long actorUserId
+    ) {
+        this(
+                organizationId,
+                attendanceMode,
+                weekStartDay,
+                draftWarningMinutes,
+                automaticSubmissionMinutes,
+                latePenaltyEnabled,
+                lateOccurrencesThreshold,
+                latePenaltyOutcome,
+                lateCountingPeriod,
+                true,
+                0,
+                30,
+                false,
                 actorUserId
         );
     }
@@ -112,6 +162,10 @@ public class StudentAttendancePolicy {
             Integer lateOccurrencesThreshold,
             LatePenaltyOutcome latePenaltyOutcome,
             LateCountingPeriod lateCountingPeriod,
+            Boolean deferredEntryEnabled,
+            Integer teacherBackEntryDays,
+            Integer leadershipBackEntryDays,
+            Boolean automaticSubmissionEnabled,
             Long actorUserId
     ) {
         if (attendanceMode != AttendanceMode.DAILY) {
@@ -160,6 +214,26 @@ public class StudentAttendancePolicy {
                     "Late counting period must be MONTHLY"
             );
         }
+        if (deferredEntryEnabled == null) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Deferred entry enabled is required"
+            );
+        }
+        if (teacherBackEntryDays == null || teacherBackEntryDays < 0 || teacherBackEntryDays > 365) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Teacher back entry days must be between 0 and 365"
+            );
+        }
+        if (leadershipBackEntryDays == null || leadershipBackEntryDays < 0 || leadershipBackEntryDays > 365) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Leadership back entry days must be between 0 and 365"
+            );
+        }
+        if (automaticSubmissionEnabled == null) {
+            throw new InvalidStudentAttendancePolicyException(
+                    "Automatic submission enabled is required"
+            );
+        }
         requirePositive(actorUserId, "Actor user ID must be positive");
 
         this.attendanceMode = attendanceMode;
@@ -170,6 +244,10 @@ public class StudentAttendancePolicy {
         this.lateOccurrencesThreshold = lateOccurrencesThreshold;
         this.latePenaltyOutcome = latePenaltyOutcome;
         this.lateCountingPeriod = lateCountingPeriod;
+        this.deferredEntryEnabled = deferredEntryEnabled;
+        this.teacherBackEntryDays = teacherBackEntryDays;
+        this.leadershipBackEntryDays = leadershipBackEntryDays;
+        this.automaticSubmissionEnabled = automaticSubmissionEnabled;
         this.updatedByUserId = actorUserId;
     }
 
@@ -188,6 +266,10 @@ public class StudentAttendancePolicy {
     public Integer getLateOccurrencesThreshold() { return lateOccurrencesThreshold; }
     public LatePenaltyOutcome getLatePenaltyOutcome() { return latePenaltyOutcome; }
     public LateCountingPeriod getLateCountingPeriod() { return lateCountingPeriod; }
+    public Boolean getDeferredEntryEnabled() { return deferredEntryEnabled; }
+    public Integer getTeacherBackEntryDays() { return teacherBackEntryDays; }
+    public Integer getLeadershipBackEntryDays() { return leadershipBackEntryDays; }
+    public Boolean getAutomaticSubmissionEnabled() { return automaticSubmissionEnabled; }
     public Long getCreatedByUserId() { return createdByUserId; }
     public Long getUpdatedByUserId() { return updatedByUserId; }
     public Long getVersion() { return version; }

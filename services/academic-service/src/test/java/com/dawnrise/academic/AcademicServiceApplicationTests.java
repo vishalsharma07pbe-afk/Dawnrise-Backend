@@ -1,6 +1,7 @@
 package com.dawnrise.academic;
 
 import com.dawnrise.academic.academicyearrollover.repository.AcademicYearStructureRolloverOperationRepository;
+import com.dawnrise.academic.common.integration.school.SchoolTimeZoneClient;
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.academiccalendar.repository.AcademicCalendarDayRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
@@ -10,6 +11,10 @@ import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStud
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendanceStatusPolicyRepository;
+import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionItemRepository;
+import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionRequestRepository;
+import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
+import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentprogression.repository.StudentProgressionItemRepository;
 import com.dawnrise.academic.studentprogression.repository.StudentProgressionOperationRepository;
 import com.dawnrise.academic.subject.repository.SubjectRepository;
@@ -28,6 +33,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.lang.reflect.Proxy;
+import java.time.ZoneId;
 
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude=" +
@@ -43,6 +49,12 @@ class AcademicServiceApplicationTests {
 
 	@TestConfiguration
 	static class TestConfig {
+
+		@Bean
+		@Primary
+		SchoolTimeZoneClient schoolTimeZoneClient() {
+			return organizationId -> ZoneId.of("Asia/Kolkata");
+		}
 
 		@Bean
 		AcademicYearStructureRolloverOperationRepository
@@ -136,6 +148,46 @@ class AcademicServiceApplicationTests {
 		}
 
 		@Bean
+		StudentAttendanceSessionRepository studentAttendanceSessionRepository() {
+			return (StudentAttendanceSessionRepository) Proxy.newProxyInstance(
+					StudentAttendanceSessionRepository.class.getClassLoader(),
+					new Class<?>[]{StudentAttendanceSessionRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "StudentAttendanceSessionRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		StudentAttendanceRecordRepository studentAttendanceRecordRepository() {
+			return (StudentAttendanceRecordRepository) Proxy.newProxyInstance(
+					StudentAttendanceRecordRepository.class.getClassLoader(),
+					new Class<?>[]{StudentAttendanceRecordRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "StudentAttendanceRecordRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
 		StudentAttendancePolicyRepository studentAttendancePolicyRepository() {
 			return (StudentAttendancePolicyRepository) Proxy.newProxyInstance(
 					StudentAttendancePolicyRepository.class.getClassLoader(),
@@ -174,6 +226,60 @@ class AcademicServiceApplicationTests {
 								}
 								if (method.getName().equals("toString")) {
 									return "StudentAttendanceStatusPolicyRepositoryStub";
+								}
+								throw new UnsupportedOperationException(
+										method.getName()
+								);
+							}
+					);
+		}
+
+		@Bean
+		StudentAttendanceCorrectionRequestRepository
+		studentAttendanceCorrectionRequestRepository() {
+			return (StudentAttendanceCorrectionRequestRepository)
+					Proxy.newProxyInstance(
+							StudentAttendanceCorrectionRequestRepository.class
+									.getClassLoader(),
+							new Class<?>[]{
+									StudentAttendanceCorrectionRequestRepository.class
+							},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentAttendanceCorrectionRequestRepositoryStub";
+								}
+								throw new UnsupportedOperationException(
+										method.getName()
+								);
+							}
+					);
+		}
+
+		@Bean
+		StudentAttendanceCorrectionItemRepository
+		studentAttendanceCorrectionItemRepository() {
+			return (StudentAttendanceCorrectionItemRepository)
+					Proxy.newProxyInstance(
+							StudentAttendanceCorrectionItemRepository.class
+									.getClassLoader(),
+							new Class<?>[]{
+									StudentAttendanceCorrectionItemRepository.class
+							},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentAttendanceCorrectionItemRepositoryStub";
 								}
 								throw new UnsupportedOperationException(
 										method.getName()

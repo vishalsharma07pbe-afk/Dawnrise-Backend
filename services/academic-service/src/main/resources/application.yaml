@@ -6,6 +6,14 @@ identity-service:
     api-key: ${IDENTITY_INTERNAL_API_KEY}
     service-name: academic-service
 
+school-service:
+  internal:
+    base-url: ${SCHOOL_SERVICE_BASE_URL:http://localhost:8080}
+    connect-timeout: 2s
+    read-timeout: 5s
+    api-key: ${SCHOOL_INTERNAL_API_KEY}
+    service-name: academic-service
+
 server:
   port: 8082
 
@@ -48,6 +56,14 @@ dawnrise:
     default-late-occurrences-threshold: ${STUDENT_ATTENDANCE_DEFAULT_LATE_OCCURRENCES_THRESHOLD:3}
     default-late-penalty-outcome: ${STUDENT_ATTENDANCE_DEFAULT_LATE_PENALTY_OUTCOME:HALF_DAY}
     default-late-counting-period: ${STUDENT_ATTENDANCE_DEFAULT_LATE_COUNTING_PERIOD:MONTHLY}
+    default-deferred-entry-enabled: ${STUDENT_ATTENDANCE_DEFAULT_DEFERRED_ENTRY_ENABLED:true}
+    default-teacher-back-entry-days: ${STUDENT_ATTENDANCE_DEFAULT_TEACHER_BACK_ENTRY_DAYS:0}
+    default-leadership-back-entry-days: ${STUDENT_ATTENDANCE_DEFAULT_LEADERSHIP_BACK_ENTRY_DAYS:30}
+    default-automatic-submission-enabled: ${STUDENT_ATTENDANCE_DEFAULT_AUTO_SUBMIT_ENABLED:false}
+    automatic-submission-scheduler-enabled: ${STUDENT_ATTENDANCE_AUTO_SUBMIT_SCHEDULER_ENABLED:false}
+    automatic-submission-scheduler-delay: ${STUDENT_ATTENDANCE_AUTO_SUBMIT_SCHEDULER_DELAY:PT5M}
+    automatic-submission-scheduler-initial-delay: ${STUDENT_ATTENDANCE_AUTO_SUBMIT_SCHEDULER_INITIAL_DELAY:PT5M}
+    automatic-submission-candidate-batch-size: ${STUDENT_ATTENDANCE_AUTO_SUBMIT_CANDIDATE_BATCH_SIZE:100}
     default-draft-warning-minutes: ${STUDENT_ATTENDANCE_DEFAULT_WARNING_MINUTES:10}
     default-automatic-submission-minutes: ${STUDENT_ATTENDANCE_DEFAULT_AUTO_SUBMIT_MINUTES:20}
     default-status-credits:

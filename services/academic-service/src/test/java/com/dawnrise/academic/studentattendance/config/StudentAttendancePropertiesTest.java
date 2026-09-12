@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -60,7 +61,74 @@ class StudentAttendancePropertiesTest {
                             .isEqualByComparingTo(new BigDecimal("1.00"));
                     assertThat(properties.getDefaultWorkingDayWeight())
                             .isEqualByComparingTo(new BigDecimal("1.00"));
+                    assertThat(properties.getAutomaticSubmissionSchedulerDelay())
+                            .isEqualTo(Duration.ofMinutes(5));
+                    assertThat(properties.getAutomaticSubmissionSchedulerInitialDelay())
+                            .isEqualTo(Duration.ofMinutes(5));
+                    assertThat(properties.getAutomaticSubmissionCandidateBatchSize())
+                            .isEqualTo(100);
                 });
+    }
+
+    @Test
+    void bindsValidSchedulerConfiguration() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.automatic-submission-scheduler-delay=PT1M",
+                        "dawnrise.student-attendance.automatic-submission-scheduler-initial-delay=PT0S",
+                        "dawnrise.student-attendance.automatic-submission-candidate-batch-size=25"
+                )
+                .run(context -> {
+                    StudentAttendanceProperties properties =
+                            context.getBean(StudentAttendanceProperties.class);
+
+                    assertThat(properties.getAutomaticSubmissionSchedulerDelay())
+                            .isEqualTo(Duration.ofMinutes(1));
+                    assertThat(properties.getAutomaticSubmissionSchedulerInitialDelay())
+                            .isZero();
+                    assertThat(properties.getAutomaticSubmissionCandidateBatchSize())
+                            .isEqualTo(25);
+                });
+    }
+
+    @Test
+    void invalidSchedulerDelayPreventsContextStartup() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.automatic-submission-scheduler-delay=PT0S"
+                )
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining(
+                                "Automatic submission scheduler delay must be positive"
+                        ));
+    }
+
+    @Test
+    void invalidSchedulerInitialDelayPreventsContextStartup() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.automatic-submission-scheduler-initial-delay=-PT1S"
+                )
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining(
+                                "Automatic submission scheduler initial delay must not be negative"
+                        ));
+    }
+
+    @Test
+    void invalidCandidateBatchSizePreventsContextStartup() {
+        contextRunner
+                .withPropertyValues(validValues())
+                .withPropertyValues(
+                        "dawnrise.student-attendance.automatic-submission-candidate-batch-size=0"
+                )
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining(
+                                "automaticSubmissionCandidateBatchSize"
+                        ));
     }
 
     @Test

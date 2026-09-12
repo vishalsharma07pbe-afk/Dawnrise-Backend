@@ -21,6 +21,12 @@ public interface AcademicCalendarDayRepository
             Long academicYearId
     );
 
+    Optional<AcademicCalendarDay> findByOrganizationIdAndAcademicYearIdAndCalendarDate(
+            Long organizationId,
+            Long academicYearId,
+            LocalDate calendarDate
+    );
+
     List<AcademicCalendarDay> findAllByOrganizationIdAndAcademicYearIdAndCalendarDateBetweenOrderByCalendarDateAscIdAsc(
             Long organizationId,
             Long academicYearId,

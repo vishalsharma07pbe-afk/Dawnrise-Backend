@@ -16,6 +16,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -62,6 +63,33 @@ public class StudentAttendanceProperties {
 
     @NotNull
     private LateCountingPeriod defaultLateCountingPeriod;
+
+    @NotNull
+    private Boolean defaultDeferredEntryEnabled = true;
+
+    @Min(0)
+    @Max(365)
+    @NotNull
+    private Integer defaultTeacherBackEntryDays = 0;
+
+    @Min(0)
+    @Max(365)
+    @NotNull
+    private Integer defaultLeadershipBackEntryDays = 30;
+
+    @NotNull
+    private Boolean defaultAutomaticSubmissionEnabled = false;
+
+    @NotNull
+    private Duration automaticSubmissionSchedulerDelay = Duration.ofMinutes(5);
+
+    @NotNull
+    private Duration automaticSubmissionSchedulerInitialDelay = Duration.ofMinutes(5);
+
+    @Min(1)
+    @Max(1000)
+    @NotNull
+    private Integer automaticSubmissionCandidateBatchSize = 100;
 
     @NotNull
     private Map<AttendanceStatus, @Valid StatusCredit> defaultStatusCredits =
@@ -171,6 +199,62 @@ public class StudentAttendanceProperties {
         this.defaultLateCountingPeriod = defaultLateCountingPeriod;
     }
 
+    public Boolean getDefaultDeferredEntryEnabled() {
+        return defaultDeferredEntryEnabled;
+    }
+
+    public void setDefaultDeferredEntryEnabled(Boolean defaultDeferredEntryEnabled) {
+        this.defaultDeferredEntryEnabled = defaultDeferredEntryEnabled;
+    }
+
+    public Integer getDefaultTeacherBackEntryDays() {
+        return defaultTeacherBackEntryDays;
+    }
+
+    public void setDefaultTeacherBackEntryDays(Integer defaultTeacherBackEntryDays) {
+        this.defaultTeacherBackEntryDays = defaultTeacherBackEntryDays;
+    }
+
+    public Integer getDefaultLeadershipBackEntryDays() {
+        return defaultLeadershipBackEntryDays;
+    }
+
+    public void setDefaultLeadershipBackEntryDays(Integer defaultLeadershipBackEntryDays) {
+        this.defaultLeadershipBackEntryDays = defaultLeadershipBackEntryDays;
+    }
+
+    public Boolean getDefaultAutomaticSubmissionEnabled() {
+        return defaultAutomaticSubmissionEnabled;
+    }
+
+    public void setDefaultAutomaticSubmissionEnabled(Boolean defaultAutomaticSubmissionEnabled) {
+        this.defaultAutomaticSubmissionEnabled = defaultAutomaticSubmissionEnabled;
+    }
+
+    public Duration getAutomaticSubmissionSchedulerDelay() {
+        return automaticSubmissionSchedulerDelay;
+    }
+
+    public void setAutomaticSubmissionSchedulerDelay(Duration automaticSubmissionSchedulerDelay) {
+        this.automaticSubmissionSchedulerDelay = automaticSubmissionSchedulerDelay;
+    }
+
+    public Duration getAutomaticSubmissionSchedulerInitialDelay() {
+        return automaticSubmissionSchedulerInitialDelay;
+    }
+
+    public void setAutomaticSubmissionSchedulerInitialDelay(Duration automaticSubmissionSchedulerInitialDelay) {
+        this.automaticSubmissionSchedulerInitialDelay = automaticSubmissionSchedulerInitialDelay;
+    }
+
+    public Integer getAutomaticSubmissionCandidateBatchSize() {
+        return automaticSubmissionCandidateBatchSize;
+    }
+
+    public void setAutomaticSubmissionCandidateBatchSize(Integer automaticSubmissionCandidateBatchSize) {
+        this.automaticSubmissionCandidateBatchSize = automaticSubmissionCandidateBatchSize;
+    }
+
     public Map<AttendanceStatus, StatusCredit> getDefaultStatusCredits() {
         return defaultStatusCredits;
     }
@@ -202,6 +286,19 @@ public class StudentAttendanceProperties {
         return defaultStatusCredits != null
                 && defaultStatusCredits.keySet()
                 .equals(AttendanceStatus.finalStatuses());
+    }
+
+    @AssertTrue(message = "Automatic submission scheduler delay must be positive")
+    public boolean isAutomaticSubmissionSchedulerDelayPositive() {
+        return automaticSubmissionSchedulerDelay == null
+                || !automaticSubmissionSchedulerDelay.isZero()
+                && !automaticSubmissionSchedulerDelay.isNegative();
+    }
+
+    @AssertTrue(message = "Automatic submission scheduler initial delay must not be negative")
+    public boolean isAutomaticSubmissionSchedulerInitialDelayNotNegative() {
+        return automaticSubmissionSchedulerInitialDelay == null
+                || !automaticSubmissionSchedulerInitialDelay.isNegative();
     }
 
     public static class StatusCredit {
