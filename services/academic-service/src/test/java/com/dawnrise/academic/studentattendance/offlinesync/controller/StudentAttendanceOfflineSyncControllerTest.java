@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 
@@ -47,10 +48,7 @@ class StudentAttendanceOfflineSyncControllerTest {
         );
 
         mockMvc.perform(post("/api/v1/student-attendance/offline-sync")
-                        .with(jwt().jwt(builder -> builder
-                                .subject("11")
-                                .claim("organizationId", 7L)
-                                .claim("permissions", List.of("STUDENT_ATTENDANCE_RECORD"))))
+                        .with(jwtWithOrganizationUserAndPermission())
                         .header("Idempotency-Key", "offline-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json()))
@@ -69,10 +67,7 @@ class StudentAttendanceOfflineSyncControllerTest {
                 true, null, List.of()
         );
         mockMvc.perform(post("/api/v1/student-attendance/offline-sync")
-                        .with(jwt().jwt(builder -> builder
-                                .subject("11")
-                                .claim("organizationId", 7L)
-                                .claim("permissions", List.of("STUDENT_ATTENDANCE_RECORD"))))
+                        .with(jwtWithOrganizationUserAndPermission())
                         .header("Idempotency-Key", "offline-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json()))
@@ -91,14 +86,19 @@ class StudentAttendanceOfflineSyncControllerTest {
     @Test
     void requestValidationRejectsEmptyRecords() throws Exception {
         mockMvc.perform(post("/api/v1/student-attendance/offline-sync")
-                        .with(jwt().jwt(builder -> builder
-                                .subject("11")
-                                .claim("organizationId", 7L)
-                                .claim("permissions", List.of("STUDENT_ATTENDANCE_RECORD"))))
+                        .with(jwtWithOrganizationUserAndPermission())
                         .header("Idempotency-Key", "offline-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(emptyRecordsJson()))
                 .andExpect(status().isBadRequest());
+    }
+
+    private static RequestPostProcessor jwtWithOrganizationUserAndPermission() {
+        return jwt()
+                .jwt(builder -> builder
+                        .subject("11")
+                        .claim("organizationId", 7L))
+                .authorities(() -> "STUDENT_ATTENDANCE_RECORD");
     }
 
     private String emptyRecordsJson() {
