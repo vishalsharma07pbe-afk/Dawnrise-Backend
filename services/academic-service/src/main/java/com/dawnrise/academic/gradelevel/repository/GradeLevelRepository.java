@@ -17,6 +17,12 @@ public interface GradeLevelRepository
             Long organizationId
     );
 
+    Optional<GradeLevel> findByOrganizationIdAndAcademicYearIdAndCodeIgnoreCase(
+            Long organizationId,
+            Long academicYearId,
+            String code
+    );
+
     List<GradeLevel>
     findAllByOrganizationIdAndAcademicYearIdOrderByDisplayOrderAsc(
             Long organizationId,

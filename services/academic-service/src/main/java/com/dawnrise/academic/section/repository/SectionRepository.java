@@ -18,6 +18,13 @@ public interface SectionRepository
             Long organizationId
     );
 
+    Optional<Section> findByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndCodeIgnoreCase(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            String code
+    );
+
     List<Section>
     findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdOrderByDisplayOrderAsc(
             Long organizationId,

@@ -18,6 +18,10 @@ server:
   port: 8082
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: ${STUDENT_ATTENDANCE_IMPORT_HTTP_MAX_FILE_SIZE:2MB}
+      max-request-size: ${STUDENT_ATTENDANCE_IMPORT_HTTP_MAX_REQUEST_SIZE:3MB}
   application:
     name: academic-service
 
@@ -48,6 +52,9 @@ management:
 
 dawnrise:
   student-attendance:
+    import:
+      max-file-bytes: ${STUDENT_ATTENDANCE_IMPORT_MAX_FILE_BYTES:2097152}
+      preview-ttl: ${STUDENT_ATTENDANCE_IMPORT_PREVIEW_TTL:PT30M}
     max-records-per-request: ${STUDENT_ATTENDANCE_MAX_RECORDS:200}
     max-calendar-days-per-academic-year: ${STUDENT_ATTENDANCE_MAX_CALENDAR_DAYS:400}
     default-attendance-mode: ${STUDENT_ATTENDANCE_DEFAULT_MODE:DAILY}

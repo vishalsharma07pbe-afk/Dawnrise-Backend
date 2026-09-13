@@ -19,6 +19,8 @@ import com.dawnrise.academic.studentattendance.policy.service.StudentLatePenalty
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncAppliedResult;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRecordRequest;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRequest;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftRosterEntry;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
 import com.dawnrise.academic.studentattendance.offlinesync.enums.StudentAttendanceOfflineSyncMode;
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceRecordRequest;
@@ -98,6 +100,60 @@ public class StudentAttendanceRecordingServiceImpl
         this.mapper = mapper;
         this.schoolTimeZoneClient = schoolTimeZoneClient;
         this.clock = clock;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StudentAttendanceOfflineDraftSnapshot previewOfflineDraft(
+            long organizationId,
+            long actorUserId,
+            long academicYearId,
+            long gradeLevelId,
+            long sectionId,
+            LocalDate attendanceDate
+    ) {
+        validateMutationContext(
+                organizationId,
+                academicYearId,
+                gradeLevelId,
+                sectionId,
+                attendanceDate,
+                actorUserId
+        );
+        Optional<StudentAttendanceSession> existingSession =
+                sessionRepository.findByOrganizationIdAndAcademicYearIdAndSectionIdAndAttendanceDate(
+                        organizationId,
+                        academicYearId,
+                        sectionId,
+                        attendanceDate
+                );
+        existingSession.ifPresent(StudentAttendanceSession::requireDraft);
+        List<StudentEnrollment> roster = enrollmentRepository.findEligibleForAttendanceDate(
+                organizationId,
+                academicYearId,
+                gradeLevelId,
+                sectionId,
+                attendanceDate
+        );
+        Map<Long, Long> recordVersions = existingSession
+                .map(session -> recordRepository
+                        .findAllByAttendanceSessionIdOrderByIdAsc(session.getId())
+                        .stream()
+                        .collect(Collectors.toMap(
+                                StudentAttendanceRecord::getStudentEnrollmentId,
+                                StudentAttendanceRecord::getVersion
+                        )))
+                .orElseGet(Map::of);
+        return new StudentAttendanceOfflineDraftSnapshot(
+                existingSession.map(StudentAttendanceSession::getVersion).orElse(null),
+                roster.stream()
+                        .map(enrollment -> new StudentAttendanceOfflineDraftRosterEntry(
+                                enrollment.getId(),
+                                enrollment.getRollNumber(),
+                                recordVersions.get(enrollment.getId())
+                        ))
+                        .toList()
+        );
     }
 
     @Override
