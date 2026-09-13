@@ -46,6 +46,9 @@ import com.dawnrise.academic.studentattendance.correction.exception.StudentAtten
 import com.dawnrise.academic.studentattendance.offlinesync.exception.InvalidStudentAttendanceOfflineSyncException;
 import com.dawnrise.academic.studentattendance.offlinesync.exception.StudentAttendanceOfflineSyncConflictException;
 import com.dawnrise.academic.studentattendance.offlinesync.exception.StudentAttendanceOfflineSyncUnavailableException;
+import com.dawnrise.academic.studentattendance.importing.exception.InvalidStudentAttendanceImportException;
+import com.dawnrise.academic.studentattendance.importing.exception.StudentAttendanceImportConflictException;
+import com.dawnrise.academic.studentattendance.importing.exception.StudentAttendanceImportPreviewNotFoundException;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -64,6 +67,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 
 import java.time.OffsetDateTime;
@@ -311,7 +315,8 @@ public class GlobalExceptionHandler {
             InvalidStudentAttendancePolicyException.class,
             InvalidStudentAttendanceRecordingException.class,
             InvalidStudentAttendanceCorrectionException.class,
-            InvalidStudentAttendanceOfflineSyncException.class
+            InvalidStudentAttendanceOfflineSyncException.class,
+            InvalidStudentAttendanceImportException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
             RuntimeException exception,
@@ -330,7 +335,8 @@ public class GlobalExceptionHandler {
             StudentAttendancePolicyConflictException.class,
             StudentAttendanceRecordingConflictException.class,
             StudentAttendanceCorrectionConflictException.class,
-            StudentAttendanceOfflineSyncConflictException.class
+            StudentAttendanceOfflineSyncConflictException.class,
+            StudentAttendanceImportConflictException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceConflict(
             RuntimeException exception,
@@ -348,7 +354,8 @@ public class GlobalExceptionHandler {
             AcademicCalendarDayNotFoundException.class,
             StudentAttendancePolicyNotFoundException.class,
             StudentAttendanceSessionNotFoundException.class,
-            StudentAttendanceCorrectionNotFoundException.class
+            StudentAttendanceCorrectionNotFoundException.class,
+            StudentAttendanceImportPreviewNotFoundException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceNotFound(
             RuntimeException exception,
@@ -571,6 +578,19 @@ public class GlobalExceptionHandler {
         return response(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleImportFileTooLarge(
+            MaxUploadSizeExceededException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "Attendance import file exceeds the configured size limit",
                 request,
                 null
         );

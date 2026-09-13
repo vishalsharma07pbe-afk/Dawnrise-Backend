@@ -42,6 +42,12 @@ public interface AcademicYearRepository
             AcademicYearStatus status
     );
 
+    Optional<AcademicYear> findByOrganizationIdAndNameIgnoreCaseAndStatus(
+            Long organizationId,
+            String name,
+            AcademicYearStatus status
+    );
+
     boolean existsByOrganizationIdAndNameIgnoreCaseAndStatusNot(
             Long organizationId,
             String name,

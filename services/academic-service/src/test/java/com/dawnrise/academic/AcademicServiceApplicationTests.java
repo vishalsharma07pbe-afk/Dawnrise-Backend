@@ -14,6 +14,7 @@ import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendan
 import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionItemRepository;
 import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionRequestRepository;
 import com.dawnrise.academic.studentattendance.offlinesync.repository.StudentAttendanceOfflineSyncOperationRepository;
+import com.dawnrise.academic.studentattendance.importing.repository.StudentAttendanceImportPreviewRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentprogression.repository.StudentProgressionItemRepository;
@@ -55,6 +56,28 @@ class AcademicServiceApplicationTests {
 		@Primary
 		SchoolTimeZoneClient schoolTimeZoneClient() {
 			return organizationId -> ZoneId.of("Asia/Kolkata");
+		}
+
+		@Bean
+		StudentAttendanceImportPreviewRepository
+		studentAttendanceImportPreviewRepository() {
+			return (StudentAttendanceImportPreviewRepository)
+					Proxy.newProxyInstance(
+							StudentAttendanceImportPreviewRepository.class.getClassLoader(),
+							new Class<?>[]{StudentAttendanceImportPreviewRepository.class},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentAttendanceImportPreviewRepositoryStub";
+								}
+								throw new UnsupportedOperationException(method.getName());
+							}
+					);
 		}
 
 		@Bean

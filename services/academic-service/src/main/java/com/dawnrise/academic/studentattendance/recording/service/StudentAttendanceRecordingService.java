@@ -4,10 +4,20 @@ import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendan
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncAppliedResult;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRequest;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
 
 import java.time.LocalDate;
 
 public interface StudentAttendanceRecordingService {
+
+    StudentAttendanceOfflineDraftSnapshot previewOfflineDraft(
+            long organizationId,
+            long actorUserId,
+            long academicYearId,
+            long gradeLevelId,
+            long sectionId,
+            LocalDate attendanceDate
+    );
 
     StudentAttendanceOfflineSyncAppliedResult synchronizeOfflineDraft(
             long organizationId,

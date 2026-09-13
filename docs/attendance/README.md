@@ -14,7 +14,7 @@ Obsolete clone that must never be touched:
 
 Current development branch:
 
-`feat/student-attendance-offline-sync`
+`feat/student-attendance-import`
 
 Technology baseline:
 
@@ -90,7 +90,8 @@ Applied migrations must never be edited. Corrections require a new migration.
 ### Current in-progress checkpoint
 
 Student correction workflow is complete through academic V15 and identity V46.
-Phase S2 adds academic V16 and the offline synchronization API described below.
+Phase S2 is complete in commit `c868825` with academic V16 and offline synchronization.
+Phase S3 adds academic V17 and the attendance import APIs described below.
 
 ## 4. Student attendance functional rules
 
@@ -246,6 +247,21 @@ Implement template, preview and confirm:
 - Confirm requires preview fingerprint and idempotency key
 - Confirm is transactional/all-or-nothing
 - Confirm creates or updates a draft and never silently submits
+
+#### Phase S3 API contract
+
+- `GET /api/v1/student-attendance/imports/template.csv` downloads the exact CSV header template.
+- `POST /api/v1/student-attendance/imports/preview` accepts one multipart `file` (`.csv` or `.xlsx`).
+- `POST /api/v1/student-attendance/imports/{previewId}/confirm` requires an `Idempotency-Key` header and the returned `previewFingerprint`.
+- Files are limited to 2 MiB by default and one to 100 data rows.
+- Required columns are `academic_year`, `grade_code`, `section_code`, `attendance_date`, `roll_number`, `attendance_status`, and `remarks`.
+- Every row in one file must target the same academic year, grade, section and date.
+- Academic-year names, grade codes, section codes and roll numbers are resolved inside the authenticated tenant; database IDs are never accepted from the file.
+- A confirmable import must contain the complete authoritative dated roster exactly once.
+- XLSX formula cells are rejected and never evaluated. The CSV template contains fixed, formula-safe headers only.
+- Preview persists only an expiring normalized validation snapshot; it does not create a session or write attendance records.
+- Confirmation reuses Phase S2 `COMPLETE` synchronization, including scope, lifecycle, calendar, roster, base-version, record-version and policy recalculation checks.
+- Confirmation creates or updates a `DRAFT` session only. Submission remains a separate explicit operation.
 
 ### Phase S4 — Reporting and scoped views
 
