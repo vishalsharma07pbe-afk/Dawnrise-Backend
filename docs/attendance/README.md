@@ -14,7 +14,7 @@ Obsolete clone that must never be touched:
 
 Current development branch:
 
-`feat/student-attendance-recording`
+`feat/student-attendance-offline-sync`
 
 Technology baseline:
 
@@ -89,13 +89,8 @@ Applied migrations must never be edited. Corrections require a new migration.
 
 ### Current in-progress checkpoint
 
-Student correction workflow has been implemented in the working tree using:
-
-- Academic V15 correction migration
-- Identity V46 correction permissions
-- Correction entities, DTOs, repositories, service, controller and tests
-
-V15 and V46 must be reviewed, dry-run and applied before becoming immutable. Codex must inspect Git/Flyway state rather than assuming this checkpoint remains unchanged.
+Student correction workflow is complete through academic V15 and identity V46.
+Phase S2 adds academic V16 and the offline synchronization API described below.
 
 ## 4. Student attendance functional rules
 
@@ -194,6 +189,47 @@ Provide backend synchronization for a later offline frontend:
 - Persist durable idempotency/sync operations through a new migration
 
 The backend does not implement IndexedDB. The frontend later stores encrypted local drafts and calls this API when connectivity returns.
+
+#### Phase S2 API contract
+
+`POST /api/v1/student-attendance/offline-sync`
+
+- Requires `STUDENT_ATTENDANCE_RECORD` and an `Idempotency-Key` header.
+- The key is scoped to organization and authenticated actor and is at most 128 characters.
+- Request context contains academic year, grade, section, attendance date, base session version, sync mode, the offline roster snapshot, and one to 100 ordered record changes.
+- `expectedRosterEnrollmentIds` detects additions, transfers, withdrawals, and other roster drift for both sync modes.
+- `PARTIAL` updates only supplied records.
+- `COMPLETE` requires supplied records to match the entire authoritative roster and replaces the draft roster.
+- A new session requires a null `baseSessionVersion`; an existing session requires its exact current version.
+- A new record requires a null `expectedRecordVersion`; an existing record requires its exact current version.
+- The first successful call returns `201`; exact replay returns the stored result with `200` and `replay=true`.
+- Reusing a key with a different canonical payload returns `409`.
+- Validation failures remain `400`, scope failures remain `403`, downstream timezone failures remain `503`, and stale/submitted/concurrent state returns `409`.
+- Failed outcomes are stored so the same key cannot later mutate a different server state.
+- Academic V16 stores durable operation state and the successful JSON response. Attendance changes and the successful result are committed atomically.
+- Record results are returned in request order under `appliedRecords`; the session contains the complete current server draft.
+
+Example request:
+
+```json
+{
+  "academicYearId": 3,
+  "gradeLevelId": 3,
+  "sectionId": 3,
+  "attendanceDate": "2026-09-11",
+  "baseSessionVersion": 0,
+  "syncMode": "PARTIAL",
+  "expectedRosterEnrollmentIds": [3, 4],
+  "records": [
+    {
+      "studentEnrollmentId": 3,
+      "expectedRecordVersion": 0,
+      "recordedStatus": "PRESENT",
+      "remarks": "Recorded offline"
+    }
+  ]
+}
+```
 
 ### Phase S3 — CSV/XLSX import
 

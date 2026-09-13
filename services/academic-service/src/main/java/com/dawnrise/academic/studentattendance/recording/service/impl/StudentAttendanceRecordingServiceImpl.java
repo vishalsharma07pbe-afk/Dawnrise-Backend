@@ -16,6 +16,10 @@ import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendanceStatusPolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.service.StudentLatePenaltyCalculator;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncAppliedResult;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRecordRequest;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRequest;
+import com.dawnrise.academic.studentattendance.offlinesync.enums.StudentAttendanceOfflineSyncMode;
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
@@ -94,6 +98,235 @@ public class StudentAttendanceRecordingServiceImpl
         this.mapper = mapper;
         this.schoolTimeZoneClient = schoolTimeZoneClient;
         this.clock = clock;
+    }
+
+    @Override
+    @Transactional
+    public StudentAttendanceOfflineSyncAppliedResult synchronizeOfflineDraft(
+            long organizationId,
+            long actorUserId,
+            StudentAttendanceOfflineSyncRequest request
+    ) {
+        validateOfflineRequest(request);
+        AttendanceValidationContext context = validateMutationContext(
+                organizationId,
+                request.academicYearId(),
+                request.gradeLevelId(),
+                request.sectionId(),
+                request.attendanceDate(),
+                actorUserId
+        );
+
+        Optional<StudentAttendanceSession> locked =
+                sessionRepository.findByContextForUpdate(
+                        organizationId,
+                        request.academicYearId(),
+                        request.sectionId(),
+                        request.attendanceDate()
+                );
+        StudentAttendanceSession session;
+        if (locked.isEmpty()) {
+            if (request.baseSessionVersion() != null) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "Attendance session no longer matches the offline base version"
+                );
+            }
+            session = sessionRepository.saveAndFlush(
+                    new StudentAttendanceSession(
+                            organizationId,
+                            request.academicYearId(),
+                            request.gradeLevelId(),
+                            request.sectionId(),
+                            context.calendarDay().getId(),
+                            request.attendanceDate(),
+                            actorUserId
+                    )
+            );
+        } else {
+            session = locked.get();
+            session.requireDraft();
+            if (request.baseSessionVersion() == null
+                    || !Objects.equals(
+                    session.getVersion(),
+                    request.baseSessionVersion()
+            )) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "Attendance session changed after the offline draft was created"
+                );
+            }
+        }
+
+        List<Long> requestedEnrollmentIds = request.records().stream()
+                .map(StudentAttendanceOfflineSyncRecordRequest::studentEnrollmentId)
+                .toList();
+        Map<Long, StudentEnrollment> enrollments =
+                enrollmentRepository.findEligibleForAttendanceDateByIds(
+                                organizationId,
+                                request.academicYearId(),
+                                request.gradeLevelId(),
+                                request.sectionId(),
+                                request.attendanceDate(),
+                                requestedEnrollmentIds
+                        ).stream()
+                        .collect(Collectors.toMap(
+                                StudentEnrollment::getId,
+                                Function.identity()
+                        ));
+        if (enrollments.size() != requestedEnrollmentIds.size()) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "All student enrollments must belong to the section and cover the attendance date"
+            );
+        }
+
+        Set<Long> requiredIds = requiredEnrollments(session).stream()
+                .map(StudentEnrollment::getId)
+                .collect(Collectors.toSet());
+        Set<Long> expectedRosterIds = new HashSet<>(request.expectedRosterEnrollmentIds());
+        if (!requiredIds.equals(expectedRosterIds)) {
+            throw new StudentAttendanceRecordingConflictException(
+                    "The section roster changed after the offline draft was created"
+            );
+        }
+        if (request.syncMode() == StudentAttendanceOfflineSyncMode.COMPLETE
+                && !requiredIds.equals(new HashSet<>(requestedEnrollmentIds))) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Complete offline synchronization must include the entire section roster"
+            );
+        }
+
+        Map<Long, StudentAttendanceRecord> existing =
+                recordRepository.findAllByAttendanceSessionIdAndStudentEnrollmentIdIn(
+                                session.getId(),
+                                requestedEnrollmentIds
+                        ).stream()
+                        .collect(Collectors.toMap(
+                                StudentAttendanceRecord::getStudentEnrollmentId,
+                                Function.identity()
+                        ));
+        Map<AttendanceStatus, StudentAttendanceStatusPolicy> credits =
+                statusCredits(organizationId);
+        StudentAttendancePolicy policy = policy(organizationId);
+        Map<Long, Integer> requestLateCounts = new HashMap<>();
+        List<StudentAttendanceRecord> orderedApplied = new ArrayList<>();
+
+        for (StudentAttendanceOfflineSyncRecordRequest item : request.records()) {
+            StudentAttendanceRecord record = existing.get(item.studentEnrollmentId());
+            if (record == null && item.expectedRecordVersion() != null) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "An attendance record no longer matches its offline base version"
+                );
+            }
+            if (record != null && (item.expectedRecordVersion() == null
+                    || !Objects.equals(
+                    record.getVersion(),
+                    item.expectedRecordVersion()
+            ))) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "An attendance record changed after the offline draft was created"
+                );
+            }
+
+            AttendanceStatus effective = effectiveStatus(
+                    session,
+                    policy,
+                    item.studentEnrollmentId(),
+                    item.recordedStatus(),
+                    requestLateCounts
+            );
+            boolean penaltyApplied = item.recordedStatus() == AttendanceStatus.LATE
+                    && effective != AttendanceStatus.LATE;
+            StudentAttendanceStatusPolicy credit = credits.get(effective);
+            StudentEnrollment enrollment = enrollments.get(item.studentEnrollmentId());
+            if (record == null) {
+                record = new StudentAttendanceRecord(
+                        session,
+                        enrollment.getId(),
+                        enrollment.getStudentUserId(),
+                        item.recordedStatus(),
+                        effective,
+                        credit.getEarnedCredit(),
+                        credit.getPossibleCredit(),
+                        penaltyApplied,
+                        item.remarks(),
+                        actorUserId
+                );
+            } else {
+                record.replace(
+                        item.recordedStatus(),
+                        effective,
+                        credit.getEarnedCredit(),
+                        credit.getPossibleCredit(),
+                        penaltyApplied,
+                        item.remarks(),
+                        actorUserId
+                );
+            }
+            orderedApplied.add(record);
+        }
+
+        if (request.syncMode() == StudentAttendanceOfflineSyncMode.COMPLETE) {
+            recordRepository.deleteByAttendanceSessionIdAndStudentEnrollmentIdNotIn(
+                    session.getId(),
+                    requestedEnrollmentIds
+            );
+        }
+        recordRepository.saveAllAndFlush(orderedApplied);
+        session.touch(actorUserId);
+        sessionRepository.saveAndFlush(session);
+        List<StudentAttendanceRecord> allRecords =
+                recordRepository.findAllByAttendanceSessionIdOrderByIdAsc(session.getId());
+        return new StudentAttendanceOfflineSyncAppliedResult(
+                mapper.toResponse(session, allRecords),
+                orderedApplied.stream().map(mapper::toResponse).toList()
+        );
+    }
+
+    private void validateOfflineRequest(StudentAttendanceOfflineSyncRequest request) {
+        if (request == null
+                || request.records() == null
+                || request.records().isEmpty()) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Offline attendance records are required"
+            );
+        }
+        if (request.records().size() > MAX_BULK_RECORDS) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "At most 100 offline attendance records can be synchronized at once"
+            );
+        }
+        if (request.syncMode() == null) {
+            throw new InvalidStudentAttendanceRecordingException("Offline sync mode is required");
+        }
+        if (request.expectedRosterEnrollmentIds() == null
+                || request.expectedRosterEnrollmentIds().isEmpty()) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Expected section roster is required"
+            );
+        }
+        if (request.expectedRosterEnrollmentIds().size() > 500
+                || request.expectedRosterEnrollmentIds().stream()
+                .anyMatch(id -> id == null || id <= 0)
+                || new HashSet<>(request.expectedRosterEnrollmentIds()).size()
+                != request.expectedRosterEnrollmentIds().size()) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Expected section roster must contain at most 500 unique positive enrollment IDs"
+            );
+        }
+        Set<Long> ids = new HashSet<>();
+        for (StudentAttendanceOfflineSyncRecordRequest item : request.records()) {
+            if (item == null || item.studentEnrollmentId() == null
+                    || item.studentEnrollmentId() <= 0
+                    || item.recordedStatus() == null) {
+                throw new InvalidStudentAttendanceRecordingException(
+                        "Each offline attendance record is incomplete"
+                );
+            }
+            if (!ids.add(item.studentEnrollmentId())) {
+                throw new InvalidStudentAttendanceRecordingException(
+                        "Duplicate student enrollment IDs are not allowed"
+                );
+            }
+        }
     }
 
     @Override

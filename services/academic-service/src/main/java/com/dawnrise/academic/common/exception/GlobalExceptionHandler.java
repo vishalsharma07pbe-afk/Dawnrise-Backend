@@ -43,6 +43,9 @@ import com.dawnrise.academic.studentattendance.recording.exception.StudentAttend
 import com.dawnrise.academic.studentattendance.correction.exception.InvalidStudentAttendanceCorrectionException;
 import com.dawnrise.academic.studentattendance.correction.exception.StudentAttendanceCorrectionConflictException;
 import com.dawnrise.academic.studentattendance.correction.exception.StudentAttendanceCorrectionNotFoundException;
+import com.dawnrise.academic.studentattendance.offlinesync.exception.InvalidStudentAttendanceOfflineSyncException;
+import com.dawnrise.academic.studentattendance.offlinesync.exception.StudentAttendanceOfflineSyncConflictException;
+import com.dawnrise.academic.studentattendance.offlinesync.exception.StudentAttendanceOfflineSyncUnavailableException;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -307,7 +310,8 @@ public class GlobalExceptionHandler {
             InvalidAcademicCalendarException.class,
             InvalidStudentAttendancePolicyException.class,
             InvalidStudentAttendanceRecordingException.class,
-            InvalidStudentAttendanceCorrectionException.class
+            InvalidStudentAttendanceCorrectionException.class,
+            InvalidStudentAttendanceOfflineSyncException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
             RuntimeException exception,
@@ -325,7 +329,8 @@ public class GlobalExceptionHandler {
             AcademicCalendarConflictException.class,
             StudentAttendancePolicyConflictException.class,
             StudentAttendanceRecordingConflictException.class,
-            StudentAttendanceCorrectionConflictException.class
+            StudentAttendanceCorrectionConflictException.class,
+            StudentAttendanceOfflineSyncConflictException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceConflict(
             RuntimeException exception,
@@ -548,6 +553,24 @@ public class GlobalExceptionHandler {
         return response(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "School timezone could not be verified",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(StudentAttendanceOfflineSyncUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleOfflineSyncUnavailable(
+            StudentAttendanceOfflineSyncUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        LOGGER.warn(
+                "Offline attendance sync unavailable for {} {}",
+                request.getMethod(),
+                request.getRequestURI()
+        );
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                exception.getMessage(),
                 request,
                 null
         );

@@ -2,10 +2,18 @@ package com.dawnrise.academic.studentattendance.recording.service;
 
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncAppliedResult;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRequest;
 
 import java.time.LocalDate;
 
 public interface StudentAttendanceRecordingService {
+
+    StudentAttendanceOfflineSyncAppliedResult synchronizeOfflineDraft(
+            long organizationId,
+            long actorUserId,
+            StudentAttendanceOfflineSyncRequest request
+    );
 
     StudentAttendanceSessionResponse getOrCreateDraft(
             long organizationId,
