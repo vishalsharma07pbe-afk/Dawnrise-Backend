@@ -23,6 +23,22 @@ public interface StudentAttendanceSessionRepository
             LocalDate attendanceDate
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT session
+        FROM StudentAttendanceSession session
+        WHERE session.organizationId = :organizationId
+          AND session.academicYearId = :academicYearId
+          AND session.sectionId = :sectionId
+          AND session.attendanceDate = :attendanceDate
+        """)
+    Optional<StudentAttendanceSession> findByContextForUpdate(
+            @Param("organizationId") Long organizationId,
+            @Param("academicYearId") Long academicYearId,
+            @Param("sectionId") Long sectionId,
+            @Param("attendanceDate") LocalDate attendanceDate
+    );
+
     Optional<StudentAttendanceSession> findByIdAndOrganizationId(
             Long id,
             Long organizationId
