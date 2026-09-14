@@ -156,4 +156,12 @@ public interface StudentEnrollmentRepository
             @Param("attendanceDate") LocalDate attendanceDate,
             @Param("enrollmentIds") Collection<Long> enrollmentIds
     );
+
+    boolean existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndStudentUserId(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            Long sectionId,
+            Long studentUserId
+    );
 }
