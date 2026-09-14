@@ -19,6 +19,7 @@ import com.dawnrise.academic.studentattendance.notificationoutbox.repository.Stu
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentattendance.reporting.repository.StudentAttendanceReportRepository;
+import jakarta.persistence.EntityManager;
 import com.dawnrise.academic.studentprogression.repository.StudentProgressionItemRepository;
 import com.dawnrise.academic.studentprogression.repository.StudentProgressionOperationRepository;
 import com.dawnrise.academic.subject.repository.SubjectRepository;
@@ -53,6 +54,26 @@ class AcademicServiceApplicationTests {
 
 	@TestConfiguration
 	static class TestConfig {
+
+		@Bean
+		EntityManager entityManager() {
+			return (EntityManager) Proxy.newProxyInstance(
+					EntityManager.class.getClassLoader(),
+					new Class<?>[]{EntityManager.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "EntityManagerStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
 
 		@Bean
 		@Primary

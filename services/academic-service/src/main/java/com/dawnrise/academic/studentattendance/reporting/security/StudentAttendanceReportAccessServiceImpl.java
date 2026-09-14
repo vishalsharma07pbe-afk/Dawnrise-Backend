@@ -1,29 +1,18 @@
 package com.dawnrise.academic.studentattendance.reporting.security;
 
 import com.dawnrise.academic.studentattendance.reporting.exception.InvalidStudentAttendanceReportException;
+import com.dawnrise.academic.studentattendance.security.StudentAttendanceAccessRoles;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class StudentAttendanceReportAccessServiceImpl
         implements StudentAttendanceReportAccessService {
-
-    private static final Set<String> LEADERSHIP_AUTHORITIES =
-            Set.of(
-                    "ROLE_ADMIN",
-                    "ROLE_PRINCIPAL",
-                    "ROLE_VICE_PRINCIPAL"
-            );
-
-    private static final String TEACHER_AUTHORITY =
-            "ROLE_TEACHER";
 
     private final TeacherAssignmentRepository
             teacherAssignmentRepository;
@@ -83,7 +72,7 @@ public class StudentAttendanceReportAccessServiceImpl
         Set<String> authorities = currentAuthorities();
 
         boolean assignedTeacher =
-                authorities.contains(TEACHER_AUTHORITY)
+                StudentAttendanceAccessRoles.hasTeacherAccess(authorities)
                         && teacherAssignmentRepository
                         .existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserId(
                                 organizationId,
@@ -102,9 +91,7 @@ public class StudentAttendanceReportAccessServiceImpl
     public boolean hasLeadershipAccess() {
         Set<String> authorities = currentAuthorities();
 
-        return LEADERSHIP_AUTHORITIES
-                .stream()
-                .anyMatch(authorities::contains);
+        return StudentAttendanceAccessRoles.hasLeadershipAccess(authorities);
     }
 
     private Set<String> currentAuthorities() {
@@ -118,11 +105,9 @@ public class StudentAttendanceReportAccessServiceImpl
             return Set.of();
         }
 
-        return authentication
-                .getAuthorities()
-                .stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toUnmodifiableSet());
+        return StudentAttendanceAccessRoles.authorityNames(
+                authentication.getAuthorities()
+        );
     }
 
     private void validatePositive(
