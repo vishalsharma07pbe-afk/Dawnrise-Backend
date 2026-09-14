@@ -14,6 +14,7 @@ import com.dawnrise.academic.studentattendance.notificationoutbox.service.Studen
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendanceStatusPolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.service.StudentLatePenaltyCalculator;
+import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceSession;
 import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
 import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceRecordingConflictException;
@@ -22,9 +23,11 @@ import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanc
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.recording.enums.StudentAttendanceSessionStatus;
 import com.dawnrise.academic.studentenrollment.entity.StudentEnrollment;
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +68,7 @@ class StudentAttendanceRecordingServiceImplTest {
     private RecordRepositoryStub recordRepository;
     private ContextRepositoryStub contextRepository;
     private EnrollmentRepositoryStub enrollmentRepository;
+    private TeacherAssignmentRepositoryStub teacherAssignmentRepository;
     private TimeZoneClientStub timeZoneClient;
     private StudentAttendanceNotificationOutboxService
             notificationOutboxService;
@@ -77,6 +81,7 @@ class StudentAttendanceRecordingServiceImplTest {
         recordRepository = new RecordRepositoryStub();
         contextRepository = new ContextRepositoryStub();
         enrollmentRepository = new EnrollmentRepositoryStub();
+        teacherAssignmentRepository = new TeacherAssignmentRepositoryStub();
         timeZoneClient = new TimeZoneClientStub();
         notificationOutboxService =
                 mock(StudentAttendanceNotificationOutboxService.class);
@@ -276,6 +281,138 @@ class StudentAttendanceRecordingServiceImplTest {
         assertThat(timeZoneClient.calls).isZero();
     }
 
+    @Test
+    void previewOfflineDraftReturnsDateEligibleRosterStudentUserIdsAndNullVersionsWithoutSession() {
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+        sessionRepository.findBySectionDate = Optional.empty();
+        enrollmentRepository.enrollments = List.of(
+                enrollment(200L),
+                enrollment(201L)
+        );
+
+        StudentAttendanceOfflineDraftSnapshot snapshot =
+                service.previewOfflineDraft(
+                        ORGANIZATION_ID,
+                        ACTOR_USER_ID,
+                        ACADEMIC_YEAR_ID,
+                        GRADE_LEVEL_ID,
+                        SECTION_ID,
+                        ATTENDANCE_DATE
+                );
+
+        assertThat(snapshot.baseSessionVersion()).isNull();
+        assertThat(snapshot.roster())
+                .extracting(
+                        entry -> entry.studentEnrollmentId(),
+                        entry -> entry.studentUserId(),
+                        entry -> entry.rollNumber(),
+                        entry -> entry.existingRecordVersion()
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(200L, 1200L, "200", null),
+                        org.assertj.core.groups.Tuple.tuple(201L, 1201L, "201", null)
+                );
+        assertThat(enrollmentRepository.lastAttendanceDate)
+                .isEqualTo(ATTENDANCE_DATE);
+    }
+
+    @Test
+    void previewOfflineDraftReturnsPersistedSessionAndRecordVersions() {
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+        StudentAttendanceSession session = session(ATTENDANCE_DATE);
+        ReflectionTestUtils.setField(session, "version", 7L);
+        StudentAttendanceRecord record = record(session, 200L);
+        ReflectionTestUtils.setField(record, "version", 4L);
+        sessionRepository.findBySectionDate = Optional.of(session);
+        recordRepository.records = List.of(record);
+        enrollmentRepository.enrollments = List.of(enrollment(200L), enrollment(201L));
+
+        StudentAttendanceOfflineDraftSnapshot snapshot =
+                service.previewOfflineDraft(
+                        ORGANIZATION_ID,
+                        ACTOR_USER_ID,
+                        ACADEMIC_YEAR_ID,
+                        GRADE_LEVEL_ID,
+                        SECTION_ID,
+                        ATTENDANCE_DATE
+                );
+
+        assertThat(snapshot.baseSessionVersion()).isEqualTo(7L);
+        assertThat(snapshot.roster())
+                .extracting(
+                        entry -> entry.studentEnrollmentId(),
+                        entry -> entry.existingRecordVersion()
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(200L, 4L),
+                        org.assertj.core.groups.Tuple.tuple(201L, null)
+                );
+    }
+
+    @Test
+    void previewOfflineDraftRejectsNonDraftExistingSession() {
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+        StudentAttendanceSession session = session(ATTENDANCE_DATE);
+        ReflectionTestUtils.setField(
+                session,
+                "lifecycleStatus",
+                StudentAttendanceSessionStatus.SUBMITTED
+        );
+        sessionRepository.findBySectionDate = Optional.of(session);
+
+        assertThatThrownBy(() -> service.previewOfflineDraft(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                ATTENDANCE_DATE
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+    }
+
+    @Test
+    void previewOfflineDraftRejectsUnassignedTeacher() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(
+                        "teacher",
+                        "n/a",
+                        List.of(new SimpleGrantedAuthority("ROLE_TEACHER"))
+                )
+        );
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.previewOfflineDraft(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                ATTENDANCE_DATE
+        )).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void previewOfflineDraftAllowsAssignedTeacher() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(
+                        "teacher",
+                        "n/a",
+                        List.of(new SimpleGrantedAuthority("ROLE_TEACHER"))
+                )
+        );
+        teacherAssignmentRepository.assigned = true;
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatCode(() -> service.previewOfflineDraft(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                ATTENDANCE_DATE
+        )).doesNotThrowAnyException();
+    }
+
     private StudentAttendanceRecordingServiceImpl service(Clock testClock) {
         return new StudentAttendanceRecordingServiceImpl(
                 sessionRepository.repository(),
@@ -286,12 +423,7 @@ class StudentAttendanceRecordingServiceImplTest {
                 enrollmentRepository.repository(),
                 proxy(StudentAttendancePolicyRepository.class, unsupported()),
                 proxy(StudentAttendanceStatusPolicyRepository.class, unsupported()),
-                proxy(TeacherAssignmentRepository.class, (proxy, method, args) -> {
-                    if (method.getName().equals("existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserId")) {
-                        return false;
-                    }
-                    return defaultObjectMethod(proxy, method.getName(), args);
-                }),
+                teacherAssignmentRepository.repository(),
                 new StudentLatePenaltyCalculator(),
                 new StudentAttendanceRecordingMapper(),
                 timeZoneClient,
@@ -470,10 +602,25 @@ class StudentAttendanceRecordingServiceImplTest {
 
     private static final class EnrollmentRepositoryStub {
         private List<StudentEnrollment> enrollments = List.of();
+        private LocalDate lastAttendanceDate;
 
         private StudentEnrollmentRepository repository() {
             return proxy(StudentEnrollmentRepository.class, (proxy, method, args) -> switch (method.getName()) {
-                case "findEligibleForAttendanceDate" -> enrollments;
+                case "findEligibleForAttendanceDate" -> {
+                    lastAttendanceDate = (LocalDate) args[4];
+                    yield enrollments;
+                }
+                default -> defaultObjectMethod(proxy, method.getName(), args);
+            });
+        }
+    }
+
+    private static final class TeacherAssignmentRepositoryStub {
+        private boolean assigned;
+
+        private TeacherAssignmentRepository repository() {
+            return proxy(TeacherAssignmentRepository.class, (proxy, method, args) -> switch (method.getName()) {
+                case "existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserId" -> assigned;
                 default -> defaultObjectMethod(proxy, method.getName(), args);
             });
         }

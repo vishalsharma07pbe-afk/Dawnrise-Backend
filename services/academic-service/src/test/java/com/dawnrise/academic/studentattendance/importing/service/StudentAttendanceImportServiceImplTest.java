@@ -94,7 +94,9 @@ class StudentAttendanceImportServiceImplTest {
                 7L, 11L, 3L, 4L, 5L, LocalDate.of(2026, 9, 11)
         )).thenReturn(new StudentAttendanceOfflineDraftSnapshot(
                 2L,
-                List.of(new StudentAttendanceOfflineDraftRosterEntry(31L, "DR-001", 4L))
+                List.of(new StudentAttendanceOfflineDraftRosterEntry(
+                        31L, 131L, "DR-001", 4L
+                ))
         ));
         when(previewRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             StudentAttendanceImportPreview saved = invocation.getArgument(0);
@@ -121,7 +123,7 @@ class StudentAttendanceImportServiceImplTest {
                 new StudentAttendanceOfflineDraftSnapshot(
                         null,
                         List.of(new StudentAttendanceOfflineDraftRosterEntry(
-                                31L, "DR-001", null
+                                31L, 131L, "DR-001", null
                         ))
                 )
         );

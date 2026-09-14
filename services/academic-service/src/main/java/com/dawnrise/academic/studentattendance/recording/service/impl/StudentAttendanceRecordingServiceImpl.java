@@ -33,13 +33,13 @@ import com.dawnrise.academic.studentattendance.recording.exception.StudentAttend
 import com.dawnrise.academic.studentattendance.recording.mapper.StudentAttendanceRecordingMapper;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
+import com.dawnrise.academic.studentattendance.security.StudentAttendanceAccessRoles;
 import com.dawnrise.academic.studentenrollment.entity.StudentEnrollment;
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -154,6 +154,7 @@ public class StudentAttendanceRecordingServiceImpl
                 roster.stream()
                         .map(enrollment -> new StudentAttendanceOfflineDraftRosterEntry(
                                 enrollment.getId(),
+                                enrollment.getStudentUserId(),
                                 enrollment.getRollNumber(),
                                 recordVersions.get(enrollment.getId())
                         ))
@@ -699,9 +700,8 @@ public class StudentAttendanceRecordingServiceImpl
         }
         StudentAttendancePolicy policy = policyForBackdatedEntry(organizationId);
         Set<String> authorities = currentAuthorities();
-        boolean leadership = authorities.contains("ROLE_ADMIN")
-                || authorities.contains("ROLE_PRINCIPAL")
-                || authorities.contains("ROLE_VICE_PRINCIPAL");
+        boolean leadership = StudentAttendanceAccessRoles
+                .hasLeadershipAccess(authorities);
         int allowedDays = leadership
                 ? policy.getLeadershipBackEntryDays()
                 : policy.getTeacherBackEntryDays();
@@ -868,12 +868,10 @@ public class StudentAttendanceRecordingServiceImpl
             long sectionId
     ) {
         Set<String> authorities = currentAuthorities();
-        if (authorities.contains("ROLE_ADMIN")
-                || authorities.contains("ROLE_PRINCIPAL")
-                || authorities.contains("ROLE_VICE_PRINCIPAL")) {
+        if (StudentAttendanceAccessRoles.hasLeadershipAccess(authorities)) {
             return;
         }
-        if (authorities.contains("ROLE_TEACHER")
+        if (StudentAttendanceAccessRoles.hasTeacherAccess(authorities)
                 && teacherAssignmentRepository.existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserId(
                 organizationId, academicYearId, gradeLevelId, sectionId, actorUserId)) {
             return;
@@ -885,9 +883,8 @@ public class StudentAttendanceRecordingServiceImpl
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication == null
                 ? Set.of()
-                : authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toSet());
+                : StudentAttendanceAccessRoles.authorityNames(
+                authentication.getAuthorities());
     }
 
     private record AttendanceValidationContext(
