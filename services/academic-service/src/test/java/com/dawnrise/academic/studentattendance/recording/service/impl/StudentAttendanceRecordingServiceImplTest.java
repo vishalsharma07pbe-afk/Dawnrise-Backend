@@ -10,6 +10,7 @@ import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneClient;
 import com.dawnrise.academic.section.entity.Section;
 import com.dawnrise.academic.section.repository.SectionRepository;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendanceStatusPolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.service.StudentLatePenaltyCalculator;
@@ -17,8 +18,11 @@ import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanc
 import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
 import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceRecordingConflictException;
 import com.dawnrise.academic.studentattendance.recording.mapper.StudentAttendanceRecordingMapper;
+import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceRecord;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
+import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentenrollment.entity.StudentEnrollment;
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +46,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class StudentAttendanceRecordingServiceImplTest {
 
@@ -56,7 +64,10 @@ class StudentAttendanceRecordingServiceImplTest {
     private SessionRepositoryStub sessionRepository;
     private RecordRepositoryStub recordRepository;
     private ContextRepositoryStub contextRepository;
+    private EnrollmentRepositoryStub enrollmentRepository;
     private TimeZoneClientStub timeZoneClient;
+    private StudentAttendanceNotificationOutboxService
+            notificationOutboxService;
     private StudentAttendanceRecordingServiceImpl service;
     private Clock clock;
 
@@ -65,7 +76,10 @@ class StudentAttendanceRecordingServiceImplTest {
         sessionRepository = new SessionRepositoryStub();
         recordRepository = new RecordRepositoryStub();
         contextRepository = new ContextRepositoryStub();
+        enrollmentRepository = new EnrollmentRepositoryStub();
         timeZoneClient = new TimeZoneClientStub();
+        notificationOutboxService =
+                mock(StudentAttendanceNotificationOutboxService.class);
         clock = Clock.fixed(
                 Instant.parse("2026-04-10T08:00:00Z"),
                 ZoneId.of("UTC")
@@ -177,6 +191,61 @@ class StudentAttendanceRecordingServiceImplTest {
                 ACTOR_USER_ID,
                 100L
         )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+        verifyNoInteractions(notificationOutboxService);
+    }
+
+    @Test
+    void manualSubmissionCreatesOutboxEventsInsideSubmissionFlow() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE);
+        StudentAttendanceRecord record = record(session, 200L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(record);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        service.submitManually(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L
+        );
+
+        verify(notificationOutboxService)
+                .createForSubmittedSession(session, List.of(record));
+    }
+
+    @Test
+    void manualSubmissionFailureDoesNotCreateOutboxEvents() {
+        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE));
+        recordRepository.records = List.of();
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.submitManually(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L
+        )).isInstanceOf(InvalidStudentAttendanceRecordingException.class)
+                .hasMessage("Attendance session cannot be submitted without records");
+        verifyNoInteractions(notificationOutboxService);
+    }
+
+    @Test
+    void outboxFailurePropagatesFromManualSubmissionTransaction() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE);
+        StudentAttendanceRecord record = record(session, 200L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(record);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+        doThrow(new IllegalStateException("outbox failed"))
+                .when(notificationOutboxService)
+                .createForSubmittedSession(session, List.of(record));
+
+        assertThatThrownBy(() -> service.submitManually(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("outbox failed");
     }
 
     @Test
@@ -214,7 +283,7 @@ class StudentAttendanceRecordingServiceImplTest {
                 contextRepository.academicYearRepository(),
                 contextRepository.sectionRepository(),
                 contextRepository.calendarDayRepository(),
-                proxy(StudentEnrollmentRepository.class, unsupported()),
+                enrollmentRepository.repository(),
                 proxy(StudentAttendancePolicyRepository.class, unsupported()),
                 proxy(StudentAttendanceStatusPolicyRepository.class, unsupported()),
                 proxy(TeacherAssignmentRepository.class, (proxy, method, args) -> {
@@ -226,6 +295,7 @@ class StudentAttendanceRecordingServiceImplTest {
                 new StudentLatePenaltyCalculator(),
                 new StudentAttendanceRecordingMapper(),
                 timeZoneClient,
+                notificationOutboxService,
                 testClock
         );
     }
@@ -297,6 +367,40 @@ class StudentAttendanceRecordingServiceImplTest {
         return session;
     }
 
+    private static StudentAttendanceRecord record(
+            StudentAttendanceSession session,
+            long enrollmentId
+    ) {
+        StudentAttendanceRecord record = new StudentAttendanceRecord(
+                session,
+                enrollmentId,
+                enrollmentId + 1000L,
+                AttendanceStatus.ABSENT,
+                AttendanceStatus.ABSENT,
+                BigDecimal.ZERO,
+                BigDecimal.ONE,
+                false,
+                null,
+                ACTOR_USER_ID
+        );
+        ReflectionTestUtils.setField(record, "id", enrollmentId + 2000L);
+        return record;
+    }
+
+    private static StudentEnrollment enrollment(long id) {
+        StudentEnrollment enrollment = new StudentEnrollment(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                id + 1000L,
+                Long.toString(id),
+                ATTENDANCE_DATE
+        );
+        ReflectionTestUtils.setField(enrollment, "id", id);
+        return enrollment;
+    }
+
     private static <T> T proxy(
             Class<T> type,
             InvocationHandler handler
@@ -354,9 +458,22 @@ class StudentAttendanceRecordingServiceImplTest {
     }
 
     private static final class RecordRepositoryStub {
+        private List<StudentAttendanceRecord> records = List.of();
+
         private StudentAttendanceRecordRepository repository() {
             return proxy(StudentAttendanceRecordRepository.class, (proxy, method, args) -> switch (method.getName()) {
-                case "findAllByAttendanceSessionIdOrderByIdAsc" -> List.of();
+                case "findAllByAttendanceSessionIdOrderByIdAsc" -> records;
+                default -> defaultObjectMethod(proxy, method.getName(), args);
+            });
+        }
+    }
+
+    private static final class EnrollmentRepositoryStub {
+        private List<StudentEnrollment> enrollments = List.of();
+
+        private StudentEnrollmentRepository repository() {
+            return proxy(StudentEnrollmentRepository.class, (proxy, method, args) -> switch (method.getName()) {
+                case "findEligibleForAttendanceDate" -> enrollments;
                 default -> defaultObjectMethod(proxy, method.getName(), args);
             });
         }

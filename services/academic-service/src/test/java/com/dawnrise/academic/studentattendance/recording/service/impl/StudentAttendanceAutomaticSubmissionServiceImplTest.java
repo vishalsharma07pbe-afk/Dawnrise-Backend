@@ -3,6 +3,7 @@ package com.dawnrise.academic.studentattendance.recording.service.impl;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneClient;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import com.dawnrise.academic.studentattendance.config.StudentAttendanceProperties;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class StudentAttendanceAutomaticSubmissionServiceImplTest {
 
@@ -120,7 +122,15 @@ class StudentAttendanceAutomaticSubmissionServiceImplTest {
         private final List<Long> processedIds = new ArrayList<>();
 
         private ProcessorStub(List<Long> submittedIds) {
-            super(null, null, null, null, null, null);
+            super(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    mock(StudentAttendanceNotificationOutboxService.class)
+            );
             this.submittedIds = submittedIds;
         }
 

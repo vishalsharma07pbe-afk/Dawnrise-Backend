@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -35,6 +36,7 @@ class StudentAttendanceAutomaticSubmissionSessionProcessor {
     private final AcademicCalendarDayRepository calendarDayRepository;
     private final StudentEnrollmentRepository enrollmentRepository;
     private final StudentAttendancePolicyRepository policyRepository;
+    private final StudentAttendanceNotificationOutboxService notificationOutboxService;
 
     StudentAttendanceAutomaticSubmissionSessionProcessor(
             StudentAttendanceSessionRepository sessionRepository,
@@ -42,7 +44,9 @@ class StudentAttendanceAutomaticSubmissionSessionProcessor {
             AcademicYearRepository academicYearRepository,
             AcademicCalendarDayRepository calendarDayRepository,
             StudentEnrollmentRepository enrollmentRepository,
-            StudentAttendancePolicyRepository policyRepository
+            StudentAttendancePolicyRepository policyRepository,
+            StudentAttendanceNotificationOutboxService
+                    notificationOutboxService
     ) {
         this.sessionRepository = sessionRepository;
         this.recordRepository = recordRepository;
@@ -50,6 +54,8 @@ class StudentAttendanceAutomaticSubmissionSessionProcessor {
         this.calendarDayRepository = calendarDayRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.policyRepository = policyRepository;
+        this.notificationOutboxService =
+                notificationOutboxService;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -125,6 +131,11 @@ class StudentAttendanceAutomaticSubmissionSessionProcessor {
         }
 
         session.submitAutomatically(now);
+        notificationOutboxService.createForSubmittedSession(
+                session,
+                records
+        );
+
         log.info(
                 "Automatically submitted student attendance session organizationId={} academicYearId={} sectionId={} attendanceDate={} sessionId={}",
                 session.getOrganizationId(),

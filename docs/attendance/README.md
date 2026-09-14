@@ -286,13 +286,18 @@ Student/parent grants must not be added until existing guardian relationship sco
 
 ### Phase S5 — Notification outbox
 
-After successful submission or approved correction, transactionally emit idempotent outbox events for:
+Implemented in academic V18. After successful submission or approved
+correction, academic-service transactionally emits idempotent outbox
+events for:
 
 - Absence
 - Late arrival
 - Effective half-day/absence caused by late policy
+- Cleared attendance alerts after approved correction
 
-Do not send email, SMS or WhatsApp directly. Delivery, retries and provider integration belong to a notification service.
+academic-service does not send email, SMS or WhatsApp directly. Actual
+delivery, retries and provider integration belong to a future
+notification service.
 
 ### Phase S6 — Student attendance frontend
 

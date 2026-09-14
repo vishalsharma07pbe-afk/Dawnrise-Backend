@@ -15,6 +15,7 @@ import com.dawnrise.academic.studentattendance.correction.repository.StudentAtte
 import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionRequestRepository;
 import com.dawnrise.academic.studentattendance.offlinesync.repository.StudentAttendanceOfflineSyncOperationRepository;
 import com.dawnrise.academic.studentattendance.importing.repository.StudentAttendanceImportPreviewRepository;
+import com.dawnrise.academic.studentattendance.notificationoutbox.repository.StudentAttendanceNotificationOutboxRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentattendance.reporting.repository.StudentAttendanceReportRepository;
@@ -232,6 +233,28 @@ class AcademicServiceApplicationTests {
 						throw new UnsupportedOperationException(method.getName());
 					}
 			);
+		}
+
+		@Bean
+		StudentAttendanceNotificationOutboxRepository
+		studentAttendanceNotificationOutboxRepository() {
+			return (StudentAttendanceNotificationOutboxRepository)
+					Proxy.newProxyInstance(
+							StudentAttendanceNotificationOutboxRepository.class.getClassLoader(),
+							new Class<?>[]{StudentAttendanceNotificationOutboxRepository.class},
+							(proxy, method, args) -> {
+								if (method.getName().equals("hashCode")) {
+									return System.identityHashCode(proxy);
+								}
+								if (method.getName().equals("equals")) {
+									return proxy == args[0];
+								}
+								if (method.getName().equals("toString")) {
+									return "StudentAttendanceNotificationOutboxRepositoryStub";
+								}
+								throw new UnsupportedOperationException(method.getName());
+							}
+					);
 		}
 
 		@Bean

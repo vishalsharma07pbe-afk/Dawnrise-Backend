@@ -43,6 +43,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -70,6 +71,7 @@ public class StudentAttendanceRecordingServiceImpl
     private final StudentLatePenaltyCalculator latePenaltyCalculator;
     private final StudentAttendanceRecordingMapper mapper;
     private final SchoolTimeZoneClient schoolTimeZoneClient;
+    private final StudentAttendanceNotificationOutboxService notificationOutboxService;
     private final Clock clock;
 
     public StudentAttendanceRecordingServiceImpl(
@@ -85,6 +87,8 @@ public class StudentAttendanceRecordingServiceImpl
             StudentLatePenaltyCalculator latePenaltyCalculator,
             StudentAttendanceRecordingMapper mapper,
             SchoolTimeZoneClient schoolTimeZoneClient,
+            StudentAttendanceNotificationOutboxService
+                    notificationOutboxService,
             Clock clock
     ) {
         this.sessionRepository = sessionRepository;
@@ -99,6 +103,7 @@ public class StudentAttendanceRecordingServiceImpl
         this.latePenaltyCalculator = latePenaltyCalculator;
         this.mapper = mapper;
         this.schoolTimeZoneClient = schoolTimeZoneClient;
+        this.notificationOutboxService = notificationOutboxService;
         this.clock = clock;
     }
 
@@ -574,6 +579,12 @@ public class StudentAttendanceRecordingServiceImpl
             );
         }
         session.submitManually(actorUserId);
+
+        notificationOutboxService.createForSubmittedSession(
+                session,
+                records
+        );
+
         return mapper.toResponse(session, records);
     }
 
