@@ -13,6 +13,7 @@ import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
 import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
 import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceRecord;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceSession;
 import com.dawnrise.academic.studentattendance.recording.enums.StudentAttendanceSessionStatus;
@@ -34,6 +35,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class StudentAttendanceAutomaticSubmissionSessionProcessorTest {
 
@@ -46,17 +52,22 @@ class StudentAttendanceAutomaticSubmissionSessionProcessorTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-09-12T06:00:00Z");
 
     private final StubState state = new StubState();
+    private StudentAttendanceNotificationOutboxService
+            notificationOutboxService;
     private StudentAttendanceAutomaticSubmissionSessionProcessor processor;
 
     @BeforeEach
     void setUp() {
+        notificationOutboxService =
+                mock(StudentAttendanceNotificationOutboxService.class);
         processor = new StudentAttendanceAutomaticSubmissionSessionProcessor(
                 state.sessionRepository(),
                 state.recordRepository(),
                 state.academicYearRepository(),
                 state.calendarDayRepository(),
                 state.enrollmentRepository(),
-                state.policyRepository()
+                state.policyRepository(),
+                notificationOutboxService
         );
     }
 
@@ -71,6 +82,8 @@ class StudentAttendanceAutomaticSubmissionSessionProcessorTest {
         assertThat(session.getSubmissionType()).isEqualTo(StudentAttendanceSubmissionType.AUTOMATIC);
         assertThat(session.getSubmittedByUserId()).isNull();
         assertThat(session.getSubmittedAt()).isEqualTo(NOW);
+        verify(notificationOutboxService)
+                .createForSubmittedSession(session, state.records);
     }
 
     @Test
@@ -80,6 +93,7 @@ class StudentAttendanceAutomaticSubmissionSessionProcessorTest {
 
         assertThat(processor.processCandidate(SESSION_ID, ATTENDANCE_DATE, NOW)).isFalse();
         assertThat(session.getLifecycleStatus()).isEqualTo(StudentAttendanceSessionStatus.DRAFT);
+        verifyNoInteractions(notificationOutboxService);
     }
 
     @Test
@@ -163,6 +177,20 @@ class StudentAttendanceAutomaticSubmissionSessionProcessorTest {
 
         assertThat(processor.processCandidate(SESSION_ID, ATTENDANCE_DATE, NOW)).isTrue();
         assertThat(processor.processCandidate(SESSION_ID, ATTENDANCE_DATE, NOW)).isFalse();
+    }
+
+    @Test
+    void outboxFailurePropagatesFromAutomaticSubmissionTransaction() {
+        StudentAttendanceSession session = completeSession(NOW.minusMinutes(20));
+        state.stubCompleteContext(session, true, AcademicYearStatus.ACTIVE, List.of(1L), List.of(1L));
+        doThrow(new IllegalStateException("outbox failed"))
+                .when(notificationOutboxService)
+                .createForSubmittedSession(session, state.records);
+
+        assertThatThrownBy(() ->
+                processor.processCandidate(SESSION_ID, ATTENDANCE_DATE, NOW)
+        ).isInstanceOf(IllegalStateException.class)
+                .hasMessage("outbox failed");
     }
 
     private static StudentAttendanceSession completeSession(OffsetDateTime updatedAt) {

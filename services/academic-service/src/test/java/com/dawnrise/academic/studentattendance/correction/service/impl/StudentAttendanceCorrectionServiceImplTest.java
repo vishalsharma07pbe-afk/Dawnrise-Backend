@@ -14,6 +14,7 @@ import com.dawnrise.academic.studentattendance.correction.exception.StudentAtten
 import com.dawnrise.academic.studentattendance.correction.mapper.StudentAttendanceCorrectionMapper;
 import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionItemRepository;
 import com.dawnrise.academic.studentattendance.correction.repository.StudentAttendanceCorrectionRequestRepository;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendancePolicy;
 import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendanceStatusPolicy;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
@@ -54,6 +55,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class StudentAttendanceCorrectionServiceImplTest {
 
@@ -71,6 +76,8 @@ class StudentAttendanceCorrectionServiceImplTest {
     private SessionRepositoryStub sessionRepository;
     private RecordRepositoryStub recordRepository;
     private StudentAttendancePolicy policy;
+    private StudentAttendanceNotificationOutboxService
+            notificationOutboxService;
     private StudentAttendanceCorrectionServiceImpl service;
 
     @BeforeEach
@@ -79,6 +86,8 @@ class StudentAttendanceCorrectionServiceImplTest {
         itemRepository = new ItemRepositoryStub();
         sessionRepository = new SessionRepositoryStub();
         recordRepository = new RecordRepositoryStub();
+        notificationOutboxService =
+                mock(StudentAttendanceNotificationOutboxService.class);
         policy = policy(false, 3);
         service = new StudentAttendanceCorrectionServiceImpl(
                 requestRepository.repository(),
@@ -91,6 +100,7 @@ class StudentAttendanceCorrectionServiceImplTest {
                 teacherAssignmentRepository(),
                 new StudentLatePenaltyCalculator(),
                 new StudentAttendanceCorrectionMapper(),
+                notificationOutboxService,
                 Clock.fixed(Instant.parse("2026-09-12T08:00:00Z"), ZoneId.of("UTC"))
         );
         authenticate("ROLE_ADMIN");
@@ -290,15 +300,17 @@ class StudentAttendanceCorrectionServiceImplTest {
         )).isInstanceOf(StudentAttendanceCorrectionConflictException.class)
                 .hasMessage("Attendance record version is stale");
         assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+        verifyNoInteractions(notificationOutboxService);
     }
 
     @Test
-    void approveAppliesItemsAndFlushesRecordsBeforeCompletingRequest() {
+    void approveAppliesItemsFlushesRecordsAndCreatesOutboxEventBeforeCompletingRequest() {
         StudentAttendanceCorrectionRequest request = pendingRequest();
         StudentAttendanceRecord record = record();
         ReflectionTestUtils.setField(record, "version", 1L);
+        StudentAttendanceSession session = submittedSession();
         requestRepository.lockedRequest = Optional.of(request);
-        sessionRepository.lockedSession = Optional.of(submittedSession());
+        sessionRepository.lockedSession = Optional.of(session);
         itemRepository.items = List.of(item(record, 1L));
         recordRepository.lockedRecords = List.of(record);
 
@@ -314,6 +326,13 @@ class StudentAttendanceCorrectionServiceImplTest {
         assertThat(recordRepository.saveAllAndFlushCalls).isEqualTo(1);
         assertThat(response.status()).isEqualTo(StudentAttendanceCorrectionStatus.APPROVED);
         assertThat(response.reviewedByUserId()).isEqualTo(REVIEWER_ID);
+        verify(notificationOutboxService).createForApprovedCorrection(
+                session,
+                request.getId(),
+                itemRepository.items,
+                Map.of(record.getId(), record),
+                OffsetDateTime.parse("2026-09-12T08:00:00Z")
+        );
     }
 
     @Test
@@ -335,6 +354,35 @@ class StudentAttendanceCorrectionServiceImplTest {
 
         assertThat(response.status()).isEqualTo(StudentAttendanceCorrectionStatus.APPROVED);
         assertThat(response.reviewComment()).isEqualTo("Reviewed");
+    }
+
+    @Test
+    void outboxFailurePropagatesFromCorrectionApprovalTransaction() {
+        StudentAttendanceCorrectionRequest request = pendingRequest();
+        StudentAttendanceRecord record = record();
+        ReflectionTestUtils.setField(record, "version", 1L);
+        StudentAttendanceSession session = submittedSession();
+        requestRepository.lockedRequest = Optional.of(request);
+        sessionRepository.lockedSession = Optional.of(session);
+        itemRepository.items = List.of(item(record, 1L));
+        recordRepository.lockedRecords = List.of(record);
+        doThrow(new IllegalStateException("outbox failed"))
+                .when(notificationOutboxService)
+                .createForApprovedCorrection(
+                        session,
+                        request.getId(),
+                        itemRepository.items,
+                        Map.of(record.getId(), record),
+                        OffsetDateTime.parse("2026-09-12T08:00:00Z")
+                );
+
+        assertThatThrownBy(() -> service.approve(
+                ORGANIZATION_ID,
+                REVIEWER_ID,
+                request.getId(),
+                new StudentAttendanceCorrectionDecisionRequest(0L, null)
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("outbox failed");
     }
 
     @Test

@@ -27,6 +27,7 @@ import com.dawnrise.academic.studentattendance.recording.enums.StudentAttendance
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceRecordRepository;
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
+import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -59,6 +60,7 @@ public class StudentAttendanceCorrectionServiceImpl implements com.dawnrise.acad
     private final TeacherAssignmentRepository teacherAssignmentRepository;
     private final StudentLatePenaltyCalculator latePenaltyCalculator;
     private final StudentAttendanceCorrectionMapper mapper;
+    private final StudentAttendanceNotificationOutboxService notificationOutboxService;
     private final Clock clock;
 
     public StudentAttendanceCorrectionServiceImpl(
@@ -72,6 +74,7 @@ public class StudentAttendanceCorrectionServiceImpl implements com.dawnrise.acad
             TeacherAssignmentRepository teacherAssignmentRepository,
             StudentLatePenaltyCalculator latePenaltyCalculator,
             StudentAttendanceCorrectionMapper mapper,
+            StudentAttendanceNotificationOutboxService notificationOutboxService,
             Clock clock
     ) {
         this.requestRepository = requestRepository;
@@ -84,6 +87,7 @@ public class StudentAttendanceCorrectionServiceImpl implements com.dawnrise.acad
         this.teacherAssignmentRepository = teacherAssignmentRepository;
         this.latePenaltyCalculator = latePenaltyCalculator;
         this.mapper = mapper;
+        this.notificationOutboxService = notificationOutboxService;
         this.clock = clock;
     }
 
@@ -319,8 +323,27 @@ public class StudentAttendanceCorrectionServiceImpl implements com.dawnrise.acad
                     actorUserId
             );
         }
-        recordRepository.saveAllAndFlush(new ArrayList<>(lockedRecords.values()));
-        request.approve(actorUserId, expectedVersion(decision), decision.reviewComment(), OffsetDateTime.now(clock));
+        recordRepository.saveAllAndFlush(
+                new ArrayList<>(lockedRecords.values())
+        );
+
+        OffsetDateTime approvedAt = OffsetDateTime.now(clock);
+
+        request.approve(
+                actorUserId,
+                expectedVersion(decision),
+                decision.reviewComment(),
+                approvedAt
+        );
+
+        notificationOutboxService.createForApprovedCorrection(
+                session,
+                request.getId(),
+                items,
+                lockedRecords,
+                approvedAt
+        );
+
         return response(request);
     }
 
