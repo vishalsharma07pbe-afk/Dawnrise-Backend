@@ -2,6 +2,7 @@ package com.dawnrise.academic.studentattendance.recording.service;
 
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.recording.dto.SubmitStudentAttendanceRequest;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncAppliedResult;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineSyncRequest;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
@@ -50,7 +51,8 @@ public interface StudentAttendanceRecordingService {
     StudentAttendanceSessionResponse submitManually(
             long organizationId,
             long actorUserId,
-            long sessionId
+            long sessionId,
+            SubmitStudentAttendanceRequest request
     );
 
     StudentAttendanceSessionResponse getSectionAttendanceForDate(

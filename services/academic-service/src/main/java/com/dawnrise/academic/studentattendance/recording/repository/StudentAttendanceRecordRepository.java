@@ -22,6 +22,21 @@ public interface StudentAttendanceRecordRepository
             Collection<Long> studentEnrollmentIds
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT record
+        FROM StudentAttendanceRecord record
+        WHERE record.organizationId = :organizationId
+          AND record.attendanceSessionId = :attendanceSessionId
+          AND record.studentEnrollmentId IN :studentEnrollmentIds
+        ORDER BY record.id ASC
+        """)
+    List<StudentAttendanceRecord> findAllByOrganizationIdAndAttendanceSessionIdAndStudentEnrollmentIdInForUpdate(
+            @Param("organizationId") Long organizationId,
+            @Param("attendanceSessionId") Long attendanceSessionId,
+            @Param("studentEnrollmentIds") Collection<Long> studentEnrollmentIds
+    );
+
     List<StudentAttendanceRecord> findAllByOrganizationIdAndAttendanceSessionIdAndIdIn(
             Long organizationId,
             Long attendanceSessionId,

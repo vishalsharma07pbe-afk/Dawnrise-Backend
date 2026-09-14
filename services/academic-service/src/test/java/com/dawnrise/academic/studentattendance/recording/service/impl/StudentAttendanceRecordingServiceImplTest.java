@@ -11,10 +11,17 @@ import com.dawnrise.academic.common.integration.school.SchoolTimeZoneClient;
 import com.dawnrise.academic.section.entity.Section;
 import com.dawnrise.academic.section.repository.SectionRepository;
 import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
+import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendancePolicy;
+import com.dawnrise.academic.studentattendance.policy.entity.StudentAttendanceStatusPolicy;
+import com.dawnrise.academic.studentattendance.policy.enums.AttendanceMode;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendancePolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.repository.StudentAttendanceStatusPolicyRepository;
 import com.dawnrise.academic.studentattendance.policy.service.StudentLatePenaltyCalculator;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
+import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
+import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceRecordRequest;
+import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.recording.dto.SubmitStudentAttendanceRequest;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceSession;
 import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
 import com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceRecordingConflictException;
@@ -24,6 +31,8 @@ import com.dawnrise.academic.studentattendance.recording.repository.StudentAtten
 import com.dawnrise.academic.studentattendance.recording.repository.StudentAttendanceSessionRepository;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
 import com.dawnrise.academic.studentattendance.recording.enums.StudentAttendanceSessionStatus;
+import com.dawnrise.academic.studentattendance.policy.enums.LateCountingPeriod;
+import com.dawnrise.academic.studentattendance.policy.enums.LatePenaltyOutcome;
 import com.dawnrise.academic.studentenrollment.entity.StudentEnrollment;
 import com.dawnrise.academic.studentenrollment.repository.StudentEnrollmentRepository;
 import com.dawnrise.academic.teacherassignment.repository.TeacherAssignmentRepository;
@@ -39,10 +48,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,6 +63,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -175,34 +188,35 @@ class StudentAttendanceRecordingServiceImplTest {
 
     @Test
     void saveDraftValidatesPersistedSessionYearAndDate() {
-        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE));
+        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE, 1L));
         contextRepository.stubContext(AcademicYearStatus.CLOSED, ATTENDANCE_DATE);
 
         assertThatThrownBy(() -> service.saveDraftRecords(
                 ORGANIZATION_ID,
                 ACTOR_USER_ID,
                 100L,
-                null
+                saveRequest(1L, recordRequest(200L, null, AttendanceStatus.PRESENT))
         )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
     }
 
     @Test
     void submitValidatesPersistedSessionYearAndDate() {
-        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE));
+        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE, 1L));
         contextRepository.stubContext(AcademicYearStatus.CLOSED, ATTENDANCE_DATE);
 
         assertThatThrownBy(() -> service.submitManually(
                 ORGANIZATION_ID,
                 ACTOR_USER_ID,
-                100L
+                100L,
+                submitRequest(1L)
         )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
         verifyNoInteractions(notificationOutboxService);
     }
 
     @Test
     void manualSubmissionCreatesOutboxEventsInsideSubmissionFlow() {
-        StudentAttendanceSession session = session(ATTENDANCE_DATE);
-        StudentAttendanceRecord record = record(session, 200L);
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord record = record(session, 200L, 3L);
         sessionRepository.findById = Optional.of(session);
         recordRepository.records = List.of(record);
         enrollmentRepository.enrollments = List.of(enrollment(200L));
@@ -211,7 +225,8 @@ class StudentAttendanceRecordingServiceImplTest {
         service.submitManually(
                 ORGANIZATION_ID,
                 ACTOR_USER_ID,
-                100L
+                100L,
+                submitRequest(1L)
         );
 
         verify(notificationOutboxService)
@@ -220,14 +235,15 @@ class StudentAttendanceRecordingServiceImplTest {
 
     @Test
     void manualSubmissionFailureDoesNotCreateOutboxEvents() {
-        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE));
+        sessionRepository.findById = Optional.of(session(ATTENDANCE_DATE, 1L));
         recordRepository.records = List.of();
         contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
 
         assertThatThrownBy(() -> service.submitManually(
                 ORGANIZATION_ID,
                 ACTOR_USER_ID,
-                100L
+                100L,
+                submitRequest(1L)
         )).isInstanceOf(InvalidStudentAttendanceRecordingException.class)
                 .hasMessage("Attendance session cannot be submitted without records");
         verifyNoInteractions(notificationOutboxService);
@@ -235,8 +251,8 @@ class StudentAttendanceRecordingServiceImplTest {
 
     @Test
     void outboxFailurePropagatesFromManualSubmissionTransaction() {
-        StudentAttendanceSession session = session(ATTENDANCE_DATE);
-        StudentAttendanceRecord record = record(session, 200L);
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord record = record(session, 200L, 3L);
         sessionRepository.findById = Optional.of(session);
         recordRepository.records = List.of(record);
         enrollmentRepository.enrollments = List.of(enrollment(200L));
@@ -248,9 +264,237 @@ class StudentAttendanceRecordingServiceImplTest {
         assertThatThrownBy(() -> service.submitManually(
                 ORGANIZATION_ID,
                 ACTOR_USER_ID,
-                100L
+                100L,
+                submitRequest(1L)
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessage("outbox failed");
+    }
+
+    @Test
+    void matchingSessionAndRecordVersionsAllowDraftSaveAndReturnCurrentVersions() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord existing = record(session, 200L, 4L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(existing);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        StudentAttendanceSessionResponse response = service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, 4L, AttendanceStatus.PRESENT))
+        );
+
+        assertThat(recordRepository.saveAllAndFlushCalls).isEqualTo(1);
+        assertThat(sessionRepository.saveAndFlushCalls).isEqualTo(1);
+        assertThat(existing.getRecordedStatus()).isEqualTo(AttendanceStatus.PRESENT);
+        assertThat(response.version()).isEqualTo(2L);
+        assertThat(response.records()).extracting(record -> record.version())
+                .containsExactly(5L);
+    }
+
+    @Test
+    void staleSessionVersionRejectsDraftSaveBeforeMutation() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 2L);
+        StudentAttendanceRecord existing = record(session, 200L, 4L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(existing);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, 4L, AttendanceStatus.PRESENT))
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(existing.getRecordedStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+        assertThat(sessionRepository.saveAndFlushCalls).isZero();
+    }
+
+    @Test
+    void staleExistingRecordVersionRejectsDraftSaveBeforeAnyMutation() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord existing = record(session, 200L, 4L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(existing);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, 3L, AttendanceStatus.PRESENT))
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(existing.getRecordedStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+        assertThat(sessionRepository.saveAndFlushCalls).isZero();
+    }
+
+    @Test
+    void nullExpectedVersionForExistingRecordIsRejected() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord existing = record(session, 200L, 4L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(existing);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, null, AttendanceStatus.PRESENT))
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(existing.getRecordedStatus()).isEqualTo(AttendanceStatus.ABSENT);
+    }
+
+    @Test
+    void nonNullExpectedVersionForNewRecordIsRejected() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of();
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, 0L, AttendanceStatus.PRESENT))
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+        assertThat(sessionRepository.saveAndFlushCalls).isZero();
+    }
+
+    @Test
+    void nullExpectedVersionForGenuinelyNewRecordSucceeds() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of();
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        StudentAttendanceSessionResponse response = service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, null, AttendanceStatus.PRESENT))
+        );
+
+        assertThat(response.version()).isEqualTo(2L);
+        assertThat(response.records()).extracting(record -> record.version())
+                .containsExactly(0L);
+    }
+
+    @Test
+    void oneStaleRecordPreventsEveryBulkRecordFromChanging() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord first = record(session, 200L, 4L);
+        StudentAttendanceRecord second = record(session, 201L, 6L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(first, second);
+        enrollmentRepository.enrollments = List.of(enrollment(200L), enrollment(201L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(
+                        1L,
+                        recordRequest(200L, 4L, AttendanceStatus.PRESENT),
+                        recordRequest(201L, 5L, AttendanceStatus.PRESENT)
+                )
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(first.getRecordedStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(second.getRecordedStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+    }
+
+    @Test
+    void crossTenantDraftSaveUsesTenantScopedLockAndRejectsMissingSession() {
+        sessionRepository.findById = Optional.empty();
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, null, AttendanceStatus.PRESENT))
+        )).isInstanceOf(com.dawnrise.academic.studentattendance.recording.exception.StudentAttendanceSessionNotFoundException.class);
+
+        assertThat(sessionRepository.lastLockedOrganizationId)
+                .isEqualTo(ORGANIZATION_ID);
+    }
+
+    @Test
+    void nonDraftSessionRejectsDraftSave() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        ReflectionTestUtils.setField(
+                session,
+                "lifecycleStatus",
+                StudentAttendanceSessionStatus.SUBMITTED
+        );
+        sessionRepository.findById = Optional.of(session);
+
+        assertThatThrownBy(() -> service.saveDraftRecords(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                saveRequest(1L, recordRequest(200L, null, AttendanceStatus.PRESENT))
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(recordRepository.saveAllAndFlushCalls).isZero();
+    }
+
+    @Test
+    void matchingExpectedSessionVersionAllowsManualSubmission() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 1L);
+        StudentAttendanceRecord record = record(session, 200L, 3L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(record);
+        enrollmentRepository.enrollments = List.of(enrollment(200L));
+        contextRepository.stubContext(AcademicYearStatus.ACTIVE, ATTENDANCE_DATE);
+
+        StudentAttendanceSessionResponse response = service.submitManually(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                submitRequest(1L)
+        );
+
+        assertThat(response.lifecycleStatus())
+                .isEqualTo(StudentAttendanceSessionStatus.SUBMITTED);
+        assertThat(response.version()).isEqualTo(2L);
+        verify(notificationOutboxService)
+                .createForSubmittedSession(session, List.of(record));
+    }
+
+    @Test
+    void staleExpectedSessionVersionRejectsManualSubmissionWithoutOutbox() {
+        StudentAttendanceSession session = session(ATTENDANCE_DATE, 2L);
+        StudentAttendanceRecord record = record(session, 200L, 3L);
+        sessionRepository.findById = Optional.of(session);
+        recordRepository.records = List.of(record);
+
+        assertThatThrownBy(() -> service.submitManually(
+                ORGANIZATION_ID,
+                ACTOR_USER_ID,
+                100L,
+                submitRequest(1L)
+        )).isInstanceOf(StudentAttendanceRecordingConflictException.class);
+
+        assertThat(session.getLifecycleStatus())
+                .isEqualTo(StudentAttendanceSessionStatus.DRAFT);
+        verify(notificationOutboxService, never())
+                .createForSubmittedSession(session, List.of(record));
+        assertThat(sessionRepository.saveAndFlushCalls).isZero();
     }
 
     @Test
@@ -421,8 +665,8 @@ class StudentAttendanceRecordingServiceImplTest {
                 contextRepository.sectionRepository(),
                 contextRepository.calendarDayRepository(),
                 enrollmentRepository.repository(),
-                proxy(StudentAttendancePolicyRepository.class, unsupported()),
-                proxy(StudentAttendanceStatusPolicyRepository.class, unsupported()),
+                policyRepository(),
+                statusPolicyRepository(),
                 teacherAssignmentRepository.repository(),
                 new StudentLatePenaltyCalculator(),
                 new StudentAttendanceRecordingMapper(),
@@ -486,6 +730,13 @@ class StudentAttendanceRecordingServiceImplTest {
     }
 
     private static StudentAttendanceSession session(LocalDate attendanceDate) {
+        return session(attendanceDate, null);
+    }
+
+    private static StudentAttendanceSession session(
+            LocalDate attendanceDate,
+            Long version
+    ) {
         StudentAttendanceSession session = new StudentAttendanceSession(
                 ORGANIZATION_ID,
                 ACADEMIC_YEAR_ID,
@@ -496,12 +747,21 @@ class StudentAttendanceRecordingServiceImplTest {
                 ACTOR_USER_ID
         );
         ReflectionTestUtils.setField(session, "id", 100L);
+        ReflectionTestUtils.setField(session, "version", version);
         return session;
     }
 
     private static StudentAttendanceRecord record(
             StudentAttendanceSession session,
             long enrollmentId
+    ) {
+        return record(session, enrollmentId, null);
+    }
+
+    private static StudentAttendanceRecord record(
+            StudentAttendanceSession session,
+            long enrollmentId,
+            Long version
     ) {
         StudentAttendanceRecord record = new StudentAttendanceRecord(
                 session,
@@ -516,7 +776,74 @@ class StudentAttendanceRecordingServiceImplTest {
                 ACTOR_USER_ID
         );
         ReflectionTestUtils.setField(record, "id", enrollmentId + 2000L);
+        ReflectionTestUtils.setField(record, "version", version);
         return record;
+    }
+
+    private static BulkStudentAttendanceRecordRequest saveRequest(
+            Long expectedSessionVersion,
+            StudentAttendanceRecordRequest... records
+    ) {
+        return new BulkStudentAttendanceRecordRequest(
+                expectedSessionVersion,
+                List.of(records)
+        );
+    }
+
+    private static StudentAttendanceRecordRequest recordRequest(
+            Long studentEnrollmentId,
+            Long expectedRecordVersion,
+            AttendanceStatus status
+    ) {
+        return new StudentAttendanceRecordRequest(
+                studentEnrollmentId,
+                expectedRecordVersion,
+                status,
+                null
+        );
+    }
+
+    private static SubmitStudentAttendanceRequest submitRequest(
+            Long expectedSessionVersion
+    ) {
+        return new SubmitStudentAttendanceRequest(expectedSessionVersion);
+    }
+
+    private static StudentAttendancePolicyRepository policyRepository() {
+        StudentAttendancePolicy policy = new StudentAttendancePolicy(
+                ORGANIZATION_ID,
+                AttendanceMode.DAILY,
+                DayOfWeek.MONDAY,
+                10,
+                20,
+                false,
+                3,
+                LatePenaltyOutcome.HALF_DAY,
+                LateCountingPeriod.MONTHLY,
+                true,
+                30,
+                30,
+                false,
+                ACTOR_USER_ID
+        );
+        return proxy(StudentAttendancePolicyRepository.class, (proxy, method, args) -> switch (method.getName()) {
+            case "findById" -> Optional.of(policy);
+            default -> defaultObjectMethod(proxy, method.getName(), args);
+        });
+    }
+
+    private static StudentAttendanceStatusPolicyRepository statusPolicyRepository() {
+        List<StudentAttendanceStatusPolicy> policies = List.of(
+                new StudentAttendanceStatusPolicy(ORGANIZATION_ID, AttendanceStatus.PRESENT, BigDecimal.ONE, BigDecimal.ONE),
+                new StudentAttendanceStatusPolicy(ORGANIZATION_ID, AttendanceStatus.ABSENT, BigDecimal.ZERO, BigDecimal.ONE),
+                new StudentAttendanceStatusPolicy(ORGANIZATION_ID, AttendanceStatus.LATE, BigDecimal.ONE, BigDecimal.ONE),
+                new StudentAttendanceStatusPolicy(ORGANIZATION_ID, AttendanceStatus.HALF_DAY, new BigDecimal("0.50"), BigDecimal.ONE),
+                new StudentAttendanceStatusPolicy(ORGANIZATION_ID, AttendanceStatus.EXCUSED, BigDecimal.ONE, BigDecimal.ONE)
+        );
+        return proxy(StudentAttendanceStatusPolicyRepository.class, (proxy, method, args) -> switch (method.getName()) {
+            case "findAllByOrganizationId" -> policies;
+            default -> defaultObjectMethod(proxy, method.getName(), args);
+        });
     }
 
     private static StudentEnrollment enrollment(long id) {
@@ -574,14 +901,27 @@ class StudentAttendanceRecordingServiceImplTest {
                 Optional.empty();
         private Optional<StudentAttendanceSession> findById =
                 Optional.empty();
+        private int saveAndFlushCalls;
+        private Long lastLockedOrganizationId;
 
         private StudentAttendanceSessionRepository repository() {
             return proxy(StudentAttendanceSessionRepository.class, (proxy, method, args) -> switch (method.getName()) {
                 case "findByOrganizationIdAndAcademicYearIdAndSectionIdAndAttendanceDate" -> findBySectionDate;
                 case "findByIdAndOrganizationId" -> findById;
+                case "findByIdAndOrganizationIdForUpdate" -> {
+                    lastLockedOrganizationId = (Long) args[1];
+                    yield findById;
+                }
                 case "saveAndFlush" -> {
+                    saveAndFlushCalls++;
                     StudentAttendanceSession session = (StudentAttendanceSession) args[0];
                     ReflectionTestUtils.setField(session, "id", 100L);
+                    Long version = session.getVersion();
+                    ReflectionTestUtils.setField(
+                            session,
+                            "version",
+                            version == null ? 0L : version + 1
+                    );
                     yield session;
                 }
                 default -> defaultObjectMethod(proxy, method.getName(), args);
@@ -591,10 +931,44 @@ class StudentAttendanceRecordingServiceImplTest {
 
     private static final class RecordRepositoryStub {
         private List<StudentAttendanceRecord> records = List.of();
+        private int saveAllAndFlushCalls;
 
         private StudentAttendanceRecordRepository repository() {
             return proxy(StudentAttendanceRecordRepository.class, (proxy, method, args) -> switch (method.getName()) {
                 case "findAllByAttendanceSessionIdOrderByIdAsc" -> records;
+                case "findAllByOrganizationIdAndAttendanceSessionIdAndStudentEnrollmentIdInForUpdate" ->
+                        records.stream()
+                                .filter(record -> ((Collection<?>) args[2])
+                                        .contains(record.getStudentEnrollmentId()))
+                                .toList();
+                case "deleteByAttendanceSessionIdAndStudentEnrollmentIdNotIn" -> null;
+                case "saveAllAndFlush" -> {
+                    saveAllAndFlushCalls++;
+                    @SuppressWarnings("unchecked")
+                    Iterable<StudentAttendanceRecord> saved =
+                            (Iterable<StudentAttendanceRecord>) args[0];
+                    List<StudentAttendanceRecord> materialized =
+                            new ArrayList<>();
+                    saved.forEach(materialized::add);
+                    for (StudentAttendanceRecord record : materialized) {
+                        if (record.getId() == null) {
+                            ReflectionTestUtils.setField(
+                                    record,
+                                    "id",
+                                    record.getStudentEnrollmentId() + 2000L
+                            );
+                        }
+                        Long version = record.getVersion();
+                        ReflectionTestUtils.setField(
+                                record,
+                                "version",
+                                version == null ? 0L : version + 1
+                        );
+                    }
+                    records = materialized;
+                    yield materialized;
+                }
+                case "countPriorRecordedStatus" -> 0L;
                 default -> defaultObjectMethod(proxy, method.getName(), args);
             });
         }
@@ -609,6 +983,13 @@ class StudentAttendanceRecordingServiceImplTest {
                 case "findEligibleForAttendanceDate" -> {
                     lastAttendanceDate = (LocalDate) args[4];
                     yield enrollments;
+                }
+                case "findEligibleForAttendanceDateByIds" -> {
+                    lastAttendanceDate = (LocalDate) args[4];
+                    Collection<?> ids = (Collection<?>) args[5];
+                    yield enrollments.stream()
+                            .filter(enrollment -> ids.contains(enrollment.getId()))
+                            .toList();
                 }
                 default -> defaultObjectMethod(proxy, method.getName(), args);
             });

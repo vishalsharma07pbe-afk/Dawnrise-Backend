@@ -25,6 +25,7 @@ import com.dawnrise.academic.studentattendance.offlinesync.enums.StudentAttendan
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.recording.dto.SubmitStudentAttendanceRequest;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceRecord;
 import com.dawnrise.academic.studentattendance.recording.entity.StudentAttendanceSession;
 import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
@@ -460,11 +461,15 @@ public class StudentAttendanceRecordingServiceImpl
             long sessionId,
             BulkStudentAttendanceRecordRequest request
     ) {
-        StudentAttendanceSession session = session(organizationId, sessionId);
+        StudentAttendanceSession session = sessionForUpdate(organizationId, sessionId);
         enforceSectionAccess(actorUserId, session);
-        validateMutationSession(session, actorUserId);
         session.requireDraft();
         List<StudentAttendanceRecordRequest> requests = validateBulkRequest(request);
+        validateExpectedSessionVersion(
+                session.getVersion(),
+                request.expectedSessionVersion()
+        );
+        validateMutationSession(session, actorUserId);
 
         Map<Long, StudentEnrollment> enrollments =
                 enrollmentRepository.findEligibleForAttendanceDateByIds(
@@ -493,11 +498,14 @@ public class StudentAttendanceRecordingServiceImpl
         }
 
         Map<Long, StudentAttendanceRecord> existing =
-                recordRepository.findAllByAttendanceSessionIdAndStudentEnrollmentIdIn(
+                recordRepository.findAllByOrganizationIdAndAttendanceSessionIdAndStudentEnrollmentIdInForUpdate(
+                                session.getOrganizationId(),
                                 session.getId(),
                                 enrollments.keySet()
                         ).stream()
                         .collect(Collectors.toMap(StudentAttendanceRecord::getStudentEnrollmentId, Function.identity()));
+        validateExpectedRecordVersions(requests, existing);
+
         Map<AttendanceStatus, StudentAttendanceStatusPolicy> credits = statusCredits(session.getOrganizationId());
         StudentAttendancePolicy policy = policy(session.getOrganizationId());
         List<StudentAttendanceRecord> saved = new ArrayList<>();
@@ -547,9 +555,10 @@ public class StudentAttendanceRecordingServiceImpl
                 session.getId(),
                 requests.stream().map(StudentAttendanceRecordRequest::studentEnrollmentId).toList()
         );
-        List<StudentAttendanceRecord> persisted = recordRepository.saveAll(saved);
+        recordRepository.saveAllAndFlush(saved);
         session.touch(actorUserId);
-        return mapper.toResponse(session, persisted);
+        sessionRepository.saveAndFlush(session);
+        return response(session);
     }
 
     @Override
@@ -557,12 +566,18 @@ public class StudentAttendanceRecordingServiceImpl
     public StudentAttendanceSessionResponse submitManually(
             long organizationId,
             long actorUserId,
-            long sessionId
+            long sessionId,
+            SubmitStudentAttendanceRequest request
     ) {
-        StudentAttendanceSession session = session(organizationId, sessionId);
+        StudentAttendanceSession session = sessionForUpdate(organizationId, sessionId);
         enforceSectionAccess(actorUserId, session);
-        validateMutationSession(session, actorUserId);
         session.requireDraft();
+        validateSubmitRequest(request);
+        validateExpectedSessionVersion(
+                session.getVersion(),
+                request.expectedSessionVersion()
+        );
+        validateMutationSession(session, actorUserId);
         List<StudentAttendanceRecord> records =
                 recordRepository.findAllByAttendanceSessionIdOrderByIdAsc(session.getId());
         if (records.isEmpty()) {
@@ -586,6 +601,7 @@ public class StudentAttendanceRecordingServiceImpl
                 records
         );
 
+        sessionRepository.saveAndFlush(session);
         return mapper.toResponse(session, records);
     }
 
@@ -763,7 +779,9 @@ public class StudentAttendanceRecordingServiceImpl
     private List<StudentAttendanceRecordRequest> validateBulkRequest(
             BulkStudentAttendanceRecordRequest request
     ) {
-        if (request == null || request.records() == null || request.records().isEmpty()) {
+        if (request == null || request.expectedSessionVersion() == null
+                || request.expectedSessionVersion() < 0
+                || request.records() == null || request.records().isEmpty()) {
             throw new InvalidStudentAttendanceRecordingException("Attendance records are required");
         }
         if (request.records().size() > MAX_BULK_RECORDS) {
@@ -774,11 +792,64 @@ public class StudentAttendanceRecordingServiceImpl
             if (item == null) {
                 throw new InvalidStudentAttendanceRecordingException("Attendance record is required");
             }
+            if (item.expectedRecordVersion() != null
+                    && item.expectedRecordVersion() < 0) {
+                throw new InvalidStudentAttendanceRecordingException(
+                        "Expected attendance record version cannot be negative"
+                );
+            }
             if (!enrollmentIds.add(item.studentEnrollmentId())) {
                 throw new InvalidStudentAttendanceRecordingException("Duplicate student enrollment IDs are not allowed");
             }
         }
         return request.records();
+    }
+
+    private void validateSubmitRequest(SubmitStudentAttendanceRequest request) {
+        if (request == null || request.expectedSessionVersion() == null) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Expected attendance session version is required"
+            );
+        }
+        if (request.expectedSessionVersion() < 0) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Expected attendance session version cannot be negative"
+            );
+        }
+    }
+
+    private void validateExpectedSessionVersion(
+            Long persistedVersion,
+            Long expectedVersion
+    ) {
+        if (!Objects.equals(persistedVersion, expectedVersion)) {
+            throw new StudentAttendanceRecordingConflictException(
+                    "Attendance changed. Please reload and try again."
+            );
+        }
+    }
+
+    private void validateExpectedRecordVersions(
+            List<StudentAttendanceRecordRequest> requests,
+            Map<Long, StudentAttendanceRecord> existing
+    ) {
+        for (StudentAttendanceRecordRequest item : requests) {
+            StudentAttendanceRecord record = existing.get(item.studentEnrollmentId());
+            if (record == null && item.expectedRecordVersion() != null) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "Attendance changed. Please reload and try again."
+                );
+            }
+            if (record != null && (item.expectedRecordVersion() == null
+                    || !Objects.equals(
+                    record.getVersion(),
+                    item.expectedRecordVersion()
+            ))) {
+                throw new StudentAttendanceRecordingConflictException(
+                        "Attendance changed. Please reload and try again."
+                );
+            }
+        }
     }
 
     private AttendanceStatus effectiveStatus(
@@ -813,6 +884,19 @@ public class StudentAttendanceRecordingServiceImpl
 
     private StudentAttendanceSession session(long organizationId, long sessionId) {
         return sessionRepository.findByIdAndOrganizationId(sessionId, organizationId)
+                .orElseThrow(() -> new StudentAttendanceSessionNotFoundException(
+                        "Attendance session was not found"
+                ));
+    }
+
+    private StudentAttendanceSession sessionForUpdate(
+            long organizationId,
+            long sessionId
+    ) {
+        return sessionRepository.findByIdAndOrganizationIdForUpdate(
+                        sessionId,
+                        organizationId
+                )
                 .orElseThrow(() -> new StudentAttendanceSessionNotFoundException(
                         "Attendance session was not found"
                 ));
