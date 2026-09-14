@@ -5,6 +5,7 @@ import com.dawnrise.academic.studentattendance.discovery.dto.AccessibleStudentAt
 import com.dawnrise.academic.studentattendance.discovery.service.StudentAttendanceAccessibleSectionService;
 import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
 import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.recording.dto.SubmitStudentAttendanceRequest;
 import com.dawnrise.academic.studentattendance.offlinesync.dto.StudentAttendanceOfflineDraftSnapshot;
 import com.dawnrise.academic.studentattendance.recording.service.StudentAttendanceRecordingService;
 import jakarta.validation.Valid;
@@ -114,12 +115,14 @@ public class StudentAttendanceRecordingController {
             """)
     public ResponseEntity<StudentAttendanceSessionResponse> submitManually(
             @PathVariable @Positive long sessionId,
+            @Valid @RequestBody SubmitStudentAttendanceRequest request,
             JwtAuthenticationToken authentication
     ) {
         return ResponseEntity.ok(service.submitManually(
                 organizationId(authentication),
                 userId(authentication),
-                sessionId
+                sessionId,
+                request
         ));
     }
 
