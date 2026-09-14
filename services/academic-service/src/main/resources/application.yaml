@@ -55,6 +55,10 @@ dawnrise:
     import:
       max-file-bytes: ${STUDENT_ATTENDANCE_IMPORT_MAX_FILE_BYTES:2097152}
       preview-ttl: ${STUDENT_ATTENDANCE_IMPORT_PREVIEW_TTL:PT30M}
+    reporting:
+      max-date-range-days: ${STUDENT_ATTENDANCE_REPORTING_MAX_DATE_RANGE_DAYS:366}
+      max-page-size: ${STUDENT_ATTENDANCE_REPORTING_MAX_PAGE_SIZE:100}
+      max-export-rows: ${STUDENT_ATTENDANCE_REPORTING_MAX_EXPORT_ROWS:10000}
     max-records-per-request: ${STUDENT_ATTENDANCE_MAX_RECORDS:200}
     max-calendar-days-per-academic-year: ${STUDENT_ATTENDANCE_MAX_CALENDAR_DAYS:400}
     default-attendance-mode: ${STUDENT_ATTENDANCE_DEFAULT_MODE:DAILY}

@@ -49,6 +49,8 @@ import com.dawnrise.academic.studentattendance.offlinesync.exception.StudentAtte
 import com.dawnrise.academic.studentattendance.importing.exception.InvalidStudentAttendanceImportException;
 import com.dawnrise.academic.studentattendance.importing.exception.StudentAttendanceImportConflictException;
 import com.dawnrise.academic.studentattendance.importing.exception.StudentAttendanceImportPreviewNotFoundException;
+import com.dawnrise.academic.studentattendance.reporting.exception.InvalidStudentAttendanceReportException;
+import com.dawnrise.academic.studentattendance.reporting.exception.StudentAttendanceReportNotFoundException;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -61,6 +63,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -253,9 +256,12 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(AuthorizationDeniedException.class)
+    @ExceptionHandler({
+            AuthorizationDeniedException.class,
+            AccessDeniedException.class
+    })
     public ResponseEntity<ApiErrorResponse> handleAuthorizationDenied(
-            AuthorizationDeniedException exception,
+            RuntimeException exception,
             HttpServletRequest request
     ) {
         return response(
@@ -316,7 +322,8 @@ public class GlobalExceptionHandler {
             InvalidStudentAttendanceRecordingException.class,
             InvalidStudentAttendanceCorrectionException.class,
             InvalidStudentAttendanceOfflineSyncException.class,
-            InvalidStudentAttendanceImportException.class
+            InvalidStudentAttendanceImportException.class,
+            InvalidStudentAttendanceReportException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceBadRequest(
             RuntimeException exception,
@@ -355,7 +362,8 @@ public class GlobalExceptionHandler {
             StudentAttendancePolicyNotFoundException.class,
             StudentAttendanceSessionNotFoundException.class,
             StudentAttendanceCorrectionNotFoundException.class,
-            StudentAttendanceImportPreviewNotFoundException.class
+            StudentAttendanceImportPreviewNotFoundException.class,
+            StudentAttendanceReportNotFoundException.class
     })
     public ResponseEntity<ApiErrorResponse> handleAttendanceNotFound(
             RuntimeException exception,
