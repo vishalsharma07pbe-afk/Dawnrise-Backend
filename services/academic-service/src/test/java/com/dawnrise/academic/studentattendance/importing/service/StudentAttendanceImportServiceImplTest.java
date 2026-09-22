@@ -16,17 +16,29 @@ import com.dawnrise.academic.studentattendance.importing.service.impl.StudentAtt
 import com.dawnrise.academic.studentattendance.offlinesync.dto.*;
 import com.dawnrise.academic.studentattendance.offlinesync.service.StudentAttendanceOfflineSyncService;
 import com.dawnrise.academic.studentattendance.policy.enums.AttendanceStatus;
+import com.dawnrise.academic.studentattendance.recording.dto.BulkStudentAttendanceRecordRequest;
+import com.dawnrise.academic.studentattendance.recording.dto.StudentAttendanceSessionResponse;
+import com.dawnrise.academic.studentattendance.recording.dto.SubmitStudentAttendanceRequest;
+import com.dawnrise.academic.studentattendance.recording.exception.InvalidStudentAttendanceRecordingException;
 import com.dawnrise.academic.studentattendance.recording.service.StudentAttendanceRecordingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.UnexpectedRollbackException;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.SmartTransactionObject;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -139,6 +151,58 @@ class StudentAttendanceImportServiceImplTest {
     }
 
     @Test
+    void previewStoresValidationResultWhenTransactionalDraftPreviewThrows() {
+        ParticipatingTransactionManager transactionManager =
+                new ParticipatingTransactionManager();
+        StudentAttendanceRecordingService transactionalRecordingService =
+                transactionalProxy(
+                        new FutureDateRecordingService(),
+                        StudentAttendanceRecordingService.class,
+                        transactionManager
+                );
+        StudentAttendanceImportService proxiedService = transactionalProxy(
+                new StudentAttendanceImportServiceImpl(
+                        new StudentAttendanceImportFileParser(2_097_152),
+                        new StudentAttendanceImportFingerprintService(),
+                        previewRepository,
+                        yearRepository,
+                        gradeRepository,
+                        sectionRepository,
+                        transactionalRecordingService,
+                        offlineSyncService,
+                        objectMapper,
+                        clock,
+                        new TransactionTemplate(transactionManager),
+                        Duration.ofMinutes(30)
+                ),
+                StudentAttendanceImportService.class,
+                transactionManager
+        );
+        when(yearRepository.findByOrganizationIdAndNameIgnoreCaseAndStatus(
+                7L, "AY Session 2026-2027", AcademicYearStatus.ACTIVE))
+                .thenReturn(Optional.of(year("AY Session 2026-2027")));
+        when(gradeRepository.findByOrganizationIdAndAcademicYearIdAndCodeIgnoreCase(
+                7L, 3L, "CLASS_1")).thenReturn(Optional.of(grade()));
+        when(sectionRepository.findByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndCodeIgnoreCase(
+                7L, 3L, 4L, "A")).thenReturn(Optional.of(section()));
+        when(previewRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            StudentAttendanceImportPreview saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 12L);
+            return saved;
+        });
+
+        StudentAttendanceImportPreviewResponse response = proxiedService.preview(
+                7L, 11L, reproducingCsv()
+        );
+
+        assertThat(response.previewId()).isEqualTo(12L);
+        assertThat(response.canConfirm()).isFalse();
+        assertThat(response.errors()).contains("Attendance date cannot be in the future");
+        assertThat(response.rows()).hasSize(1);
+        assertThat(response.rows().getFirst().academicYear()).isEqualTo("AY Session 2026-2027");
+    }
+
+    @Test
     void confirmUsesStoredSnapshotAndRejectsDifferentKeyAfterSuccess() throws Exception {
         StudentAttendanceImportPreviewResponse storedPreview =
                 new StudentAttendanceImportPreviewResponse(
@@ -204,8 +268,12 @@ class StudentAttendanceImportServiceImplTest {
     }
 
     private AcademicYear year() {
+        return year("2026-2027");
+    }
+
+    private AcademicYear year(String name) {
         AcademicYear value = new AcademicYear(
-                7L, "2026-2027",
+                7L, name,
                 LocalDate.of(2026, 4, 1), LocalDate.of(2027, 3, 31)
         );
         ReflectionTestUtils.setField(value, "id", 3L);
@@ -234,5 +302,178 @@ class StudentAttendanceImportServiceImplTest {
             @Override public void commit(TransactionStatus status) { }
             @Override public void rollback(TransactionStatus status) { }
         });
+    }
+
+    private MockMultipartFile reproducingCsv() {
+        String csv = """
+                academic_year,grade_code,section_code,attendance_date,roll_number,attendance_status,remarks
+                AY Session 2026-2027,CLASS_1,A,2026-09-15,DR-001,PRESENT,Imported attendance test
+                """;
+        return new MockMultipartFile(
+                "file", "attendance.csv", "text/csv",
+                csv.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    private static <T> T transactionalProxy(
+            T target,
+            Class<T> serviceInterface,
+            PlatformTransactionManager transactionManager
+    ) {
+        TransactionInterceptor interceptor = new TransactionInterceptor();
+        interceptor.setTransactionManager(transactionManager);
+        interceptor.setTransactionAttributeSource(
+                new AnnotationTransactionAttributeSource()
+        );
+        ProxyFactory proxyFactory = new ProxyFactory();
+        proxyFactory.setTarget(target);
+        proxyFactory.setInterfaces(serviceInterface);
+        proxyFactory.addAdvice(interceptor);
+        return serviceInterface.cast(proxyFactory.getProxy());
+    }
+
+    private static final class ParticipatingTransactionManager
+            extends AbstractPlatformTransactionManager {
+
+        private final ThreadLocal<TxObject> current = new ThreadLocal<>();
+
+        @Override
+        protected Object doGetTransaction() {
+            TxObject existing = current.get();
+            return existing == null ? new TxObject() : existing;
+        }
+
+        @Override
+        protected boolean isExistingTransaction(Object transaction) {
+            return ((TxObject) transaction).active;
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+            TxObject tx = (TxObject) transaction;
+            tx.active = true;
+            tx.rollbackOnly = false;
+            current.set(tx);
+        }
+
+        @Override
+        protected void doSetRollbackOnly(DefaultTransactionStatus status) {
+            ((TxObject) status.getTransaction()).rollbackOnly = true;
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {
+            if (((TxObject) status.getTransaction()).rollbackOnly) {
+                throw new UnexpectedRollbackException(
+                        "Transaction silently rolled back because it has been marked as rollback-only"
+                );
+            }
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
+        }
+
+        @Override
+        protected void doCleanupAfterCompletion(Object transaction) {
+            TxObject tx = (TxObject) transaction;
+            tx.active = false;
+            current.remove();
+        }
+    }
+
+    private static final class TxObject implements SmartTransactionObject {
+        private boolean active;
+        private boolean rollbackOnly;
+
+        @Override
+        public boolean isRollbackOnly() {
+            return rollbackOnly;
+        }
+
+        @Override
+        public void flush() {
+        }
+    }
+
+    private static final class FutureDateRecordingService
+            implements StudentAttendanceRecordingService {
+
+        @Override
+        @Transactional(readOnly = true)
+        public StudentAttendanceOfflineDraftSnapshot previewOfflineDraft(
+                long organizationId,
+                long actorUserId,
+                long academicYearId,
+                long gradeLevelId,
+                long sectionId,
+                LocalDate attendanceDate
+        ) {
+            throw new InvalidStudentAttendanceRecordingException(
+                    "Attendance date cannot be in the future"
+            );
+        }
+
+        @Override
+        public StudentAttendanceOfflineSyncAppliedResult synchronizeOfflineDraft(
+                long organizationId,
+                long actorUserId,
+                StudentAttendanceOfflineSyncRequest request
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StudentAttendanceSessionResponse getOrCreateDraft(
+                long organizationId,
+                long actorUserId,
+                long academicYearId,
+                long gradeLevelId,
+                long sectionId,
+                LocalDate attendanceDate
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StudentAttendanceSessionResponse getSession(
+                long organizationId,
+                long actorUserId,
+                long sessionId
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StudentAttendanceSessionResponse saveDraftRecords(
+                long organizationId,
+                long actorUserId,
+                long sessionId,
+                BulkStudentAttendanceRecordRequest request
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StudentAttendanceSessionResponse submitManually(
+                long organizationId,
+                long actorUserId,
+                long sessionId,
+                SubmitStudentAttendanceRequest request
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StudentAttendanceSessionResponse getSectionAttendanceForDate(
+                long organizationId,
+                long actorUserId,
+                long academicYearId,
+                long gradeLevelId,
+                long sectionId,
+                LocalDate attendanceDate
+        ) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

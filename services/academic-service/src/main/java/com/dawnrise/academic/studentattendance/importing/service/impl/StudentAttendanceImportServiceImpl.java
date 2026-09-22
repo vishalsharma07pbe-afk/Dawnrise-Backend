@@ -24,6 +24,7 @@ import com.dawnrise.academic.studentattendance.recording.service.StudentAttendan
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
@@ -89,7 +90,7 @@ public class StudentAttendanceImportServiceImpl
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public StudentAttendanceImportPreviewResponse preview(
             long organizationId,
             long actorUserId,
@@ -151,21 +152,22 @@ public class StudentAttendanceImportServiceImpl
                         .map(StudentAttendanceOfflineDraftRosterEntry::studentEnrollmentId)
                         .toList()
         ));
-        StudentAttendanceImportPreview entity = previewRepository.saveAndFlush(
-                new StudentAttendanceImportPreview(
-                        organizationId,
-                        actorUserId,
-                        context == null ? null : context.academicYear().getId(),
-                        context == null ? null : context.gradeLevel().getId(),
-                        context == null ? null : context.section().getId(),
-                        context == null ? null : context.attendanceDate(),
-                        fingerprint,
-                        parsed.originalFileName(),
-                        parsed.format(),
-                        normalizedRows.size(),
-                        canConfirm,
-                        payloadJson,
-                        expiresAt
+        StudentAttendanceImportPreview entity = transactionTemplate.execute(status ->
+                previewRepository.saveAndFlush(new StudentAttendanceImportPreview(
+                                organizationId,
+                                actorUserId,
+                                context == null ? null : context.academicYear().getId(),
+                                context == null ? null : context.gradeLevel().getId(),
+                                context == null ? null : context.section().getId(),
+                                context == null ? null : context.attendanceDate(),
+                                fingerprint,
+                                parsed.originalFileName(),
+                                parsed.format(),
+                                normalizedRows.size(),
+                                canConfirm,
+                                payloadJson,
+                                expiresAt
+                        )
                 )
         );
         return response(
