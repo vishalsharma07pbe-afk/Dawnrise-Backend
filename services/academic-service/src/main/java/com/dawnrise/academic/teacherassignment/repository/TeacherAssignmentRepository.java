@@ -36,6 +36,21 @@ public interface TeacherAssignmentRepository
             TeacherAssignmentType assignmentType
     );
 
+    boolean existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentType(
+            Long organizationId,
+            Long academicYearId,
+            Long teacherUserId,
+            TeacherAssignmentType assignmentType
+    );
+
+    boolean existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentTypeAndIdNot(
+            Long organizationId,
+            Long academicYearId,
+            Long teacherUserId,
+            TeacherAssignmentType assignmentType,
+            Long assignmentId
+    );
+
     boolean
     existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndGradeLevelSubjectId(
             Long organizationId,
@@ -51,5 +66,24 @@ public interface TeacherAssignmentRepository
             Long gradeLevelId,
             Long sectionId,
             Long teacherUserId
+    );
+
+    boolean existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndGradeLevelSubjectIdAndTeacherUserIdAndAssignmentType(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            Long sectionId,
+            Long gradeLevelSubjectId,
+            Long teacherUserId,
+            TeacherAssignmentType assignmentType
+    );
+
+    boolean existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndTeacherUserIdAndAssignmentType(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            Long sectionId,
+            Long teacherUserId,
+            TeacherAssignmentType assignmentType
     );
 }

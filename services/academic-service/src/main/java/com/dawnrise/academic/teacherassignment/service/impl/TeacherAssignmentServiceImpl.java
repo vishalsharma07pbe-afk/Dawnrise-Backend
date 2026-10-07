@@ -262,6 +262,21 @@ public class TeacherAssignmentServiceImpl
                 request.teacherUserId()
         );
 
+        if (assignment.getAssignmentType()
+                == TeacherAssignmentType.CLASS_TEACHER
+                && assignmentRepository
+                .existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentTypeAndIdNot(
+                        organizationId,
+                        academicYearId,
+                        request.teacherUserId(),
+                        TeacherAssignmentType.CLASS_TEACHER,
+                        assignmentId
+                )) {
+            throw new TeacherAssignmentConflictException(
+                    "This teacher is already the class teacher of another section"
+            );
+        }
+
         assignment.replaceTeacher(request.teacherUserId());
 
         TeacherAssignment savedAssignment =
@@ -321,6 +336,18 @@ public class TeacherAssignmentServiceImpl
                     )) {
                 throw new TeacherAssignmentConflictException(
                         "This section already has a class teacher"
+                );
+            }
+
+            if (assignmentRepository
+                    .existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentType(
+                            organizationId,
+                            academicYearId,
+                            request.teacherUserId(),
+                            TeacherAssignmentType.CLASS_TEACHER
+                    )) {
+                throw new TeacherAssignmentConflictException(
+                        "This teacher is already the class teacher of another section"
                 );
             }
 
@@ -384,6 +411,18 @@ public class TeacherAssignmentServiceImpl
                     )) {
                 throw new TeacherAssignmentConflictException(
                         "This section already has a class teacher"
+                );
+            }
+
+            if (assignmentRepository
+                    .existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentType(
+                            organizationId,
+                            academicYearId,
+                            request.teacherUserId(),
+                            TeacherAssignmentType.CLASS_TEACHER
+                    )) {
+                throw new TeacherAssignmentConflictException(
+                        "This teacher is already the class teacher of another section"
                 );
             }
 
@@ -519,6 +558,7 @@ public class TeacherAssignmentServiceImpl
     ) {
         Set<LogicalAssignmentKey> logicalAssignments =
                 new HashSet<>();
+        Set<Long> classTeacherUserIds = new HashSet<>();
 
         for (BulkTeacherAssignmentItemRequest item
                 : request.assignments()) {
@@ -527,6 +567,13 @@ public class TeacherAssignmentServiceImpl
             if (!logicalAssignments.add(key)) {
                 throw new TeacherAssignmentConflictException(
                         "Duplicate teacher assignments are not allowed"
+                );
+            }
+
+            if (item.assignmentType() == TeacherAssignmentType.CLASS_TEACHER
+                    && !classTeacherUserIds.add(item.teacherUserId())) {
+                throw new TeacherAssignmentConflictException(
+                        "A teacher can be class teacher of only one section"
                 );
             }
         }

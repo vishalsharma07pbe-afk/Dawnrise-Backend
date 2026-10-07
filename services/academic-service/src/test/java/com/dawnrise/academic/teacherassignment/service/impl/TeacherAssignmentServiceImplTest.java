@@ -135,6 +135,32 @@ class TeacherAssignmentServiceImplTest {
     }
 
     @Test
+    void classTeacherCannotOwnAnotherSectionButMayTeachSubjects() {
+        assignmentRepositoryStub.duplicateTeacherClass = true;
+
+        assertThatThrownBy(() -> service.create(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                classTeacherRequest(TEACHER_USER_ID)
+        ))
+                .isInstanceOf(TeacherAssignmentConflictException.class)
+                .hasMessage("This teacher is already the class teacher of another section");
+
+        TeacherAssignmentResponse subjectAssignment = service.create(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                subjectTeacherRequest(TEACHER_USER_ID)
+        );
+
+        assertThat(subjectAssignment.assignmentType())
+                .isEqualTo(TeacherAssignmentType.SUBJECT_TEACHER);
+    }
+
+    @Test
     void createBulkSucceedsWithOneEligibilityCallAndPreservesOrder() {
         eligibilityClientStub.batchResponse =
                 new BatchTeachingEligibilityResponse(
@@ -175,6 +201,46 @@ class TeacherAssignmentServiceImplTest {
     }
 
     @Test
+    void classTeacherMayTeachMultipleSubjectsInTheirSection() {
+        List<TeacherAssignmentResponse> responses = service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        ),
+                        bulkSubjectTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                GRADE_SUBJECT_ID,
+                                TEACHER_USER_ID
+                        ),
+                        bulkSubjectTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                GRADE_SUBJECT_ID + 1,
+                                TEACHER_USER_ID
+                        )
+                ))
+        );
+
+        assertThat(responses)
+                .extracting(TeacherAssignmentResponse::assignmentType)
+                .containsExactly(
+                        TeacherAssignmentType.CLASS_TEACHER,
+                        TeacherAssignmentType.SUBJECT_TEACHER,
+                        TeacherAssignmentType.SUBJECT_TEACHER
+                );
+        assertThat(responses)
+                .extracting(TeacherAssignmentResponse::teacherUserId)
+                .containsOnly(TEACHER_USER_ID);
+        assertThat(eligibilityClientStub.lastBatchUserIds)
+                .containsExactly(TEACHER_USER_ID);
+    }
+
+    @Test
     void createBulkRejectsDuplicateLogicalAssignmentsBeforeSave() {
         BulkCreateTeacherAssignmentsRequest request =
                 new BulkCreateTeacherAssignmentsRequest(List.of(
@@ -199,6 +265,34 @@ class TeacherAssignmentServiceImplTest {
                 .hasMessage("Duplicate teacher assignments are not allowed");
 
         assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+    }
+
+    @Test
+    void createBulkRejectsSameClassTeacherAcrossSections() {
+        BulkCreateTeacherAssignmentsRequest request =
+                new BulkCreateTeacherAssignmentsRequest(List.of(
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID,
+                                TEACHER_USER_ID
+                        ),
+                        bulkClassTeacherRequest(
+                                GRADE_LEVEL_ID,
+                                SECTION_ID + 1,
+                                TEACHER_USER_ID
+                        )
+                ));
+
+        assertThatThrownBy(() -> service.createBulk(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                request
+        ))
+                .isInstanceOf(TeacherAssignmentConflictException.class)
+                .hasMessage("A teacher can be class teacher of only one section");
+
+        assertThat(assignmentRepositoryStub.saveAllCalls).isZero();
+        assertThat(eligibilityClientStub.batchCalls).isZero();
     }
 
     @Test
@@ -479,6 +573,28 @@ class TeacherAssignmentServiceImplTest {
         assertThatThrownBy(() -> service.update(ORGANIZATION_ID, ACADEMIC_YEAR_ID, GRADE_LEVEL_ID, SECTION_ID, ASSIGNMENT_ID, new UpdateTeacherAssignmentRequest(61L, 3L)))
                 .isInstanceOf(TeacherNotEligibleException.class)
                 .hasMessage("The selected teacher account is not active");
+    }
+
+    @Test
+    void updateClassTeacherRejectsTeacherAssignedToAnotherSection() {
+        TeacherAssignment existing =
+                assignment(ASSIGNMENT_ID, null, TEACHER_USER_ID, TeacherAssignmentType.CLASS_TEACHER, 3L);
+        assignmentRepositoryStub.foundAssignment = Optional.of(existing);
+        assignmentRepositoryStub.duplicateTeacherClass = true;
+        eligibilityClientStub.response = eligible(61L);
+
+        assertThatThrownBy(() -> service.update(
+                ORGANIZATION_ID,
+                ACADEMIC_YEAR_ID,
+                GRADE_LEVEL_ID,
+                SECTION_ID,
+                ASSIGNMENT_ID,
+                new UpdateTeacherAssignmentRequest(61L, 3L)
+        ))
+                .isInstanceOf(TeacherAssignmentConflictException.class)
+                .hasMessage("This teacher is already the class teacher of another section");
+
+        assertThat(assignmentRepositoryStub.lastSavedAssignment).isNull();
     }
 
     @Test
@@ -789,6 +905,7 @@ class TeacherAssignmentServiceImplTest {
         private long lastFindAcademicYearId;
         private long lastFindOrganizationId;
         private boolean duplicateClassTeacher;
+        private boolean duplicateTeacherClass;
         private boolean duplicateSubjectTeacher;
         private int flushCalls;
         private int saveAllCalls;
@@ -808,6 +925,7 @@ class TeacherAssignmentServiceImplTest {
                         }
                         case "findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdOrderByAssignmentTypeAscIdAsc" -> allAssignments;
                         case "existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndAssignmentType" -> duplicateClassTeacher;
+                        case "existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentType", "existsByOrganizationIdAndAcademicYearIdAndTeacherUserIdAndAssignmentTypeAndIdNot" -> duplicateTeacherClass;
                         case "existsByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndSectionIdAndGradeLevelSubjectId" -> duplicateSubjectTeacher;
                         case "saveAndFlush" -> {
                             lastSavedAssignment = (TeacherAssignment) args[0];
