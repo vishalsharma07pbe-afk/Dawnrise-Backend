@@ -3,6 +3,10 @@ package com.dawnrise.academic;
 import com.dawnrise.academic.academicyearrollover.repository.AcademicYearStructureRolloverOperationRepository;
 import com.dawnrise.academic.common.integration.school.SchoolTimeZoneClient;
 import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
+import com.dawnrise.academic.examination.repository.ExaminationRepository;
+import com.dawnrise.academic.examination.repository.ScheduledAssessmentRepository;
+import com.dawnrise.academic.results.repository.ResultSubjectMarkRepository;
+import com.dawnrise.academic.results.repository.ResultSubjectSheetRepository;
 import com.dawnrise.academic.academiccalendar.repository.AcademicCalendarDayRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
@@ -570,6 +574,87 @@ class AcademicServiceApplicationTests {
 								);
 							}
 					);
+		}
+
+
+		@Bean
+		ExaminationRepository examinationRepository() {
+			return (ExaminationRepository) Proxy.newProxyInstance(
+					ExaminationRepository.class.getClassLoader(),
+					new Class<?>[]{ExaminationRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "ExaminationRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		ScheduledAssessmentRepository scheduledAssessmentRepository() {
+			return (ScheduledAssessmentRepository) Proxy.newProxyInstance(
+					ScheduledAssessmentRepository.class.getClassLoader(),
+					new Class<?>[]{ScheduledAssessmentRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "ScheduledAssessmentRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		ResultSubjectSheetRepository resultSubjectSheetRepository() {
+			return (ResultSubjectSheetRepository) Proxy.newProxyInstance(
+					ResultSubjectSheetRepository.class.getClassLoader(),
+					new Class<?>[]{ResultSubjectSheetRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "ResultSubjectSheetRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
+
+		@Bean
+		ResultSubjectMarkRepository resultSubjectMarkRepository() {
+			return (ResultSubjectMarkRepository) Proxy.newProxyInstance(
+					ResultSubjectMarkRepository.class.getClassLoader(),
+					new Class<?>[]{ResultSubjectMarkRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "ResultSubjectMarkRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
 		}
 
 		@Bean
