@@ -7,6 +7,11 @@ import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.policy.RefreshTokenSessionLifetimePolicy;
 import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository;
 import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
+import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
+import com.dawnrise.identity.auth.parentsession.repository.ParentSessionRepository;
+import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import com.dawnrise.identity.auth.parentsession.config.ParentSessionProperties;
+import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedException;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserRole;
 import com.dawnrise.identity.user.enums.UserStatus;
@@ -18,6 +23,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -38,6 +44,8 @@ class RefreshTokenServiceImplTest {
     private RefreshTokenCodec tokenCodec;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private ParentSessionRepository parentSessionRepository;
 
     private RefreshTokenServiceImpl service;
     private RefreshTokenProperties tokenProperties;
@@ -70,7 +78,8 @@ class RefreshTokenServiceImplTest {
                 tokenCodec,
                 tokenProperties,
                 new RefreshTokenSessionLifetimePolicy(tokenProperties),
-                userRepository
+                userRepository,
+                parentSessionRepository
         );
     }
 
@@ -228,12 +237,19 @@ class RefreshTokenServiceImplTest {
         when(refreshTokenRepository
                 .findAllByTokenFamilyIdAndRevokedAtIsNull(familyId))
                 .thenReturn(List.of(activeFamilyToken));
+        ParentSession parentSession = new ParentSession(
+                familyId, 10L, OffsetDateTime.now()
+        );
+        when(parentSessionRepository.findByIdForUpdate(familyId))
+                .thenReturn(Optional.of(parentSession));
 
         assertThrows(
                 InvalidRefreshTokenException.class,
                 () -> service.rotateRefreshToken("raw-token")
         );
         assertTrue(activeFamilyToken.isRevoked());
+        assertTrue(parentSession.isLocked());
+        assertOldAccessRejected(parentSession);
     }
 
     @Test
@@ -260,12 +276,19 @@ class RefreshTokenServiceImplTest {
         when(refreshTokenRepository.findAllByTokenFamilyIdAndRevokedAtIsNull(
                 token.getTokenFamilyId()
         )).thenReturn(List.of(activeFamilyToken));
+        ParentSession parentSession = new ParentSession(
+                token.getTokenFamilyId(), 10L, OffsetDateTime.now()
+        );
+        when(parentSessionRepository.findByIdForUpdate(token.getTokenFamilyId()))
+                .thenReturn(Optional.of(parentSession));
 
         assertThrows(
                 InvalidRefreshTokenException.class,
                 () -> service.rotateRefreshToken("raw-token")
         );
         assertTrue(activeFamilyToken.isRevoked());
+        assertTrue(parentSession.isLocked());
+        assertOldAccessRejected(parentSession);
         verify(tokenCodec, never()).generateRawToken();
     }
 
@@ -460,7 +483,7 @@ class RefreshTokenServiceImplTest {
     }
 
     @Test
-    void revokeRefreshToken_whenTokenExists_revokesIt() {
+    void revokeRefreshToken_whenTokenExists_revokesItsFamilyAndParentSession() {
         RefreshToken token =
                 refreshToken(
                         OffsetDateTime.now().plusHours(1),
@@ -470,14 +493,26 @@ class RefreshTokenServiceImplTest {
         when(tokenCodec.hash("raw-token")).thenReturn("token-hash");
         when(refreshTokenRepository.findByTokenHash("token-hash"))
                 .thenReturn(Optional.of(token));
+        when(refreshTokenRepository.findAllByTokenFamilyIdAndRevokedAtIsNull(
+                token.getTokenFamilyId()
+        )).thenReturn(List.of(token));
+        ParentSession parentSession = new ParentSession(
+                token.getTokenFamilyId(),
+                10L,
+                OffsetDateTime.now()
+        );
+        when(parentSessionRepository.findByIdForUpdate(token.getTokenFamilyId()))
+                .thenReturn(Optional.of(parentSession));
 
         service.revokeRefreshToken("raw-token");
 
         assertTrue(token.isRevoked());
+        assertTrue(parentSession.isLocked());
+        assertOldAccessRejected(parentSession);
     }
 
     @Test
-    void revokeAllForUser_revokesAllActiveTokens() {
+    void revokeAllForUser_afterPasswordChangeRejectsEveryOldParentAccessToken() {
         RefreshToken first =
                 refreshToken(
                         OffsetDateTime.now().plusHours(1),
@@ -491,11 +526,60 @@ class RefreshTokenServiceImplTest {
 
         when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull(10L))
                 .thenReturn(List.of(first, second));
+        ParentSession firstSession = new ParentSession(
+                first.getTokenFamilyId(), 10L, OffsetDateTime.now()
+        );
+        ParentSession secondSession = new ParentSession(
+                second.getTokenFamilyId(), 10L, OffsetDateTime.now()
+        );
+        when(parentSessionRepository.findAllByUserIdForUpdate(10L))
+                .thenReturn(List.of(firstSession, secondSession));
 
         service.revokeAllForUser(10L);
 
         assertTrue(first.isRevoked());
         assertTrue(second.isRevoked());
+        assertTrue(firstSession.isLocked());
+        assertTrue(secondSession.isLocked());
+        assertOldAccessRejected(firstSession);
+        assertOldAccessRejected(secondSession);
+    }
+
+    @Test
+    void revokeAllForUser_afterSuspensionOrDeactivationRejectsOldParentAccessToken() {
+        RefreshToken token = refreshToken(
+                OffsetDateTime.now().plusHours(1),
+                OffsetDateTime.now().plusDays(90)
+        );
+        ParentSession parentSession = new ParentSession(
+                token.getTokenFamilyId(), 10L, OffsetDateTime.now()
+        );
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull(10L))
+                .thenReturn(List.of(token));
+        when(parentSessionRepository.findAllByUserIdForUpdate(10L))
+                .thenReturn(List.of(parentSession));
+        when(parentSessionRepository.findByIdForUpdate(token.getTokenFamilyId()))
+                .thenReturn(Optional.of(parentSession));
+
+        service.revokeAllForUser(10L);
+
+        assertTrue(token.isRevoked());
+        assertOldAccessRejected(parentSession);
+    }
+
+    private void assertOldAccessRejected(ParentSession session) {
+        when(parentSessionRepository.findByIdForUpdate(session.getId()))
+                .thenReturn(Optional.of(session));
+        ParentSessionService validator = new ParentSessionService(
+                parentSessionRepository,
+                mock(UserRepository.class),
+                mock(PasswordEncoder.class),
+                new ParentSessionProperties()
+        );
+        assertThrows(
+                ParentSessionLockedException.class,
+                () -> validator.validateAndTouch(session.getId(), session.getUserId())
+        );
     }
 
     private static RefreshToken refreshToken(

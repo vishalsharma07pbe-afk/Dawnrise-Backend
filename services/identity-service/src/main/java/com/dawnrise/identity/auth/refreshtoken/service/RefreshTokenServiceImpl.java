@@ -4,10 +4,12 @@ import com.dawnrise.identity.auth.refreshtoken.config.RefreshTokenProperties;
 import com.dawnrise.identity.auth.refreshtoken.entity.RefreshToken;
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSessionLifetime;
 import com.dawnrise.identity.auth.refreshtoken.policy.RefreshTokenSessionLifetimePolicy;
 import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository;
 import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
+import com.dawnrise.identity.auth.parentsession.repository.ParentSessionRepository;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserStatus;
@@ -31,24 +33,33 @@ public class RefreshTokenServiceImpl
     private final RefreshTokenProperties tokenProperties;
     private final RefreshTokenSessionLifetimePolicy sessionLifetimePolicy;
     private final UserRepository userRepository;
+    private final ParentSessionRepository parentSessionRepository;
 
     public RefreshTokenServiceImpl(
             RefreshTokenRepository refreshTokenRepository,
             RefreshTokenCodec tokenCodec,
             RefreshTokenProperties tokenProperties,
             RefreshTokenSessionLifetimePolicy sessionLifetimePolicy,
-            UserRepository userRepository
+            UserRepository userRepository,
+            ParentSessionRepository parentSessionRepository
     ) {
         this.refreshTokenRepository = refreshTokenRepository;
         this.tokenCodec = tokenCodec;
         this.tokenProperties = tokenProperties;
         this.sessionLifetimePolicy = sessionLifetimePolicy;
         this.userRepository = userRepository;
+        this.parentSessionRepository = parentSessionRepository;
     }
 
     @Override
     @Transactional
     public String createRefreshToken(Long userId) {
+        return createRefreshTokenSession(userId).rawRefreshToken();
+    }
+
+    @Override
+    @Transactional
+    public RefreshTokenCreationResult createRefreshTokenSession(Long userId) {
         // Refresh sessions are issued only for currently active users.
         User user = userRepository
                 .findById(userId)
@@ -70,10 +81,11 @@ public class RefreshTokenServiceImpl
         );
 
         // Store only the token hash; the raw token is returned for the secure cookie.
+        UUID tokenFamilyId = UUID.randomUUID();
         RefreshToken refreshToken =
                 new RefreshToken(
                         userId,
-                        UUID.randomUUID(),
+                        tokenFamilyId,
                         tokenHash,
                         currentTime.plus(
                                 sessionLifetime.inactivityExpiration()
@@ -83,7 +95,7 @@ public class RefreshTokenServiceImpl
 
         refreshTokenRepository.save(refreshToken);
 
-        return rawToken;
+        return new RefreshTokenCreationResult(rawToken, tokenFamilyId);
     }
 
     @Override
@@ -192,7 +204,8 @@ public class RefreshTokenServiceImpl
 
         return new RefreshTokenRotationResult(
                 user.getId(),
-                replacementRawToken
+                replacementRawToken,
+                existingToken.getTokenFamilyId()
         );
     }
 
@@ -215,11 +228,9 @@ public class RefreshTokenServiceImpl
             return;
         }
 
-        refreshTokenRepository
-                .findByTokenHash(tokenHash)
-                .ifPresent(token ->
-                        token.revoke(OffsetDateTime.now())
-                );
+        refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(token ->
+                revokeTokenFamily(token.getTokenFamilyId(), OffsetDateTime.now())
+        );
     }
 
     @Override
@@ -237,6 +248,9 @@ public class RefreshTokenServiceImpl
         activeTokens.forEach(token ->
                 token.revoke(currentTime)
         );
+
+        parentSessionRepository.findAllByUserIdForUpdate(userId)
+                .forEach(session -> session.lock(currentTime));
     }
 
     private void revokeTokenFamily(
@@ -252,6 +266,9 @@ public class RefreshTokenServiceImpl
         activeFamilyTokens.forEach(token ->
                 token.revoke(revokedAt)
         );
+
+        parentSessionRepository.findByIdForUpdate(tokenFamilyId)
+                .ifPresent(session -> session.lock(revokedAt));
     }
 
     private InvalidRefreshTokenException invalidToken() {

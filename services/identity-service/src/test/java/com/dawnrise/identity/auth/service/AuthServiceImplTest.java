@@ -14,6 +14,9 @@ import com.dawnrise.identity.auth.lockout.LoginLockoutService;
 import com.dawnrise.identity.auth.model.AuthenticationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
+import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
+import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
 import com.dawnrise.identity.auth.security.JwtService;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.permission.enums.PermissionCode;
@@ -31,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -39,6 +43,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -63,6 +68,8 @@ class AuthServiceImplTest {
     private PermissionService permissionService;
     @Mock
     private SecurityAuditService auditService;
+    @Mock
+    private ParentSessionService parentSessionService;
 
     private AuthServiceImpl authService;
     private PasswordChangeProperties passwordChangeProperties;
@@ -95,6 +102,11 @@ class AuthServiceImplTest {
                 passwordChangeProperties,
                 permissionService,
                 auditService
+        );
+        ReflectionTestUtils.setField(
+                authService,
+                "parentSessionService",
+                parentSessionService
         );
 
         Organization organization = new Organization(
@@ -447,6 +459,70 @@ class AuthServiceImplTest {
         authService.logout("refresh-token");
 
         verify(refreshTokenService).revokeRefreshToken("refresh-token");
+    }
+
+    @Test
+    void reauthenticateRetiresOldSessionsBeforeCreatingActiveReplacement() {
+        UUID oldSessionId = UUID.randomUUID();
+        UUID replacementSessionId = UUID.randomUUID();
+        OffsetDateTime authenticatedAt = OffsetDateTime.now();
+        User parent = new User(
+                1L,
+                "parent01",
+                "Parent",
+                Set.of(UserRole.PARENT)
+        );
+        ReflectionTestUtils.setField(parent, "id", 10L);
+        parent.setStatus(UserStatus.ACTIVE);
+        ParentSession replacement = new ParentSession(
+                replacementSessionId,
+                10L,
+                authenticatedAt
+        );
+
+        when(userRepository.findById(10L)).thenReturn(Optional.of(parent));
+        when(parentSessionService.verifyPassword(oldSessionId, 10L, "secret"))
+                .thenReturn(authenticatedAt);
+        when(refreshTokenService.createRefreshTokenSession(10L))
+                .thenReturn(new RefreshTokenCreationResult(
+                        "replacement-refresh",
+                        replacementSessionId
+                ));
+        when(parentSessionService.create(
+                replacementSessionId,
+                10L,
+                authenticatedAt
+        )).thenReturn(replacement);
+        when(permissionService.getActivePermissionsForRoles(parent.getRoles()))
+                .thenReturn(ACTIVE_PERMISSIONS);
+        when(jwtService.generateAccessToken(
+                parent,
+                ACTIVE_PERMISSIONS,
+                replacementSessionId,
+                authenticatedAt
+        )).thenReturn("replacement-access");
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+
+        AuthenticationResult result = authService.unlockParent(
+                10L,
+                oldSessionId,
+                "secret"
+        );
+
+        assertEquals("replacement-access", result.response().getAccessToken());
+        assertEquals("replacement-refresh", result.rawRefreshToken());
+        assertFalse(replacement.isLocked());
+        InOrder order = inOrder(parentSessionService, refreshTokenService);
+        order.verify(parentSessionService).verifyPassword(
+                oldSessionId, 10L, "secret"
+        );
+        order.verify(refreshTokenService).revokeAllForUser(10L);
+        order.verify(refreshTokenService).createRefreshTokenSession(10L);
+        order.verify(parentSessionService).create(
+                replacementSessionId,
+                10L,
+                authenticatedAt
+        );
     }
 
     @Test
