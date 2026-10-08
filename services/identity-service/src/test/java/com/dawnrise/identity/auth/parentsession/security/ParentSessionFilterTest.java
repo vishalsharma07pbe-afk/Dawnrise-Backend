@@ -1,0 +1,19 @@
+package com.dawnrise.identity.auth.parentsession.security;
+import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedException;
+import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.*;import org.springframework.mock.web.*;import org.springframework.security.core.authority.SimpleGrantedAuthority;import org.springframework.security.core.context.SecurityContextHolder;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import java.time.Instant;import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;import static org.mockito.Mockito.*;
+class ParentSessionFilterTest {
+ @AfterEach void clear(){SecurityContextHolder.clearContext();}
+ @Test void oldAccessTokenIsRejectedAfterServerLock()throws Exception{UUID id=UUID.randomUUID();ParentSessionService sessions=mock(ParentSessionService.class);doThrow(new ParentSessionLockedException("locked")).when(sessions).validateAndTouch(id,7L);Jwt jwt=Jwt.withTokenValue("old-token").header("alg","none").subject("7").issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).claim("sessionId",id.toString()).build();SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt,List.of(new SimpleGrantedAuthority("ROLE_PARENT"))));MockHttpServletResponse response=new MockHttpServletResponse();FilterChain chain=mock(FilterChain.class);new ParentSessionFilter(sessions).doFilter(new MockHttpServletRequest("GET","/api/v1/parents/data"),response,chain);assertEquals(423,response.getStatus());verifyNoInteractions(chain);}
+
+ @Test void protectsEveryExistingSensitiveParentMutation()throws Exception{for(String[] route:List.of(new String[]{"POST","/api/v1/auth/password/change"},new String[]{"PUT","/api/v1/organizations/3/users/7/profile"},new String[]{"POST","/api/v1/organizations/3/profile-change-requests/users/7"})){SecurityContextHolder.clearContext();UUID id=UUID.randomUUID();ParentSessionService sessions=mock(ParentSessionService.class);authenticate(id.toString(),"7");FilterChain chain=mock(FilterChain.class);new ParentSessionFilter(sessions).doFilter(new MockHttpServletRequest(route[0],route[1]),new MockHttpServletResponse(),chain);verify(sessions).validateAndTouch(id,7L);verify(sessions).requireRecentAuthentication(id,7L);verify(chain).doFilter(any(),any());}}
+
+ @Test void malformedSessionClaimIsUnauthorized()throws Exception{ParentSessionService sessions=mock(ParentSessionService.class);authenticate("not-a-uuid","7");MockHttpServletResponse response=new MockHttpServletResponse();FilterChain chain=mock(FilterChain.class);new ParentSessionFilter(sessions).doFilter(new MockHttpServletRequest("GET","/api/v1/parents/data"),response,chain);assertEquals(401,response.getStatus());verifyNoInteractions(sessions,chain);}
+
+ @Test void infrastructureFailureIsNotReportedAsLocked(){ParentSessionService sessions=mock(ParentSessionService.class);UUID id=UUID.randomUUID();doThrow(new IllegalStateException("database unavailable")).when(sessions).validateAndTouch(id,7L);authenticate(id.toString(),"7");ParentSessionFilter filter=new ParentSessionFilter(sessions);assertThrows(IllegalStateException.class,()->filter.doFilter(new MockHttpServletRequest("GET","/api/v1/parents/data"),new MockHttpServletResponse(),mock(FilterChain.class)));}
+
+ private void authenticate(String sessionId,String subject){Jwt jwt=Jwt.withTokenValue("token").header("alg","none").subject(subject).issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).claim("sessionId",sessionId).build();SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt,List.of(new SimpleGrantedAuthority("ROLE_PARENT"))));}
+}

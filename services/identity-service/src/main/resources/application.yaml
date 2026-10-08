@@ -64,6 +64,9 @@ jwt:
   access-token-expiration: 900
 
 security:
+  parent-session:
+    inactivity-timeout: ${PARENT_SESSION_INACTIVITY_TIMEOUT:15m}
+    recent-authentication: ${PARENT_RECENT_AUTHENTICATION:10m}
   internal:
     api-key: ${IDENTITY_INTERNAL_API_KEY}
     allowed-service-names:

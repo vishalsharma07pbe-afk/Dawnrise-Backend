@@ -19,9 +19,12 @@ import com.dawnrise.identity.organization.provisioning.security.InternalServiceS
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import com.dawnrise.identity.auth.parentsession.security.ParentSessionFilter;
+import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import org.springframework.beans.factory.ObjectProvider;
 
 @Configuration
 @EnableMethodSecurity
@@ -58,7 +61,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            InternalServiceAuthenticationFilter internalServiceFilter
+            InternalServiceAuthenticationFilter internalServiceFilter,
+            ParentSessionFilter parentSessionFilter
     ) throws Exception {
 
         http
@@ -159,6 +163,7 @@ public class SecurityConfig {
                         internalServiceFilter,
                         BearerTokenAuthenticationFilter.class
                 )
+                .addFilterAfter(parentSessionFilter, BearerTokenAuthenticationFilter.class)
 
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
@@ -169,6 +174,18 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    @Bean
+    ParentSessionFilter parentSessionFilter(ObjectProvider<ParentSessionService> service) { return new ParentSessionFilter(service.getIfAvailable()); }
+
+    @Bean
+    FilterRegistrationBean<ParentSessionFilter>
+    disableParentSessionFilterRegistration(ParentSessionFilter filter) {
+        FilterRegistrationBean<ParentSessionFilter> registration =
+                new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

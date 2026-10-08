@@ -19,6 +19,10 @@ import com.dawnrise.school.security.InternalServiceAuthenticationFilter;
 import com.dawnrise.school.security.InternalServiceErrorResponseWriter;
 import com.dawnrise.school.security.InternalServiceSecurityProperties;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.web.client.RestClient;
+import com.dawnrise.school.school.provisioning.IdentityProvisioningProperties;
+import com.dawnrise.school.security.parentsession.ParentSessionEnforcementFilter;
+import org.springframework.context.ApplicationContext;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -69,7 +73,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            InternalServiceAuthenticationFilter internalServiceFilter
+            InternalServiceAuthenticationFilter internalServiceFilter,
+            ParentSessionEnforcementFilter parentSessionFilter
     ) throws Exception {
 
         http
@@ -97,6 +102,7 @@ public class SecurityConfig {
                         internalServiceFilter,
                         BearerTokenAuthenticationFilter.class
                 )
+                .addFilterAfter(parentSessionFilter, BearerTokenAuthenticationFilter.class)
 
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
@@ -107,6 +113,26 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    @Bean
+    ParentSessionEnforcementFilter parentSessionEnforcementFilter(ApplicationContext context) {
+        RestClient restClient = context.containsBean("identityProvisioningRestClient")
+                ? context.getBean("identityProvisioningRestClient", RestClient.class)
+                : null;
+        IdentityProvisioningProperties properties = context
+                .getBeanProvider(IdentityProvisioningProperties.class)
+                .getIfAvailable();
+        return new ParentSessionEnforcementFilter(restClient, properties);
+    }
+
+    @Bean
+    FilterRegistrationBean<ParentSessionEnforcementFilter>
+    disableParentSessionFilterRegistration(ParentSessionEnforcementFilter filter) {
+        FilterRegistrationBean<ParentSessionEnforcementFilter> registration =
+                new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

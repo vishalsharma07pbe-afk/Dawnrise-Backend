@@ -24,6 +24,8 @@ import com.dawnrise.identity.auth.activation.exception.InvalidActivationTokenExc
 import com.dawnrise.identity.auth.activation.exception.PasswordMismatchException;
 import com.dawnrise.identity.auth.passwordreset.exception.InvalidPasswordResetTokenException;
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
+import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedException;
+import com.dawnrise.identity.auth.parentsession.exception.RecentParentAuthenticationRequiredException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningConflictException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningInProgressException;
 import com.dawnrise.identity.profilechange.exception.InvalidProfileChangeStateException;
@@ -551,6 +553,16 @@ public class GlobalExceptionHandler {
                 path,
                 validationErrors
         );
+    }
+
+    @ExceptionHandler(ParentSessionLockedException.class)
+    public ResponseEntity<ApiErrorResponse> handleParentSessionLocked(ParentSessionLockedException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.LOCKED).body(createErrorResponse(HttpStatus.LOCKED, exception.getMessage(), request.getRequestURI(), Map.of("code", "PARENT_SESSION_LOCKED")));
+    }
+
+    @ExceptionHandler(RecentParentAuthenticationRequiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleRecentParentAuthentication(RecentParentAuthenticationRequiredException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(createErrorResponse(HttpStatus.FORBIDDEN, exception.getMessage(), request.getRequestURI(), Map.of("code", "RECENT_PARENT_AUTHENTICATION_REQUIRED")));
     }
 
 }

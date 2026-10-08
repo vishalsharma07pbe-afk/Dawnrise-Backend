@@ -6,12 +6,21 @@ import com.dawnrise.identity.platform.user.entity.PlatformUser;
 import com.dawnrise.identity.user.entity.User;
 
 import java.util.Set;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 public interface JwtService {
 
     String generateAccessToken(
             User user,
             Set<PermissionCode> permissions
+    );
+
+    String generateAccessToken(
+            User user,
+            Set<PermissionCode> permissions,
+            UUID sessionId,
+            OffsetDateTime authenticatedAt
     );
 
     String generatePlatformAccessToken(

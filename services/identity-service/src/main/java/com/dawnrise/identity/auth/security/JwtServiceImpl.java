@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Service
 public class JwtServiceImpl implements JwtService {
@@ -38,9 +40,16 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
+    public String generateAccessToken(User user, Set<PermissionCode> permissions) {
+        return generateAccessToken(user, permissions, null, null);
+    }
+
+    @Override
     public String generateAccessToken(
             User user,
-            Set<PermissionCode> permissions
+            Set<PermissionCode> permissions,
+            UUID sessionId,
+            OffsetDateTime authenticatedAt
     ) {
         Instant issuedAt = Instant.now();
 
@@ -60,7 +69,7 @@ public class JwtServiceImpl implements JwtService {
                 .sorted()
                 .toList();
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .subject(user.getId().toString())
                 .issuedAt(issuedAt)
@@ -75,8 +84,10 @@ public class JwtServiceImpl implements JwtService {
                 )
                 .claim("username", user.getUsername())
                 .claim("roles", roles)
-                .claim("permissions", permissionCodes)
-                .build();
+                .claim("permissions", permissionCodes);
+        if (sessionId != null) builder.claim("sessionId", sessionId.toString());
+        builder.claim("auth_time", authenticatedAt == null ? issuedAt.getEpochSecond() : authenticatedAt.toEpochSecond());
+        JwtClaimsSet claims = builder.build();
 
         return jwtEncoder
                 .encode(JwtEncoderParameters.from(claims))
