@@ -28,6 +28,10 @@ public interface ScheduledAssessmentRepository
     boolean existsByOrganizationIdAndAcademicYearIdAndExaminationId(
             Long organizationId, Long academicYearId, Long examinationId);
 
+    List<ScheduledAssessment>
+    findAllByOrganizationIdAndAcademicYearIdAndExaminationIdAndGradeLevelIdOrderByIdAsc(
+            Long organizationId, Long academicYearId, Long examinationId, Long gradeLevelId);
+
     @Query("""
             SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END
             FROM ScheduledAssessment a

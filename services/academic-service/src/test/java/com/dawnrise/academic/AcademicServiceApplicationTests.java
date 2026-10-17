@@ -6,6 +6,7 @@ import com.dawnrise.academic.academicyear.repository.AcademicYearRepository;
 import com.dawnrise.academic.examination.repository.ExaminationRepository;
 import com.dawnrise.academic.examination.repository.ScheduledAssessmentRepository;
 import com.dawnrise.academic.results.repository.ResultSubjectMarkRepository;
+import com.dawnrise.academic.results.repository.ResultPublicationRepository;
 import com.dawnrise.academic.results.repository.ResultSubjectSheetRepository;
 import com.dawnrise.academic.academiccalendar.repository.AcademicCalendarDayRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
@@ -58,6 +59,26 @@ class AcademicServiceApplicationTests {
 
 	@TestConfiguration
 	static class TestConfig {
+
+		@Bean
+		ResultPublicationRepository resultPublicationRepository() {
+			return (ResultPublicationRepository) Proxy.newProxyInstance(
+					ResultPublicationRepository.class.getClassLoader(),
+					new Class<?>[]{ResultPublicationRepository.class},
+					(proxy, method, args) -> {
+						if (method.getName().equals("hashCode")) {
+							return System.identityHashCode(proxy);
+						}
+						if (method.getName().equals("equals")) {
+							return proxy == args[0];
+						}
+						if (method.getName().equals("toString")) {
+							return "ResultPublicationRepositoryStub";
+						}
+						throw new UnsupportedOperationException(method.getName());
+					}
+			);
+		}
 
 		@Bean
 		EntityManager entityManager() {

@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
 
 public interface ResultSubjectMarkRepository
         extends JpaRepository<ResultSubjectMark, Long> {
@@ -17,6 +18,12 @@ public interface ResultSubjectMarkRepository
     );
 
     boolean existsBySubjectSheetId(Long subjectSheetId);
+
+    List<ResultSubjectMark> findAllBySubjectSheetIdInOrderBySubjectSheetIdAscRollNumberSnapshotAscIdAsc(
+            Collection<Long> subjectSheetIds);
+
+    List<ResultSubjectMark> findAllBySubjectSheetIdInAndStudentUserIdOrderBySubjectSheetIdAsc(
+            Collection<Long> subjectSheetIds, Long studentUserId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
