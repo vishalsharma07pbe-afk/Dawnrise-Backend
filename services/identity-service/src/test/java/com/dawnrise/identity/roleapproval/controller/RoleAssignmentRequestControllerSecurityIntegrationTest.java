@@ -40,6 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class
 })
 class RoleAssignmentRequestControllerSecurityIntegrationTest {
+    @MockitoBean
+    private com.dawnrise.identity.auth.session.service.AuthenticatedSessionService authenticatedSessionService;
 
     private static final String BASE_URL =
             "/api/v1/organizations/{organizationId}/role-requests";
@@ -249,6 +251,8 @@ class RoleAssignmentRequestControllerSecurityIntegrationTest {
         when(jwtDecoder.decode(token)).thenReturn(Jwt.withTokenValue(token)
                 .header("alg", "none")
                 .subject(subject.toString())
+                .claim("identityType", "ORGANIZATION_USER")
+                .claim("sessionId", java.util.UUID.randomUUID().toString())
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
                 .claim("organizationId", organizationId)

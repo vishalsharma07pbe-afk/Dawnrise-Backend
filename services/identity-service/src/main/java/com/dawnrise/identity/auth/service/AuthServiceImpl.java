@@ -12,8 +12,9 @@ import com.dawnrise.identity.auth.lockout.LoginLockoutService;
 import com.dawnrise.identity.auth.model.AuthenticationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
-import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
-import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import com.dawnrise.identity.auth.model.IdentityType;
+import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.auth.security.JwtService;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
@@ -25,8 +26,6 @@ import com.dawnrise.identity.user.enums.UserStatus;
 import com.dawnrise.identity.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.annotation.Transactional;
 import com.dawnrise.identity.permission.enums.PermissionCode;
 import com.dawnrise.identity.permission.service.PermissionService;
@@ -54,9 +53,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordChangeProperties passwordChangeProperties;
     private final PermissionService permissionService;
     private final SecurityAuditService auditService;
-    private final ParentSessionService parentSessionService;
-
-    @Autowired
+    private final AuthenticatedSessionService authenticatedSessionService;
     public AuthServiceImpl(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
@@ -67,7 +64,7 @@ public class AuthServiceImpl implements AuthService {
             PasswordChangeProperties passwordChangeProperties,
             PermissionService permissionService,
             SecurityAuditService auditService,
-            ObjectProvider<ParentSessionService> parentSessionService
+            AuthenticatedSessionService authenticatedSessionService
     ) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
@@ -78,23 +75,7 @@ public class AuthServiceImpl implements AuthService {
         this.passwordChangeProperties = passwordChangeProperties;
         this.permissionService = permissionService;
         this.auditService = auditService;
-        this.parentSessionService = parentSessionService.getIfAvailable();
-    }
-
-    public AuthServiceImpl(UserRepository userRepository, OrganizationRepository organizationRepository,
-            PasswordEncoder passwordEncoder, JwtService jwtService, RefreshTokenService refreshTokenService,
-            LoginLockoutService loginLockoutService, PasswordChangeProperties passwordChangeProperties,
-            PermissionService permissionService, SecurityAuditService auditService) {
-        this.userRepository = userRepository;
-        this.organizationRepository = organizationRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-        this.refreshTokenService = refreshTokenService;
-        this.loginLockoutService = loginLockoutService;
-        this.passwordChangeProperties = passwordChangeProperties;
-        this.permissionService = permissionService;
-        this.auditService = auditService;
-        this.parentSessionService = null;
+        this.authenticatedSessionService = authenticatedSessionService;
     }
 
     @Override
@@ -180,13 +161,9 @@ public class AuthServiceImpl implements AuthService {
         user.setLastLoginAt(currentTime);
 
         // Refresh tokens are persisted separately and returned only as cookies.
-        RefreshTokenCreationResult refreshToken = user.getRoles().contains(UserRole.PARENT)
-                ? refreshTokenService.createRefreshTokenSession(user.getId())
-                : new RefreshTokenCreationResult(refreshTokenService.createRefreshToken(user.getId()), null);
-
-        ParentSession parentSession = user.getRoles().contains(UserRole.PARENT)
-                ? parentSessionService.create(refreshToken.tokenFamilyId(), user.getId(), currentTime)
-                : null;
+        RefreshTokenCreationResult refreshToken = refreshTokenService.createRefreshTokenSession(user.getId());
+        AuthenticatedSession session = authenticatedSessionService.createOrganizationSession(
+                refreshToken.tokenFamilyId(), user.getId(), currentTime);
 
         auditService.record(
                 user.getOrganizationId(),
@@ -202,7 +179,7 @@ public class AuthServiceImpl implements AuthService {
                 user,
                 refreshToken.rawRefreshToken(),
                 refreshToken.tokenFamilyId(),
-                parentSession == null ? null : parentSession.getAuthenticatedAt()
+                session.getAuthenticatedAt()
         );
     }
 
@@ -234,10 +211,11 @@ public class AuthServiceImpl implements AuthService {
             );
         }
 
-        OffsetDateTime authenticatedAt = null;
-        if (user.getRoles().contains(UserRole.PARENT)) {
-            authenticatedAt = parentSessionService.validateAndTouch(rotationResult.tokenFamilyId(), user.getId()).authenticatedAt();
-        }
+        OffsetDateTime authenticatedAt = authenticatedSessionService.validateAndTouch(
+                        rotationResult.tokenFamilyId(),
+                        IdentityType.ORGANIZATION_USER,
+                        user.getId()
+                ).authenticatedAt();
 
         return createAuthenticationResult(
                 user,
@@ -249,17 +227,38 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthenticationResult unlockParent(String rawRefreshToken, String password) {
+    public AuthenticationResult unlockSession(String rawRefreshToken, String password) {
         var session = refreshTokenService.resolveRefreshTokenSession(rawRefreshToken);
         Long userId = session.userId();
         UUID sessionId = session.tokenFamilyId();
-        User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (!user.getRoles().contains(UserRole.PARENT)) throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
-        OffsetDateTime authenticatedAt = parentSessionService.verifyPassword(sessionId, userId, password);
-        refreshTokenService.revokeAllForUser(userId);
+        User user = userRepository.findById(userId)
+                .filter(candidate -> candidate.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(() -> new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new InvalidCredentialsException("Password is incorrect");
+        }
+        OffsetDateTime authenticatedAt = OffsetDateTime.now();
+        refreshTokenService.revokeTokenFamily(sessionId, userId, authenticatedAt);
         RefreshTokenCreationResult refreshToken = refreshTokenService.createRefreshTokenSession(userId);
-        ParentSession replacement = parentSessionService.create(refreshToken.tokenFamilyId(), userId, authenticatedAt);
+        AuthenticatedSession replacement = authenticatedSessionService.createOrganizationSession(
+                refreshToken.tokenFamilyId(),
+                userId,
+                authenticatedAt
+        );
         return createAuthenticationResult(user, refreshToken.rawRefreshToken(), refreshToken.tokenFamilyId(), replacement.getAuthenticatedAt());
+    }
+
+    @Override
+    @Transactional
+    public AuthenticationResult unlockParent(String rawRefreshToken, String password) {
+        var session = refreshTokenService.resolveRefreshTokenSession(rawRefreshToken);
+        User user = userRepository.findById(session.userId())
+                .orElseThrow(() -> new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+        if (!user.getRoles().contains(UserRole.PARENT)) {
+            throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+        }
+        return unlockSession(rawRefreshToken, password);
     }
 
     @Override
@@ -369,9 +368,10 @@ public class AuthServiceImpl implements AuthService {
                         user.getRoles()
                 );
 
-        String accessToken = user.getRoles().contains(UserRole.PARENT)
-                ? jwtService.generateAccessToken(user, permissions, sessionId, authenticatedAt)
-                : jwtService.generateAccessToken(user, permissions);
+        String accessToken = sessionId == null
+                || authenticatedAt == null
+                ? jwtService.generateAccessToken(user, permissions)
+                : jwtService.generateAccessToken(user, permissions, sessionId, authenticatedAt);
 
         Set<String> roles = user.getRoles()
                 .stream()

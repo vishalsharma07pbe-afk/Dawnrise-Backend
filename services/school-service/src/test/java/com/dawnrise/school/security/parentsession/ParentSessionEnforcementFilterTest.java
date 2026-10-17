@@ -75,6 +75,7 @@ class ParentSessionEnforcementFilterTest {
     private MockHttpServletRequest parentRequest() {
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject("7")
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60))
+                .claim("identityType", "ORGANIZATION_USER")
                 .claim("sessionId", UUID.randomUUID().toString()).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
                 jwt,

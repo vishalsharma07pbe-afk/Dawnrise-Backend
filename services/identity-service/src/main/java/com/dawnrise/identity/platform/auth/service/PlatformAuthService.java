@@ -9,5 +9,7 @@ public interface PlatformAuthService {
 
     PlatformAuthenticationResult refresh(String rawRefreshToken);
 
+    PlatformAuthenticationResult unlockSession(String rawRefreshToken, String password);
+
     void logout(String rawRefreshToken);
 }

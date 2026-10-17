@@ -4,6 +4,7 @@ import com.dawnrise.identity.auth.activation.repository.UserActivationTokenRepos
 import com.dawnrise.identity.auth.passwordreset.repository.UserPasswordResetTokenRepository;
 import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository;
 import com.dawnrise.identity.auth.parentsession.repository.ParentSessionRepository;
+import com.dawnrise.identity.auth.session.repository.AuthenticatedSessionRepository;
 import com.dawnrise.identity.organization.provisioning.repository.OrganizationProvisioningRequestRepository;
 import com.dawnrise.identity.organization.repository.OrganizationRepository;
 import com.dawnrise.identity.permission.repository.RolePermissionRepository;
@@ -57,6 +58,8 @@ class IdentityServiceApplicationTests {
     private RefreshTokenRepository refreshTokenRepository;
     @MockitoBean
     private ParentSessionRepository parentSessionRepository;
+    @MockitoBean
+    private AuthenticatedSessionRepository authenticatedSessionRepository;
     @MockitoBean
     private RolePermissionRepository rolePermissionRepository;
     @MockitoBean

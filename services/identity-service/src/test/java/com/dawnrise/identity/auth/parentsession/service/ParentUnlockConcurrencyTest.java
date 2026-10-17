@@ -14,6 +14,8 @@ import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenServiceImpl;
 import com.dawnrise.identity.auth.security.JwtService;
 import com.dawnrise.identity.auth.service.AuthServiceImpl;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
+import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
 import com.dawnrise.identity.permission.service.PermissionService;
 import com.dawnrise.identity.securityaudit.service.SecurityAuditService;
 import com.dawnrise.identity.user.entity.User;
@@ -94,6 +96,9 @@ class ParentUnlockConcurrencyTest {
     @MockitoBean
     private SecurityAuditService securityAuditService;
 
+    @MockitoBean
+    private AuthenticatedSessionService authenticatedSessionService;
+
     @Test
     void simultaneousUnlocksWithSameCookie_createOnlyOneReplacement()
             throws Exception {
@@ -129,6 +134,9 @@ class ParentUnlockConcurrencyTest {
         when(jwtService.generateAccessToken(any(), anySet(), any(), any()))
                 .thenReturn("replacement-access");
         when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+        when(authenticatedSessionService.createOrganizationSession(any(), any(), any()))
+                .thenAnswer(invocation -> AuthenticatedSession.organizationUser(
+                        invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
 
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);

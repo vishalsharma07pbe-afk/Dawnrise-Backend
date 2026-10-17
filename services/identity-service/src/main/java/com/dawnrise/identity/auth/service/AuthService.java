@@ -15,7 +15,11 @@ public interface AuthService {
             String rawRefreshToken
     );
 
-    AuthenticationResult unlockParent(String rawRefreshToken, String password);
+    AuthenticationResult unlockSession(String rawRefreshToken, String password);
+
+    default AuthenticationResult unlockParent(String rawRefreshToken, String password) {
+        return unlockSession(rawRefreshToken, password);
+    }
 
     void logout(
             String rawRefreshToken

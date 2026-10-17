@@ -6,10 +6,14 @@ import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.platform.auth.refreshtoken.config.PlatformRefreshTokenProperties;
 import com.dawnrise.identity.platform.auth.refreshtoken.entity.PlatformRefreshToken;
 import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenRotationResult;
+import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenCreationResult;
+import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenSession;
 import com.dawnrise.identity.platform.auth.refreshtoken.repository.PlatformRefreshTokenRepository;
 import com.dawnrise.identity.platform.user.entity.PlatformUser;
 import com.dawnrise.identity.platform.user.enums.PlatformUserStatus;
 import com.dawnrise.identity.platform.user.repository.PlatformUserRepository;
+import com.dawnrise.identity.auth.model.IdentityType;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,22 +32,31 @@ public class PlatformRefreshTokenServiceImpl
     private final RefreshTokenCodec tokenCodec;
     private final PlatformRefreshTokenProperties tokenProperties;
     private final PlatformUserRepository platformUserRepository;
+    private final AuthenticatedSessionService authenticatedSessionService;
 
     public PlatformRefreshTokenServiceImpl(
             PlatformRefreshTokenRepository refreshTokenRepository,
             RefreshTokenCodec tokenCodec,
             PlatformRefreshTokenProperties tokenProperties,
-            PlatformUserRepository platformUserRepository
+            PlatformUserRepository platformUserRepository,
+            AuthenticatedSessionService authenticatedSessionService
     ) {
         this.refreshTokenRepository = refreshTokenRepository;
         this.tokenCodec = tokenCodec;
         this.tokenProperties = tokenProperties;
         this.platformUserRepository = platformUserRepository;
+        this.authenticatedSessionService = authenticatedSessionService;
     }
 
     @Override
     @Transactional
     public String createRefreshToken(Long platformUserId) {
+        return createRefreshTokenSession(platformUserId).rawRefreshToken();
+    }
+
+    @Override
+    @Transactional
+    public PlatformRefreshTokenCreationResult createRefreshTokenSession(Long platformUserId) {
         PlatformUser platformUser = platformUserRepository
                 .findById(platformUserId)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -61,15 +74,16 @@ public class PlatformRefreshTokenServiceImpl
                 tokenProperties.getAbsoluteSessionLifetime()
         );
 
+        UUID tokenFamilyId = UUID.randomUUID();
         refreshTokenRepository.save(new PlatformRefreshToken(
                 platformUserId,
-                UUID.randomUUID(),
+                tokenFamilyId,
                 tokenHash,
                 currentTime.plus(tokenProperties.getExpiration()),
                 familyExpiresAt
         ));
 
-        return rawToken;
+        return new PlatformRefreshTokenCreationResult(rawToken, tokenFamilyId);
     }
 
     @Override
@@ -95,6 +109,7 @@ public class PlatformRefreshTokenServiceImpl
             if (existingToken.getReplacedByTokenHash() != null) {
                 revokeTokenFamily(
                         existingToken.getTokenFamilyId(),
+                        existingToken.getPlatformUserId(),
                         currentTime
                 );
             }
@@ -103,13 +118,14 @@ public class PlatformRefreshTokenServiceImpl
         }
 
         if (existingToken.isExpired(currentTime)) {
-            existingToken.revoke(currentTime);
+            revokeTokenFamily(existingToken.getTokenFamilyId(), existingToken.getPlatformUserId(), currentTime);
             throw invalidToken();
         }
 
         if (existingToken.isFamilyExpired(currentTime)) {
             revokeTokenFamily(
                     existingToken.getTokenFamilyId(),
+                    existingToken.getPlatformUserId(),
                     currentTime
             );
             throw invalidToken();
@@ -122,6 +138,7 @@ public class PlatformRefreshTokenServiceImpl
         if (platformUser.getStatus() != PlatformUserStatus.ACTIVE) {
             revokeTokenFamily(
                     existingToken.getTokenFamilyId(),
+                    existingToken.getPlatformUserId(),
                     currentTime
             );
             throw invalidToken();
@@ -151,7 +168,8 @@ public class PlatformRefreshTokenServiceImpl
 
         return new PlatformRefreshTokenRotationResult(
                 platformUser.getId(),
-                replacementRawToken
+                replacementRawToken,
+                existingToken.getTokenFamilyId()
         );
     }
 
@@ -172,8 +190,41 @@ public class PlatformRefreshTokenServiceImpl
 
         refreshTokenRepository.findByTokenHash(tokenHash)
                 .ifPresent(token ->
-                        token.revoke(OffsetDateTime.now())
+                        revokeTokenFamily(token.getTokenFamilyId(), token.getPlatformUserId(), OffsetDateTime.now())
                 );
+    }
+
+    @Override
+    @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
+    public PlatformRefreshTokenSession resolveRefreshTokenSession(String rawRefreshToken) {
+        String tokenHash;
+        try {
+            tokenHash = tokenCodec.hash(rawRefreshToken);
+        } catch (IllegalArgumentException exception) {
+            throw invalidToken();
+        }
+        PlatformRefreshToken token = refreshTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(this::invalidToken);
+        OffsetDateTime now = OffsetDateTime.now();
+        if (token.isRevoked()) {
+            if (token.getReplacedByTokenHash() != null) {
+                revokeTokenFamily(token.getTokenFamilyId(), token.getPlatformUserId(), now);
+            }
+            throw invalidToken();
+        }
+
+        if (token.isExpired(now) || token.isFamilyExpired(now)) {
+            revokeTokenFamily(token.getTokenFamilyId(), token.getPlatformUserId(), now);
+            throw invalidToken();
+        }
+        PlatformUser user = platformUserRepository.findById(token.getPlatformUserId())
+                .filter(candidate -> candidate.getStatus() == PlatformUserStatus.ACTIVE)
+                .orElse(null);
+        if (user == null) {
+            revokeTokenFamily(token.getTokenFamilyId(), token.getPlatformUserId(), now);
+            throw invalidToken();
+        }
+        return new PlatformRefreshTokenSession(user.getId(), token.getTokenFamilyId());
     }
 
     @Override
@@ -187,10 +238,14 @@ public class PlatformRefreshTokenServiceImpl
 
         OffsetDateTime currentTime = OffsetDateTime.now();
         activeTokens.forEach(token -> token.revoke(currentTime));
+        authenticatedSessionService.retireAllForPlatformUser(platformUserId, currentTime);
     }
 
-    private void revokeTokenFamily(
+    @Override
+    @Transactional
+    public void revokeTokenFamily(
             UUID tokenFamilyId,
+            Long platformUserId,
             OffsetDateTime revokedAt
     ) {
         List<PlatformRefreshToken> activeFamilyTokens =
@@ -200,6 +255,12 @@ public class PlatformRefreshTokenServiceImpl
                         );
 
         activeFamilyTokens.forEach(token -> token.revoke(revokedAt));
+        authenticatedSessionService.retireIfPresent(
+                tokenFamilyId,
+                IdentityType.PLATFORM_USER,
+                platformUserId,
+                revokedAt
+        );
     }
 
     private InvalidRefreshTokenException invalidToken() {

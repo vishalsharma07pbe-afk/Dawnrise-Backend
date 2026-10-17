@@ -10,7 +10,7 @@ import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSessionLifetime
 import com.dawnrise.identity.auth.refreshtoken.policy.RefreshTokenSessionLifetimePolicy;
 import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository;
 import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
-import com.dawnrise.identity.auth.parentsession.repository.ParentSessionRepository;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.enums.UserStatus;
@@ -34,22 +34,21 @@ public class RefreshTokenServiceImpl
     private final RefreshTokenProperties tokenProperties;
     private final RefreshTokenSessionLifetimePolicy sessionLifetimePolicy;
     private final UserRepository userRepository;
-    private final ParentSessionRepository parentSessionRepository;
-
+    private final AuthenticatedSessionService authenticatedSessionService;
     public RefreshTokenServiceImpl(
             RefreshTokenRepository refreshTokenRepository,
             RefreshTokenCodec tokenCodec,
             RefreshTokenProperties tokenProperties,
             RefreshTokenSessionLifetimePolicy sessionLifetimePolicy,
             UserRepository userRepository,
-            ParentSessionRepository parentSessionRepository
+            AuthenticatedSessionService authenticatedSessionService
     ) {
         this.refreshTokenRepository = refreshTokenRepository;
         this.tokenCodec = tokenCodec;
         this.tokenProperties = tokenProperties;
         this.sessionLifetimePolicy = sessionLifetimePolicy;
         this.userRepository = userRepository;
-        this.parentSessionRepository = parentSessionRepository;
+        this.authenticatedSessionService = authenticatedSessionService;
     }
 
     @Override
@@ -128,6 +127,7 @@ public class RefreshTokenServiceImpl
                     != null) {
                 revokeTokenFamily(
                         existingToken.getTokenFamilyId(),
+                        existingToken.getUserId(),
                         currentTime
                 );
             }
@@ -138,6 +138,7 @@ public class RefreshTokenServiceImpl
         if (existingToken.isExpired(currentTime)) {
             // Expired individual tokens cannot be rotated.
             existingToken.revoke(currentTime);
+            revokeTokenFamily(existingToken.getTokenFamilyId(), existingToken.getUserId(), currentTime);
             throw invalidToken();
         }
 
@@ -145,6 +146,7 @@ public class RefreshTokenServiceImpl
             // Absolute session lifetime ends the whole token family.
             revokeTokenFamily(
                     existingToken.getTokenFamilyId(),
+                    existingToken.getUserId(),
                     currentTime
             );
 
@@ -159,6 +161,7 @@ public class RefreshTokenServiceImpl
             // Status changes invalidate the whole session family.
             revokeTokenFamily(
                     existingToken.getTokenFamilyId(),
+                    existingToken.getUserId(),
                     currentTime
             );
 
@@ -211,7 +214,7 @@ public class RefreshTokenServiceImpl
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
     public RefreshTokenSession resolveRefreshTokenSession(String rawRefreshToken) {
         String tokenHash;
         try {
@@ -223,13 +226,24 @@ public class RefreshTokenServiceImpl
         RefreshToken token = refreshTokenRepository.findByTokenHash(tokenHash)
                 .orElseThrow(this::invalidToken);
         OffsetDateTime currentTime = OffsetDateTime.now();
-        if (token.isRevoked() || token.isExpired(currentTime) || token.isFamilyExpired(currentTime)) {
+        if (token.isRevoked()) {
+            if (token.getReplacedByTokenHash() != null) {
+                revokeTokenFamily(token.getTokenFamilyId(), token.getUserId(), currentTime);
+            }
+            throw invalidToken();
+        }
+
+        if (token.isExpired(currentTime) || token.isFamilyExpired(currentTime)) {
+            revokeTokenFamily(token.getTokenFamilyId(), token.getUserId(), currentTime);
             throw invalidToken();
         }
 
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(this::invalidToken);
-        if (user.getStatus() != UserStatus.ACTIVE) throw invalidToken();
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            revokeTokenFamily(token.getTokenFamilyId(), token.getUserId(), currentTime);
+            throw invalidToken();
+        }
 
         return new RefreshTokenSession(token.getUserId(), token.getTokenFamilyId());
     }
@@ -254,7 +268,7 @@ public class RefreshTokenServiceImpl
         }
 
         refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(token ->
-                revokeTokenFamily(token.getTokenFamilyId(), OffsetDateTime.now())
+                revokeTokenFamily(token.getTokenFamilyId(), token.getUserId(), OffsetDateTime.now())
         );
     }
 
@@ -274,12 +288,14 @@ public class RefreshTokenServiceImpl
                 token.revoke(currentTime)
         );
 
-        parentSessionRepository.findAllByUserIdForUpdate(userId)
-                .forEach(session -> session.lock(currentTime));
+        authenticatedSessionService.retireAllForOrganizationUser(userId, currentTime);
     }
 
-    private void revokeTokenFamily(
+    @Override
+    @Transactional
+    public void revokeTokenFamily(
             UUID tokenFamilyId,
+            Long userId,
             OffsetDateTime revokedAt
     ) {
         List<RefreshToken> activeFamilyTokens =
@@ -292,8 +308,12 @@ public class RefreshTokenServiceImpl
                 token.revoke(revokedAt)
         );
 
-        parentSessionRepository.findByIdForUpdate(tokenFamilyId)
-                .ifPresent(session -> session.lock(revokedAt));
+        authenticatedSessionService.retireIfPresent(
+                tokenFamilyId,
+                com.dawnrise.identity.auth.model.IdentityType.ORGANIZATION_USER,
+                userId,
+                revokedAt
+        );
     }
 
     private InvalidRefreshTokenException invalidToken() {

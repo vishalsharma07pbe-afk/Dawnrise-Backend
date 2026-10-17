@@ -39,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Import({GlobalExceptionHandler.class, SecurityConfig.class})
 class ParentSessionControllerTest {
+    @MockitoBean
+    private com.dawnrise.identity.auth.session.service.AuthenticatedSessionService authenticatedSessionService;
 
     @Autowired
     private MockMvc mockMvc;

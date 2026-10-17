@@ -10,6 +10,7 @@ import com.dawnrise.identity.platform.user.entity.PlatformUser;
 import com.dawnrise.identity.platform.user.enums.PlatformRole;
 import com.dawnrise.identity.platform.user.enums.PlatformUserStatus;
 import com.dawnrise.identity.platform.user.repository.PlatformUserRepository;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,8 @@ class PlatformRefreshTokenServiceImplTest {
     private RefreshTokenCodec tokenCodec;
     @Mock
     private PlatformUserRepository platformUserRepository;
+    @Mock
+    private AuthenticatedSessionService authenticatedSessionService;
 
     private PlatformRefreshTokenServiceImpl service;
 
@@ -51,7 +54,8 @@ class PlatformRefreshTokenServiceImplTest {
                 refreshTokenRepository,
                 tokenCodec,
                 properties,
-                platformUserRepository
+                platformUserRepository,
+                authenticatedSessionService
         );
     }
 
@@ -141,6 +145,69 @@ class PlatformRefreshTokenServiceImplTest {
         );
 
         assertTrue(activeFamilyToken.isRevoked());
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(familyId),
+                eq(com.dawnrise.identity.auth.model.IdentityType.PLATFORM_USER),
+                eq(42L),
+                any(OffsetDateTime.class)
+        );
+    }
+
+    @Test
+    void revokeRefreshToken_withoutBackfilledSession_remainsIdempotent() {
+        UUID familyId = UUID.randomUUID();
+        PlatformRefreshToken token = new PlatformRefreshToken(
+                42L,
+                familyId,
+                "token-hash",
+                OffsetDateTime.now().plusHours(1),
+                OffsetDateTime.now().plusDays(30)
+        );
+        when(tokenCodec.hash("raw-token")).thenReturn("token-hash");
+        when(refreshTokenRepository.findByTokenHash("token-hash"))
+                .thenReturn(Optional.of(token));
+        when(refreshTokenRepository.findAllByTokenFamilyIdAndRevokedAtIsNull(familyId))
+                .thenReturn(List.of(token));
+
+        service.revokeRefreshToken("raw-token");
+
+        assertTrue(token.isRevoked());
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(familyId),
+                eq(com.dawnrise.identity.auth.model.IdentityType.PLATFORM_USER),
+                eq(42L),
+                any(OffsetDateTime.class)
+        );
+    }
+
+    @Test
+    void resolveExpiredToken_retiresIfPresentAndStillReturnsInvalidRefreshToken() {
+        UUID familyId = UUID.randomUUID();
+        PlatformRefreshToken token = new PlatformRefreshToken(
+                42L,
+                familyId,
+                "token-hash",
+                OffsetDateTime.now().minusSeconds(1),
+                OffsetDateTime.now().plusDays(30)
+        );
+        when(tokenCodec.hash("raw-token")).thenReturn("token-hash");
+        when(refreshTokenRepository.findByTokenHash("token-hash"))
+                .thenReturn(Optional.of(token));
+        when(refreshTokenRepository.findAllByTokenFamilyIdAndRevokedAtIsNull(familyId))
+                .thenReturn(List.of(token));
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("raw-token")
+        );
+
+        assertTrue(token.isRevoked());
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(familyId),
+                eq(com.dawnrise.identity.auth.model.IdentityType.PLATFORM_USER),
+                eq(42L),
+                any(OffsetDateTime.class)
+        );
     }
 
     private static PlatformUser user(PlatformUserStatus status) {
