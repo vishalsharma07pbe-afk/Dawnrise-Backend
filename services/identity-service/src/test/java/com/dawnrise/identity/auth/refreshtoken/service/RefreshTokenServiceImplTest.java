@@ -4,6 +4,7 @@ import com.dawnrise.identity.auth.refreshtoken.config.RefreshTokenProperties;
 import com.dawnrise.identity.auth.refreshtoken.entity.RefreshToken;
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 import com.dawnrise.identity.auth.refreshtoken.policy.RefreshTokenSessionLifetimePolicy;
 import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository;
 import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
@@ -475,6 +476,111 @@ class RefreshTokenServiceImplTest {
     }
 
     @Test
+    void resolveRefreshTokenSession_whenCookieMissingOrBlank_throwsInvalidToken() {
+        when(tokenCodec.hash(null)).thenThrow(new IllegalArgumentException());
+        when(tokenCodec.hash(" ")).thenThrow(new IllegalArgumentException());
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession(null)
+        );
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession(" ")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenCookieMalformed_throwsInvalidToken() {
+        when(tokenCodec.hash("malformed"))
+                .thenThrow(new IllegalArgumentException());
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("malformed")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenCookieUnknown_throwsInvalidToken() {
+        when(tokenCodec.hash("unknown")).thenReturn("unknown-hash");
+        when(refreshTokenRepository.findByTokenHash("unknown-hash"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("unknown")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenTokenRevoked_throwsInvalidToken() {
+        RefreshToken token = validRefreshToken();
+        token.revoke(OffsetDateTime.now());
+        stubResolvedToken(token);
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("raw-token")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenTokenExpired_throwsInvalidToken() {
+        RefreshToken token = refreshToken(
+                OffsetDateTime.now().minusSeconds(1),
+                OffsetDateTime.now().plusDays(90)
+        );
+        stubResolvedToken(token);
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("raw-token")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenFamilyExpired_throwsInvalidToken() {
+        RefreshToken token = refreshToken(
+                OffsetDateTime.now().plusHours(1),
+                OffsetDateTime.now().minusSeconds(1)
+        );
+        stubResolvedToken(token);
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("raw-token")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenUserInactive_throwsInvalidToken() {
+        RefreshToken token = validRefreshToken();
+        stubResolvedToken(token);
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user(UserStatus.SUSPENDED)));
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.resolveRefreshTokenSession("raw-token")
+        );
+    }
+
+    @Test
+    void resolveRefreshTokenSession_whenValid_returnsCookieIdentity() {
+        RefreshToken token = validRefreshToken();
+        stubResolvedToken(token);
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user(UserStatus.ACTIVE)));
+
+        RefreshTokenSession session =
+                service.resolveRefreshTokenSession("raw-token");
+
+        assertEquals(10L, session.userId());
+        assertEquals(token.getTokenFamilyId(), session.tokenFamilyId());
+    }
+
+    @Test
     void revokeRefreshToken_whenBlank_doesNothing() {
         service.revokeRefreshToken(" ");
 
@@ -593,6 +699,19 @@ class RefreshTokenServiceImplTest {
                 expiresAt,
                 familyExpiresAt
         );
+    }
+
+    private RefreshToken validRefreshToken() {
+        return refreshToken(
+                OffsetDateTime.now().plusHours(1),
+                OffsetDateTime.now().plusDays(90)
+        );
+    }
+
+    private void stubResolvedToken(RefreshToken token) {
+        when(tokenCodec.hash("raw-token")).thenReturn("token-hash");
+        when(refreshTokenRepository.findByTokenHash("token-hash"))
+                .thenReturn(Optional.of(token));
     }
 
     private static User user(UserStatus status) {

@@ -249,7 +249,10 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthenticationResult unlockParent(Long userId, UUID sessionId, String password) {
+    public AuthenticationResult unlockParent(String rawRefreshToken, String password) {
+        var session = refreshTokenService.resolveRefreshTokenSession(rawRefreshToken);
+        Long userId = session.userId();
+        UUID sessionId = session.tokenFamilyId();
         User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!user.getRoles().contains(UserRole.PARENT)) throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
         OffsetDateTime authenticatedAt = parentSessionService.verifyPassword(sessionId, userId, password);

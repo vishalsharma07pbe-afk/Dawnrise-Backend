@@ -4,6 +4,7 @@ import com.dawnrise.identity.auth.refreshtoken.config.RefreshTokenProperties;
 import com.dawnrise.identity.auth.refreshtoken.entity.RefreshToken;
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSessionLifetime;
 import com.dawnrise.identity.auth.refreshtoken.policy.RefreshTokenSessionLifetimePolicy;
@@ -207,6 +208,30 @@ public class RefreshTokenServiceImpl
                 replacementRawToken,
                 existingToken.getTokenFamilyId()
         );
+    }
+
+    @Override
+    @Transactional
+    public RefreshTokenSession resolveRefreshTokenSession(String rawRefreshToken) {
+        String tokenHash;
+        try {
+            tokenHash = tokenCodec.hash(rawRefreshToken);
+        } catch (IllegalArgumentException exception) {
+            throw invalidToken();
+        }
+
+        RefreshToken token = refreshTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(this::invalidToken);
+        OffsetDateTime currentTime = OffsetDateTime.now();
+        if (token.isRevoked() || token.isExpired(currentTime) || token.isFamilyExpired(currentTime)) {
+            throw invalidToken();
+        }
+
+        User user = userRepository.findById(token.getUserId())
+                .orElseThrow(this::invalidToken);
+        if (user.getStatus() != UserStatus.ACTIVE) throw invalidToken();
+
+        return new RefreshTokenSession(token.getUserId(), token.getTokenFamilyId());
     }
 
     @Override
