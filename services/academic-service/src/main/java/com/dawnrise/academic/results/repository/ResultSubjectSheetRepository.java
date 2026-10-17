@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 
 public interface ResultSubjectSheetRepository
         extends JpaRepository<ResultSubjectSheet, Long> {
@@ -25,6 +26,25 @@ public interface ResultSubjectSheetRepository
             Long id,
             Long organizationId
     );
+
+    List<ResultSubjectSheet>
+    findAllByOrganizationIdAndAcademicYearIdAndExaminationIdAndGradeLevelIdAndSectionIdOrderByScheduledAssessmentIdAsc(
+            Long organizationId, Long academicYearId, Long examinationId,
+            Long gradeLevelId, Long sectionId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT sheet FROM ResultSubjectSheet sheet
+            WHERE sheet.organizationId=:organizationId AND sheet.academicYearId=:academicYearId
+              AND sheet.examinationId=:examinationId AND sheet.gradeLevelId=:gradeLevelId
+              AND sheet.sectionId=:sectionId ORDER BY sheet.id ASC
+            """)
+    List<ResultSubjectSheet> findScopeForUpdate(
+            @Param("organizationId") Long organizationId,
+            @Param("academicYearId") Long academicYearId,
+            @Param("examinationId") Long examinationId,
+            @Param("gradeLevelId") Long gradeLevelId,
+            @Param("sectionId") Long sectionId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

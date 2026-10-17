@@ -170,4 +170,6 @@ public enum PermissionCode {
     RESULT_VIEW,
     RESULT_MARK_ENTRY,
     RESULT_REVIEW,
+    RESULT_PUBLISH,
+    RESULT_PUBLISHED_VIEW_SELF,
 }

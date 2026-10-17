@@ -2,6 +2,7 @@ package com.dawnrise.academic.results.exception;
 
 import com.dawnrise.academic.common.exception.ApiErrorResponse;
 import com.dawnrise.academic.results.controller.ResultSubjectSheetController;
+import com.dawnrise.academic.results.controller.ResultPublicationController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.OffsetDateTime;
 
-@RestControllerAdvice(assignableTypes = ResultSubjectSheetController.class)
+@RestControllerAdvice(assignableTypes = {ResultSubjectSheetController.class, ResultPublicationController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ResultExceptionHandler {
     @ExceptionHandler(InvalidResultException.class)
