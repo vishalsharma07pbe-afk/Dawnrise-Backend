@@ -17,6 +17,7 @@ import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
 import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 import com.dawnrise.identity.auth.security.JwtService;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.permission.enums.PermissionCode;
@@ -503,11 +504,10 @@ class AuthServiceImplTest {
         )).thenReturn("replacement-access");
         when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
 
-        AuthenticationResult result = authService.unlockParent(
-                10L,
-                oldSessionId,
-                "secret"
-        );
+        when(refreshTokenService.resolveRefreshTokenSession("old-refresh"))
+                .thenReturn(new RefreshTokenSession(10L, oldSessionId));
+
+        AuthenticationResult result = authService.unlockParent("old-refresh", "secret");
 
         assertEquals("replacement-access", result.response().getAccessToken());
         assertEquals("replacement-refresh", result.rawRefreshToken());
@@ -523,6 +523,70 @@ class AuthServiceImplTest {
                 10L,
                 authenticatedAt
         );
+    }
+
+    @Test
+    void parentCanRetryUnlockAfterEnteringWrongPassword() {
+        UUID oldSessionId = UUID.randomUUID();
+        UUID replacementSessionId = UUID.randomUUID();
+        OffsetDateTime authenticatedAt = OffsetDateTime.now();
+        User parent = new User(1L, "parent01", "Parent", Set.of(UserRole.PARENT));
+        ReflectionTestUtils.setField(parent, "id", 10L);
+        parent.setStatus(UserStatus.ACTIVE);
+        ParentSession replacement = new ParentSession(replacementSessionId, 10L, authenticatedAt);
+
+        when(refreshTokenService.resolveRefreshTokenSession("old-refresh"))
+                .thenReturn(new RefreshTokenSession(10L, oldSessionId));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(parent));
+        when(parentSessionService.verifyPassword(oldSessionId, 10L, "wrong"))
+                .thenThrow(new InvalidCredentialsException("Password is incorrect"));
+        when(parentSessionService.verifyPassword(oldSessionId, 10L, "secret"))
+                .thenReturn(authenticatedAt);
+        when(refreshTokenService.createRefreshTokenSession(10L))
+                .thenReturn(new RefreshTokenCreationResult("replacement-refresh", replacementSessionId));
+        when(parentSessionService.create(replacementSessionId, 10L, authenticatedAt))
+                .thenReturn(replacement);
+        when(permissionService.getActivePermissionsForRoles(parent.getRoles()))
+                .thenReturn(ACTIVE_PERMISSIONS);
+        when(jwtService.generateAccessToken(parent, ACTIVE_PERMISSIONS, replacementSessionId, authenticatedAt))
+                .thenReturn("replacement-access");
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+
+        assertThrows(InvalidCredentialsException.class,
+                () -> authService.unlockParent("old-refresh", "wrong"));
+        verify(refreshTokenService, never()).revokeAllForUser(anyLong());
+
+        AuthenticationResult result = authService.unlockParent("old-refresh", "secret");
+
+        assertEquals("replacement-access", result.response().getAccessToken());
+        verify(refreshTokenService).revokeAllForUser(10L);
+        verify(refreshTokenService).createRefreshTokenSession(10L);
+    }
+
+    @Test
+    void unlockParent_whenRefreshCookieBelongsToStudent_rejectsParentAuthority() {
+        UUID studentSessionId = UUID.randomUUID();
+        User student = new User(
+                1L,
+                "student01",
+                "Student",
+                Set.of(UserRole.STUDENT)
+        );
+        ReflectionTestUtils.setField(student, "id", 20L);
+        student.setStatus(UserStatus.ACTIVE);
+
+        when(refreshTokenService.resolveRefreshTokenSession("student-refresh"))
+                .thenReturn(new RefreshTokenSession(20L, studentSessionId));
+        when(userRepository.findById(20L)).thenReturn(Optional.of(student));
+
+        assertThrows(
+                InvalidCredentialsException.class,
+                () -> authService.unlockParent("student-refresh", "secret")
+        );
+
+        verify(parentSessionService, never())
+                .verifyPassword(any(), anyLong(), anyString());
+        verify(refreshTokenService, never()).revokeAllForUser(anyLong());
     }
 
     @Test

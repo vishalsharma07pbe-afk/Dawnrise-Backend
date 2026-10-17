@@ -15,7 +15,7 @@ public interface AuthService {
             String rawRefreshToken
     );
 
-    AuthenticationResult unlockParent(Long userId, UUID sessionId, String password);
+    AuthenticationResult unlockParent(String rawRefreshToken, String password);
 
     void logout(
             String rawRefreshToken

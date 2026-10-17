@@ -2,6 +2,7 @@ package com.dawnrise.identity.auth.refreshtoken.service;
 
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
+import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 
 public interface RefreshTokenService {
 
@@ -14,6 +15,8 @@ public interface RefreshTokenService {
     RefreshTokenRotationResult rotateRefreshToken(
             String rawRefreshToken
     );
+
+    RefreshTokenSession resolveRefreshTokenSession(String rawRefreshToken);
 
     void revokeRefreshToken(
             String rawRefreshToken
