@@ -19,12 +19,11 @@ import com.dawnrise.identity.organization.provisioning.security.InternalServiceS
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
-import com.dawnrise.identity.auth.parentsession.security.ParentSessionFilter;
-import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import com.dawnrise.identity.auth.session.security.AuthenticatedSessionFilter;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
-import org.springframework.beans.factory.ObjectProvider;
 
 @Configuration
 @EnableMethodSecurity
@@ -62,7 +61,7 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
             InternalServiceAuthenticationFilter internalServiceFilter,
-            ParentSessionFilter parentSessionFilter
+            AuthenticatedSessionFilter authenticatedSessionFilter
     ) throws Exception {
 
         http
@@ -82,7 +81,13 @@ public class SecurityConfig {
 
                         .requestMatchers(
                                 HttpMethod.POST,
-                                "/api/v1/platform/auth/refresh"
+                                "/api/v1/platform/auth/refresh",
+                                "/api/v1/platform/auth/session/unlock"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/platform/auth/session/status"
                         ).permitAll()
 
                         .requestMatchers(
@@ -151,8 +156,12 @@ public class SecurityConfig {
 
                         .requestMatchers(
                                 HttpMethod.POST,
-                                "/api/v1/auth/parent-session/unlock"
+                                "/api/v1/auth/parent-session/unlock",
+                                "/api/v1/auth/session/unlock"
                         ).permitAll()
+
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/session/status")
+                        .permitAll()
 
                         .requestMatchers(
                                 HttpMethod.POST,
@@ -168,7 +177,7 @@ public class SecurityConfig {
                         internalServiceFilter,
                         BearerTokenAuthenticationFilter.class
                 )
-                .addFilterAfter(parentSessionFilter, BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(authenticatedSessionFilter, BearerTokenAuthenticationFilter.class)
 
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
@@ -182,12 +191,16 @@ public class SecurityConfig {
     }
 
     @Bean
-    ParentSessionFilter parentSessionFilter(ObjectProvider<ParentSessionService> service) { return new ParentSessionFilter(service.getIfAvailable()); }
+    AuthenticatedSessionFilter authenticatedSessionFilter(
+            AuthenticatedSessionService service
+    ) {
+        return new AuthenticatedSessionFilter(service);
+    }
 
     @Bean
-    FilterRegistrationBean<ParentSessionFilter>
-    disableParentSessionFilterRegistration(ParentSessionFilter filter) {
-        FilterRegistrationBean<ParentSessionFilter> registration =
+    FilterRegistrationBean<AuthenticatedSessionFilter>
+    disableAuthenticatedSessionFilterRegistration(AuthenticatedSessionFilter filter) {
+        FilterRegistrationBean<AuthenticatedSessionFilter> registration =
                 new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;

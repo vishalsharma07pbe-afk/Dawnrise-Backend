@@ -3,6 +3,8 @@ package com.dawnrise.identity.auth.refreshtoken.service;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 public interface RefreshTokenService {
 
@@ -25,4 +27,6 @@ public interface RefreshTokenService {
     void revokeAllForUser(
             Long userId
     );
+
+    void revokeTokenFamily(UUID tokenFamilyId, Long userId, OffsetDateTime revokedAt);
 }

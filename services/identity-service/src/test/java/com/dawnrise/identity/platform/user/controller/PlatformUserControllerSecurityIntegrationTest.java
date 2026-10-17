@@ -29,6 +29,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class
 })
 class PlatformUserControllerSecurityIntegrationTest {
+    @MockitoBean
+    private com.dawnrise.identity.auth.session.service.AuthenticatedSessionService authenticatedSessionService;
 
     @Autowired
     private MockMvc mockMvc;
@@ -159,7 +161,7 @@ class PlatformUserControllerSecurityIntegrationTest {
                                 "Authorization",
                                 "Bearer legacy-org-token"
                         ))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(platformUserService);
     }
@@ -174,6 +176,7 @@ class PlatformUserControllerSecurityIntegrationTest {
                 .header("alg", "none")
                 .issuer("dawnrise-identity-service")
                 .subject("42")
+                .claim("sessionId", java.util.UUID.randomUUID().toString())
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(900))
                 .claim("username", "employee01")

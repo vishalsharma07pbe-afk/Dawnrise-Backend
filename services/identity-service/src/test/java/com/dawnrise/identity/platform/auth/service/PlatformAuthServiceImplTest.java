@@ -6,6 +6,9 @@ import com.dawnrise.identity.auth.lockout.LoginLockoutProperties;
 import com.dawnrise.identity.auth.lockout.LoginLockoutService;
 import com.dawnrise.identity.auth.security.JwtService;
 import com.dawnrise.identity.platform.audit.service.PlatformSecurityAuditService;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
+import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
+import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenCreationResult;
 import com.dawnrise.identity.platform.auth.dto.PlatformLoginRequest;
 import com.dawnrise.identity.platform.auth.model.PlatformAuthenticationResult;
 import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenRotationResult;
@@ -25,6 +28,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 import java.util.Optional;
 import java.util.Set;
 
@@ -46,6 +51,8 @@ class PlatformAuthServiceImplTest {
     private PlatformPermissionService permissionService;
     @Mock
     private PlatformSecurityAuditService auditService;
+    @Mock
+    private AuthenticatedSessionService authenticatedSessionService;
 
     private PlatformAuthServiceImpl authService;
 
@@ -72,8 +79,20 @@ class PlatformAuthServiceImplTest {
                 refreshTokenService,
                 new LoginLockoutService(lockoutProperties),
                 permissionService,
-                auditService
+                auditService,
+                authenticatedSessionService
         );
+        lenient().when(refreshTokenService.createRefreshTokenSession(anyLong()))
+                .thenAnswer(invocation -> new PlatformRefreshTokenCreationResult(
+                        "refresh-token", UUID.randomUUID()));
+        lenient().when(authenticatedSessionService.createPlatformSession(any(), anyLong(), any()))
+                .thenAnswer(invocation -> AuthenticatedSession.platformUser(
+                        invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
+        lenient().when(authenticatedSessionService.validateAndTouch(any(), any(), anyLong()))
+                .thenReturn(new com.dawnrise.identity.auth.session.dto.AuthenticatedSessionValidationResponse(
+                        true, OffsetDateTime.now()));
+        lenient().when(jwtService.generatePlatformAccessToken(any(), anySet(), any(), any()))
+                .thenReturn("access-token");
     }
 
     @Test
@@ -87,12 +106,11 @@ class PlatformAuthServiceImplTest {
                 .thenReturn(Optional.of(user));
         when(passwordEncoder.matches("Employee@123", "encoded-password"))
                 .thenReturn(true);
-        when(refreshTokenService.createRefreshToken(42L))
-                .thenReturn("raw-refresh");
+        when(refreshTokenService.createRefreshTokenSession(42L))
+                .thenReturn(new PlatformRefreshTokenCreationResult(
+                        "raw-refresh", UUID.randomUUID()));
         when(permissionService.getActivePermissionsForRoles(user.getRoles()))
                 .thenReturn(permissions);
-        when(jwtService.generatePlatformAccessToken(user, permissions))
-                .thenReturn("access-token");
         when(jwtService.getPlatformAccessTokenExpirationSeconds())
                 .thenReturn(900L);
 
@@ -103,7 +121,7 @@ class PlatformAuthServiceImplTest {
         assertEquals(42L, result.response().platformUserId());
         assertEquals(Set.of("SALES"), result.response().roles());
         assertNotNull(user.getLastLoginAt());
-        verify(refreshTokenService).createRefreshToken(42L);
+        verify(refreshTokenService).createRefreshTokenSession(42L);
     }
 
     @Test

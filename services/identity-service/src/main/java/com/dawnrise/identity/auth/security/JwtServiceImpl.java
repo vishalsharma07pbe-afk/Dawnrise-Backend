@@ -99,6 +99,16 @@ public class JwtServiceImpl implements JwtService {
             PlatformUser platformUser,
             Set<PlatformPermissionCode> permissions
     ) {
+        return generatePlatformAccessToken(platformUser, permissions, null, null);
+    }
+
+    @Override
+    public String generatePlatformAccessToken(
+            PlatformUser platformUser,
+            Set<PlatformPermissionCode> permissions,
+            UUID sessionId,
+            OffsetDateTime authenticatedAt
+    ) {
         Instant issuedAt = Instant.now();
 
         Instant expiresAt = issuedAt.plusSeconds(
@@ -117,7 +127,7 @@ public class JwtServiceImpl implements JwtService {
                 .sorted()
                 .toList();
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .audience(List.of(platformJwtProperties.getAudience()))
                 .subject(platformUser.getId().toString())
@@ -129,8 +139,12 @@ public class JwtServiceImpl implements JwtService {
                 )
                 .claim("username", platformUser.getUsername())
                 .claim("roles", roles)
-                .claim("permissions", permissionCodes)
-                .build();
+                .claim("permissions", permissionCodes);
+        if (sessionId != null) builder.claim("sessionId", sessionId.toString());
+        builder.claim("auth_time", authenticatedAt == null
+                ? issuedAt.getEpochSecond()
+                : authenticatedAt.toEpochSecond());
+        JwtClaimsSet claims = builder.build();
 
         return jwtEncoder
                 .encode(JwtEncoderParameters.from(claims))

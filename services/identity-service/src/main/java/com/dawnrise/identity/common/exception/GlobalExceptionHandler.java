@@ -25,6 +25,8 @@ import com.dawnrise.identity.auth.activation.exception.PasswordMismatchException
 import com.dawnrise.identity.auth.passwordreset.exception.InvalidPasswordResetTokenException;
 import com.dawnrise.identity.auth.refreshtoken.exception.InvalidRefreshTokenException;
 import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedException;
+import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
+import com.dawnrise.identity.auth.session.exception.SessionValidationUnavailableException;
 import com.dawnrise.identity.auth.parentsession.exception.RecentParentAuthenticationRequiredException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningConflictException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningInProgressException;
@@ -555,9 +557,19 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(ParentSessionLockedException.class)
-    public ResponseEntity<ApiErrorResponse> handleParentSessionLocked(ParentSessionLockedException exception, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.LOCKED).body(createErrorResponse(HttpStatus.LOCKED, exception.getMessage(), request.getRequestURI(), Map.of("code", "PARENT_SESSION_LOCKED")));
+    @ExceptionHandler({ParentSessionLockedException.class, AuthenticatedSessionLockedException.class})
+    public ResponseEntity<ApiErrorResponse> handleParentSessionLocked(RuntimeException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.LOCKED).body(createErrorResponse(HttpStatus.LOCKED, exception.getMessage(), request.getRequestURI(), Map.of("code", "SESSION_LOCKED")));
+    }
+
+    @ExceptionHandler(SessionValidationUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleSessionValidationUnavailable(
+            SessionValidationUnavailableException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "code", "SESSION_VALIDATION_UNAVAILABLE",
+                "message", exception.getMessage()
+        ));
     }
 
     @ExceptionHandler(RecentParentAuthenticationRequiredException.class)

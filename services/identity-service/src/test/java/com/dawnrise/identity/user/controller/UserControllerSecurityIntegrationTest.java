@@ -52,6 +52,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class
 })
 class UserControllerSecurityIntegrationTest {
+    @MockitoBean
+    private com.dawnrise.identity.auth.session.service.AuthenticatedSessionService authenticatedSessionService;
 
     private static final String BASE_URL =
             "/api/v1/organizations/{organizationId}/users";
@@ -126,6 +128,7 @@ class UserControllerSecurityIntegrationTest {
                         .issuedAt(Instant.now())
                         .expiresAt(Instant.now().plusSeconds(300))
                         .claim("identityType", "PLATFORM_USER")
+                        .claim("sessionId", java.util.UUID.randomUUID().toString())
                         .claim("organizationId", 1L)
                         .claim("roles", List.of("PLATFORM_SUPER_ADMIN"))
                         .claim("permissions", List.of("USER_VIEW"))
@@ -440,6 +443,8 @@ class UserControllerSecurityIntegrationTest {
         return Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject(subject.toString())
+                .claim("identityType", "ORGANIZATION_USER")
+                .claim("sessionId", java.util.UUID.randomUUID().toString())
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
                 .claim("organizationId", organizationId)

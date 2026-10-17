@@ -28,6 +28,13 @@ public interface JwtService {
             Set<PlatformPermissionCode> permissions
     );
 
+    String generatePlatformAccessToken(
+            PlatformUser platformUser,
+            Set<PlatformPermissionCode> permissions,
+            UUID sessionId,
+            OffsetDateTime authenticatedAt
+    );
+
     long getAccessTokenExpirationSeconds();
 
     long getPlatformAccessTokenExpirationSeconds();

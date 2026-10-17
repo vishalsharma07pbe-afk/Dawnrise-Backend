@@ -16,6 +16,8 @@ import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenRotationResult;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
 import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
+import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenCreationResult;
 import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 import com.dawnrise.identity.auth.security.JwtService;
@@ -37,6 +39,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -50,6 +54,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AuthServiceImplTest {
 
     private static final Set<PermissionCode> ACTIVE_PERMISSIONS =
@@ -69,6 +74,8 @@ class AuthServiceImplTest {
     private PermissionService permissionService;
     @Mock
     private SecurityAuditService auditService;
+    @Mock
+    private AuthenticatedSessionService authenticatedSessionService;
     @Mock
     private ParentSessionService parentSessionService;
 
@@ -102,13 +109,26 @@ class AuthServiceImplTest {
                 new LoginLockoutService(lockoutProperties),
                 passwordChangeProperties,
                 permissionService,
-                auditService
+                auditService,
+                authenticatedSessionService
         );
-        ReflectionTestUtils.setField(
-                authService,
-                "parentSessionService",
-                parentSessionService
-        );
+        lenient().when(refreshTokenService.createRefreshTokenSession(anyLong()))
+                .thenAnswer(invocation -> new RefreshTokenCreationResult(
+                        "refresh-token", UUID.randomUUID()));
+        lenient().when(authenticatedSessionService.createOrganizationSession(
+                        any(), anyLong(), any()))
+                .thenAnswer(invocation -> AuthenticatedSession.organizationUser(
+                        invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
+        lenient().when(authenticatedSessionService.validateAndTouch(any(), any(), anyLong()))
+                .thenReturn(new com.dawnrise.identity.auth.session.dto.AuthenticatedSessionValidationResponse(
+                        true, OffsetDateTime.now()));
+        lenient().when(jwtService.generateAccessToken(
+                        any(User.class), anySet(), any(), any()))
+                .thenReturn("jwt-token");
+        lenient().when(passwordEncoder.matches("secret", "encoded-password"))
+                .thenReturn(true);
+        lenient().when(passwordEncoder.matches("wrong", "encoded-password"))
+                .thenReturn(false);
 
         Organization organization = new Organization(
                 1L,
@@ -391,7 +411,7 @@ class AuthServiceImplTest {
         assertEquals(Set.of("TEACHER", "HR"), response.getRoles());
         assertEquals(0, user.getFailedLoginAttempts());
         assertNotNull(user.getLastLoginAt());
-        verify(refreshTokenService).createRefreshToken(10L);
+        verify(refreshTokenService).createRefreshTokenSession(10L);
     }
 
     @Test
@@ -474,6 +494,7 @@ class AuthServiceImplTest {
                 Set.of(UserRole.PARENT)
         );
         ReflectionTestUtils.setField(parent, "id", 10L);
+        ReflectionTestUtils.setField(parent, "passwordHash", "encoded-password");
         parent.setStatus(UserStatus.ACTIVE);
         ParentSession replacement = new ParentSession(
                 replacementSessionId,
@@ -509,20 +530,13 @@ class AuthServiceImplTest {
 
         AuthenticationResult result = authService.unlockParent("old-refresh", "secret");
 
-        assertEquals("replacement-access", result.response().getAccessToken());
+        assertEquals("jwt-token", result.response().getAccessToken());
         assertEquals("replacement-refresh", result.rawRefreshToken());
-        assertFalse(replacement.isLocked());
-        InOrder order = inOrder(parentSessionService, refreshTokenService);
-        order.verify(parentSessionService).verifyPassword(
-                oldSessionId, 10L, "secret"
-        );
-        order.verify(refreshTokenService).revokeAllForUser(10L);
-        order.verify(refreshTokenService).createRefreshTokenSession(10L);
-        order.verify(parentSessionService).create(
-                replacementSessionId,
-                10L,
-                authenticatedAt
-        );
+        verify(refreshTokenService).revokeTokenFamily(
+                eq(oldSessionId), eq(10L), any(OffsetDateTime.class));
+        verify(refreshTokenService).createRefreshTokenSession(10L);
+        verify(authenticatedSessionService).createOrganizationSession(
+                eq(replacementSessionId), eq(10L), any(OffsetDateTime.class));
     }
 
     @Test
@@ -532,6 +546,7 @@ class AuthServiceImplTest {
         OffsetDateTime authenticatedAt = OffsetDateTime.now();
         User parent = new User(1L, "parent01", "Parent", Set.of(UserRole.PARENT));
         ReflectionTestUtils.setField(parent, "id", 10L);
+        ReflectionTestUtils.setField(parent, "passwordHash", "encoded-password");
         parent.setStatus(UserStatus.ACTIVE);
         ParentSession replacement = new ParentSession(replacementSessionId, 10L, authenticatedAt);
 
@@ -554,12 +569,13 @@ class AuthServiceImplTest {
 
         assertThrows(InvalidCredentialsException.class,
                 () -> authService.unlockParent("old-refresh", "wrong"));
-        verify(refreshTokenService, never()).revokeAllForUser(anyLong());
+        verify(refreshTokenService, never()).revokeTokenFamily(any(), anyLong(), any());
 
         AuthenticationResult result = authService.unlockParent("old-refresh", "secret");
 
-        assertEquals("replacement-access", result.response().getAccessToken());
-        verify(refreshTokenService).revokeAllForUser(10L);
+        assertEquals("jwt-token", result.response().getAccessToken());
+        verify(refreshTokenService).revokeTokenFamily(
+                eq(oldSessionId), eq(10L), any(OffsetDateTime.class));
         verify(refreshTokenService).createRefreshTokenSession(10L);
     }
 

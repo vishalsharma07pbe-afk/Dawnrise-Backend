@@ -67,6 +67,9 @@ security:
   parent-session:
     inactivity-timeout: ${PARENT_SESSION_INACTIVITY_TIMEOUT:15m}
     recent-authentication: ${PARENT_RECENT_AUTHENTICATION:10m}
+  session:
+    inactivity-timeout: ${AUTH_SESSION_INACTIVITY_TIMEOUT:15m}
+    recent-authentication: ${AUTH_RECENT_AUTHENTICATION:10m}
   internal:
     api-key: ${IDENTITY_INTERNAL_API_KEY}
     allowed-service-names:

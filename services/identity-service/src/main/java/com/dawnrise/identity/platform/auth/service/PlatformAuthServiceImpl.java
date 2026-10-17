@@ -4,12 +4,16 @@ import com.dawnrise.identity.auth.exception.AccountNotActiveException;
 import com.dawnrise.identity.auth.exception.InvalidCredentialsException;
 import com.dawnrise.identity.auth.lockout.LoginLockoutService;
 import com.dawnrise.identity.auth.security.JwtService;
+import com.dawnrise.identity.auth.model.IdentityType;
+import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import com.dawnrise.identity.common.exception.ResourceNotFoundException;
 import com.dawnrise.identity.platform.audit.service.PlatformSecurityAuditService;
 import com.dawnrise.identity.platform.auth.dto.PlatformLoginRequest;
 import com.dawnrise.identity.platform.auth.dto.PlatformLoginResponse;
 import com.dawnrise.identity.platform.auth.model.PlatformAuthenticationResult;
 import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenRotationResult;
+import com.dawnrise.identity.platform.auth.refreshtoken.model.PlatformRefreshTokenCreationResult;
 import com.dawnrise.identity.platform.auth.refreshtoken.service.PlatformRefreshTokenService;
 import com.dawnrise.identity.platform.permission.enums.PlatformPermissionCode;
 import com.dawnrise.identity.platform.permission.service.PlatformPermissionService;
@@ -28,6 +32,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.UUID;
 
 @Service
 public class PlatformAuthServiceImpl implements PlatformAuthService {
@@ -42,6 +47,7 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
     private final LoginLockoutService loginLockoutService;
     private final PlatformPermissionService permissionService;
     private final PlatformSecurityAuditService auditService;
+    private final AuthenticatedSessionService authenticatedSessionService;
 
     public PlatformAuthServiceImpl(
             PlatformUserRepository platformUserRepository,
@@ -50,7 +56,8 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
             PlatformRefreshTokenService refreshTokenService,
             LoginLockoutService loginLockoutService,
             PlatformPermissionService permissionService,
-            PlatformSecurityAuditService auditService
+            PlatformSecurityAuditService auditService,
+            AuthenticatedSessionService authenticatedSessionService
     ) {
         this.platformUserRepository = platformUserRepository;
         this.passwordEncoder = passwordEncoder;
@@ -59,6 +66,7 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
         this.loginLockoutService = loginLockoutService;
         this.permissionService = permissionService;
         this.auditService = auditService;
+        this.authenticatedSessionService = authenticatedSessionService;
     }
 
     @Override
@@ -131,9 +139,12 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
         loginLockoutService.recordSuccessfulLogin(platformUser);
         platformUser.setLastLoginAt(currentTime);
 
-        String rawRefreshToken =
-                refreshTokenService.createRefreshToken(
-                        platformUser.getId()
+        PlatformRefreshTokenCreationResult refreshToken =
+                refreshTokenService.createRefreshTokenSession(platformUser.getId());
+        AuthenticatedSession session = authenticatedSessionService.createPlatformSession(
+                        refreshToken.tokenFamilyId(),
+                        platformUser.getId(),
+                        currentTime
                 );
 
         auditService.record(
@@ -147,7 +158,9 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
 
         return createAuthenticationResult(
                 platformUser,
-                rawRefreshToken
+                refreshToken.rawRefreshToken(),
+                refreshToken.tokenFamilyId(),
+                session.getAuthenticatedAt()
         );
     }
 
@@ -176,6 +189,12 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
             );
         }
 
+        OffsetDateTime authenticatedAt = authenticatedSessionService.validateAndTouch(
+                        rotationResult.tokenFamilyId(),
+                        IdentityType.PLATFORM_USER,
+                        platformUser.getId()
+                ).authenticatedAt();
+
         auditService.record(
                 platformUser.getId(),
                 SecurityAuditAction.PLATFORM_REFRESH_TOKEN_ROTATE,
@@ -187,7 +206,38 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
 
         return createAuthenticationResult(
                 platformUser,
-                rotationResult.rawRefreshToken()
+                rotationResult.rawRefreshToken(),
+                rotationResult.tokenFamilyId(),
+                authenticatedAt
+        );
+    }
+
+    @Override
+    @Transactional
+    public PlatformAuthenticationResult unlockSession(String rawRefreshToken, String password) {
+        var refreshSession = refreshTokenService.resolveRefreshTokenSession(rawRefreshToken);
+        PlatformUser platformUser = platformUserRepository.findById(refreshSession.platformUserId())
+                .filter(candidate -> candidate.getStatus() == PlatformUserStatus.ACTIVE)
+                .orElseThrow(this::invalidCredentials);
+        if (platformUser.getPasswordHash() == null
+                || !passwordEncoder.matches(password, platformUser.getPasswordHash())) {
+            throw new InvalidCredentialsException("Password is incorrect");
+        }
+        OffsetDateTime authenticatedAt = OffsetDateTime.now();
+        refreshTokenService.revokeTokenFamily(
+                refreshSession.tokenFamilyId(), platformUser.getId(), authenticatedAt);
+        PlatformRefreshTokenCreationResult replacement =
+                refreshTokenService.createRefreshTokenSession(platformUser.getId());
+        AuthenticatedSession replacementSession = authenticatedSessionService.createPlatformSession(
+                replacement.tokenFamilyId(),
+                platformUser.getId(),
+                authenticatedAt
+        );
+        return createAuthenticationResult(
+                platformUser,
+                replacement.rawRefreshToken(),
+                replacement.tokenFamilyId(),
+                replacementSession.getAuthenticatedAt()
         );
     }
 
@@ -207,18 +257,19 @@ public class PlatformAuthServiceImpl implements PlatformAuthService {
 
     private PlatformAuthenticationResult createAuthenticationResult(
             PlatformUser platformUser,
-            String rawRefreshToken
+            String rawRefreshToken,
+            UUID sessionId,
+            OffsetDateTime authenticatedAt
     ) {
         Set<PlatformPermissionCode> permissions =
                 permissionService.getActivePermissionsForRoles(
                         platformUser.getRoles()
                 );
 
-        String accessToken =
-                jwtService.generatePlatformAccessToken(
-                        platformUser,
-                        permissions
-                );
+        String accessToken = sessionId == null
+                ? jwtService.generatePlatformAccessToken(platformUser, permissions)
+                : jwtService.generatePlatformAccessToken(
+                        platformUser, permissions, sessionId, authenticatedAt);
 
         Set<String> roles = platformUser.getRoles()
                 .stream()

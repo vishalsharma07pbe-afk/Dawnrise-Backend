@@ -8,6 +8,9 @@ import com.dawnrise.school.school.exception.GlobalExceptionHandler;
 import com.dawnrise.school.school.service.SchoolService;
 import com.dawnrise.school.security.PlatformTokenSecurity;
 import com.dawnrise.school.security.SchoolTenantSecurity;
+import com.dawnrise.school.security.parentsession.ParentSessionEnforcementFilter;
+import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -29,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -57,6 +61,18 @@ class SchoolControllerSecurityIntegrationTest {
 
     @MockitoBean
     private SchoolService schoolService;
+
+    @MockitoBean
+    private ParentSessionEnforcementFilter authenticatedSessionFilter;
+
+    @BeforeEach
+    void allowRequestsThroughAuthenticatedSessionFilter() throws Exception {
+        doAnswer(invocation -> {
+            FilterChain chain = invocation.getArgument(2);
+            chain.doFilter(invocation.getArgument(0), invocation.getArgument(1));
+            return null;
+        }).when(authenticatedSessionFilter).doFilter(any(), any(), any());
+    }
 
     @Test
     void schoolEndpoint_whenUnauthenticated_returnsUnauthorized()

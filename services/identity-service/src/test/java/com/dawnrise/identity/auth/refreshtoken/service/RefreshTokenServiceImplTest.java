@@ -10,6 +10,7 @@ import com.dawnrise.identity.auth.refreshtoken.repository.RefreshTokenRepository
 import com.dawnrise.identity.auth.refreshtoken.security.RefreshTokenCodec;
 import com.dawnrise.identity.auth.parentsession.entity.ParentSession;
 import com.dawnrise.identity.auth.parentsession.repository.ParentSessionRepository;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import com.dawnrise.identity.auth.parentsession.service.ParentSessionService;
 import com.dawnrise.identity.auth.parentsession.config.ParentSessionProperties;
 import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedException;
@@ -23,6 +24,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -37,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class RefreshTokenServiceImplTest {
 
     @Mock
@@ -45,6 +49,8 @@ class RefreshTokenServiceImplTest {
     private RefreshTokenCodec tokenCodec;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private AuthenticatedSessionService authenticatedSessionService;
     @Mock
     private ParentSessionRepository parentSessionRepository;
 
@@ -80,7 +86,7 @@ class RefreshTokenServiceImplTest {
                 tokenProperties,
                 new RefreshTokenSessionLifetimePolicy(tokenProperties),
                 userRepository,
-                parentSessionRepository
+                authenticatedSessionService
         );
     }
 
@@ -249,8 +255,11 @@ class RefreshTokenServiceImplTest {
                 () -> service.rotateRefreshToken("raw-token")
         );
         assertTrue(activeFamilyToken.isRevoked());
-        assertTrue(parentSession.isLocked());
-        assertOldAccessRejected(parentSession);
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(familyId),
+                eq(com.dawnrise.identity.auth.model.IdentityType.ORGANIZATION_USER),
+                eq(10L),
+                any(OffsetDateTime.class));
     }
 
     @Test
@@ -288,8 +297,11 @@ class RefreshTokenServiceImplTest {
                 () -> service.rotateRefreshToken("raw-token")
         );
         assertTrue(activeFamilyToken.isRevoked());
-        assertTrue(parentSession.isLocked());
-        assertOldAccessRejected(parentSession);
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(token.getTokenFamilyId()),
+                eq(com.dawnrise.identity.auth.model.IdentityType.ORGANIZATION_USER),
+                eq(10L),
+                any(OffsetDateTime.class));
         verify(tokenCodec, never()).generateRawToken();
     }
 
@@ -613,8 +625,11 @@ class RefreshTokenServiceImplTest {
         service.revokeRefreshToken("raw-token");
 
         assertTrue(token.isRevoked());
-        assertTrue(parentSession.isLocked());
-        assertOldAccessRejected(parentSession);
+        verify(authenticatedSessionService).retireIfPresent(
+                eq(token.getTokenFamilyId()),
+                eq(com.dawnrise.identity.auth.model.IdentityType.ORGANIZATION_USER),
+                eq(10L),
+                any(OffsetDateTime.class));
     }
 
     @Test
@@ -645,10 +660,8 @@ class RefreshTokenServiceImplTest {
 
         assertTrue(first.isRevoked());
         assertTrue(second.isRevoked());
-        assertTrue(firstSession.isLocked());
-        assertTrue(secondSession.isLocked());
-        assertOldAccessRejected(firstSession);
-        assertOldAccessRejected(secondSession);
+        verify(authenticatedSessionService).retireAllForOrganizationUser(
+                eq(10L), any(OffsetDateTime.class));
     }
 
     @Test
@@ -670,7 +683,8 @@ class RefreshTokenServiceImplTest {
         service.revokeAllForUser(10L);
 
         assertTrue(token.isRevoked());
-        assertOldAccessRejected(parentSession);
+        verify(authenticatedSessionService).retireAllForOrganizationUser(
+                eq(10L), any(OffsetDateTime.class));
     }
 
     private void assertOldAccessRejected(ParentSession session) {

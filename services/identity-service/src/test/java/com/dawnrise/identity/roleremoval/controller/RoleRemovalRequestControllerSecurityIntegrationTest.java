@@ -37,6 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class
 })
 class RoleRemovalRequestControllerSecurityIntegrationTest {
+    @MockitoBean
+    private com.dawnrise.identity.auth.session.service.AuthenticatedSessionService authenticatedSessionService;
 
     private static final String BASE_URL =
             "/api/v1/organizations/{organizationId}/role-removal-requests";
@@ -140,6 +142,8 @@ class RoleRemovalRequestControllerSecurityIntegrationTest {
         Jwt jwt = Jwt.withTokenValue(tokenValue)
                 .header("alg", "none")
                 .subject(String.valueOf(userId))
+                .claim("identityType", "ORGANIZATION_USER")
+                .claim("sessionId", java.util.UUID.randomUUID().toString())
                 .claim("organizationId", organizationId)
                 .claim("permissions", List.copyOf(permissions))
                 .issuedAt(Instant.now())

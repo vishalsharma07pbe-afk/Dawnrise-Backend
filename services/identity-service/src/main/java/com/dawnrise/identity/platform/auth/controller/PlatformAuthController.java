@@ -4,12 +4,22 @@ import com.dawnrise.identity.platform.auth.dto.PlatformLoginRequest;
 import com.dawnrise.identity.platform.auth.dto.PlatformLoginResponse;
 import com.dawnrise.identity.platform.auth.model.PlatformAuthenticationResult;
 import com.dawnrise.identity.platform.auth.refreshtoken.cookie.PlatformRefreshTokenCookieService;
+import com.dawnrise.identity.platform.auth.refreshtoken.service.PlatformRefreshTokenService;
+import com.dawnrise.identity.auth.session.dto.SessionBootstrapResponse;
+import com.dawnrise.identity.auth.session.exception.SessionValidationUnavailableException;
 import com.dawnrise.identity.platform.auth.service.PlatformAuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import com.dawnrise.identity.auth.session.dto.UnlockSessionRequest;
+import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
+import com.dawnrise.identity.auth.model.IdentityType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.TransactionException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,13 +28,19 @@ public class PlatformAuthController {
 
     private final PlatformAuthService authService;
     private final PlatformRefreshTokenCookieService cookieService;
+    private final AuthenticatedSessionService sessions;
+    private final PlatformRefreshTokenService refreshTokens;
 
     public PlatformAuthController(
             PlatformAuthService authService,
-            PlatformRefreshTokenCookieService cookieService
+            PlatformRefreshTokenCookieService cookieService,
+            AuthenticatedSessionService sessions,
+            PlatformRefreshTokenService refreshTokens
     ) {
         this.authService = authService;
         this.cookieService = cookieService;
+        this.sessions = sessions;
+        this.refreshTokens = refreshTokens;
     }
 
     @PostMapping("/login")
@@ -80,5 +96,49 @@ public class PlatformAuthController {
                 .noContent()
                 .header(HttpHeaders.SET_COOKIE, clearedCookie.toString())
                 .build();
+    }
+
+    @PostMapping("/session/lock")
+    public ResponseEntity<Void> lock(@AuthenticationPrincipal Jwt jwt) {
+        sessions.lock(
+                java.util.UUID.fromString(jwt.getClaimAsString("sessionId")),
+                IdentityType.PLATFORM_USER,
+                Long.valueOf(jwt.getSubject())
+        );
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/session/status")
+    public SessionBootstrapResponse status(HttpServletRequest request) {
+        try {
+            var refreshSession = refreshTokens.resolveRefreshTokenSession(
+                    cookieService.extractToken(request)
+            );
+            boolean locked = sessions.isLocked(
+                    refreshSession.tokenFamilyId(),
+                    IdentityType.PLATFORM_USER,
+                    refreshSession.platformUserId()
+            );
+            return new SessionBootstrapResponse(locked ? "LOCKED" : "ACTIVE");
+        } catch (DataAccessException | TransactionException exception) {
+            throw new SessionValidationUnavailableException(
+                    "Session validation is unavailable",
+                    exception
+            );
+        }
+    }
+
+    @PostMapping("/session/unlock")
+    public ResponseEntity<PlatformLoginResponse> unlock(
+            HttpServletRequest request,
+            @Valid @RequestBody UnlockSessionRequest unlockRequest
+    ) {
+        PlatformAuthenticationResult result = authService.unlockSession(
+                cookieService.extractToken(request),
+                unlockRequest.password()
+        );
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookieService.createCookie(result.rawRefreshToken()).toString())
+                .body(result.response());
     }
 }
