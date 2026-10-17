@@ -49,8 +49,11 @@ SELECT
     'ORGANIZATION_USER',
     user_id,
     authenticated_at,
-    last_activity_at,
-    locked_at,
+    GREATEST(last_activity_at, authenticated_at),
+    CASE
+        WHEN locked_at IS NULL THEN NULL
+        ELSE GREATEST(locked_at, authenticated_at)
+    END,
     version
 FROM parent_sessions
 ON CONFLICT (id) DO NOTHING;
