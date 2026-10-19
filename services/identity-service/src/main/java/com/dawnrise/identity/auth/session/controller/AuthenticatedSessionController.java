@@ -14,6 +14,7 @@ import com.dawnrise.identity.auth.session.exception.SessionValidationUnavailable
 import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.dao.DataAccessException;
@@ -26,10 +27,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.UUID;
 
 @RestController
+@Validated
 public class AuthenticatedSessionController {
 
     private final AuthenticatedSessionService sessions;
@@ -53,9 +56,26 @@ public class AuthenticatedSessionController {
     public AuthenticatedSessionValidationResponse validate(
             @PathVariable UUID sessionId,
             @RequestParam IdentityType identityType,
-            @RequestParam Long ownerId
+            @RequestParam @Positive Long ownerId
     ) {
         return sessions.validateAndTouch(sessionId, identityType, ownerId);
+    }
+
+    @PostMapping("/internal/v1/authenticated-sessions/{sessionId}/recent-authentication")
+    public ResponseEntity<Void> requireRecentAuthentication(
+            @PathVariable UUID sessionId,
+            @RequestParam IdentityType identityType,
+            @RequestParam @Positive Long ownerId
+    ) {
+        try {
+            sessions.requireRecentAuthentication(sessionId, identityType, ownerId);
+            return ResponseEntity.noContent().build();
+        } catch (DataAccessException | TransactionException exception) {
+            throw new SessionValidationUnavailableException(
+                    "Session validation is unavailable",
+                    exception
+            );
+        }
     }
 
     @PostMapping("/api/v1/auth/session/lock")

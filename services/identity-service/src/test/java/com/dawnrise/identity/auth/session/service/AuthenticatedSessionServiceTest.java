@@ -3,6 +3,8 @@ package com.dawnrise.identity.auth.session.service;
 import com.dawnrise.identity.auth.model.IdentityType;
 import com.dawnrise.identity.auth.session.config.AuthenticatedSessionProperties;
 import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
+import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
+import com.dawnrise.identity.auth.session.exception.RecentAuthenticationRequiredException;
 import com.dawnrise.identity.auth.session.repository.AuthenticatedSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -91,5 +95,39 @@ class AuthenticatedSessionServiceTest {
 
         assertTrue(session.isLocked());
         assertEquals(retiredAt, session.getRetiredAt());
+    }
+
+    @Test
+    void requireRecentAuthentication_acceptsRecentAuthoritativeTimestamp() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticatedSession session = AuthenticatedSession.organizationUser(
+                sessionId, 10L, OffsetDateTime.now().minusSeconds(5));
+        when(repository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        assertDoesNotThrow(() -> service.requireRecentAuthentication(
+                sessionId, IdentityType.ORGANIZATION_USER, 10L));
+    }
+
+    @Test
+    void requireRecentAuthentication_rejectsStaleTimestamp() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticatedSession session = AuthenticatedSession.organizationUser(
+                sessionId, 10L, OffsetDateTime.now().minusHours(1));
+        when(repository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        assertThrows(RecentAuthenticationRequiredException.class,
+                () -> service.requireRecentAuthentication(sessionId, IdentityType.ORGANIZATION_USER, 10L));
+    }
+
+    @Test
+    void requireRecentAuthentication_rejectsLockedOrRetiredSessionAsLocked() {
+        UUID sessionId = UUID.randomUUID();
+        AuthenticatedSession session = AuthenticatedSession.organizationUser(
+                sessionId, 10L, OffsetDateTime.now());
+        session.retire(OffsetDateTime.now());
+        when(repository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        assertThrows(AuthenticatedSessionLockedException.class,
+                () -> service.requireRecentAuthentication(sessionId, IdentityType.ORGANIZATION_USER, 10L));
     }
 }

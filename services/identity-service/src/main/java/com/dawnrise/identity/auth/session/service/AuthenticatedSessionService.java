@@ -6,7 +6,7 @@ import com.dawnrise.identity.auth.session.dto.AuthenticatedSessionValidationResp
 import com.dawnrise.identity.auth.session.entity.AuthenticatedSession;
 import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
 import com.dawnrise.identity.auth.session.repository.AuthenticatedSessionRepository;
-import com.dawnrise.identity.auth.parentsession.exception.RecentParentAuthenticationRequiredException;
+import com.dawnrise.identity.auth.session.exception.RecentAuthenticationRequiredException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,9 +85,11 @@ public class AuthenticatedSessionService {
         AuthenticatedSession session = sessions.findById(id)
                 .filter(candidate -> candidate.isOwnedBy(identityType, ownerId))
                 .orElseThrow(() -> new AuthenticatedSessionLockedException("Session is unavailable"));
-        if (session.isLocked()
-                || session.getAuthenticatedAt().plus(properties.getRecentAuthentication()).isBefore(OffsetDateTime.now())) {
-            throw new RecentParentAuthenticationRequiredException("Recent authentication is required");
+        if (session.isLocked()) {
+            throw new AuthenticatedSessionLockedException("Workspace is locked");
+        }
+        if (session.getAuthenticatedAt().plus(properties.getRecentAuthentication()).isBefore(OffsetDateTime.now())) {
+            throw new RecentAuthenticationRequiredException("Recent authentication is required");
         }
     }
 

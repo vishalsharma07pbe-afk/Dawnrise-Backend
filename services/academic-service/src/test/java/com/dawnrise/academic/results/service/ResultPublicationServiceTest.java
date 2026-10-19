@@ -194,6 +194,26 @@ class ResultPublicationServiceTest {
   assertEquals(40,service.publish(1,100,2,3,4,7).id()); verify(publications,never()).saveAndFlush(any());
  }
 
+ @Test void bulkPublicationDetailsResolveAssignmentsAndSubjectsWithoutPerSheetLookups(){
+  scheduled(); ResultPublication publication=publication(); ResultSubjectSheet sheet=sheet(ResultSubjectSheetStatus.APPROVED);
+  when(publications.findByIdAndOrganizationIdAndStatus(40L,1L,ResultPublicationStatus.PUBLISHED))
+    .thenReturn(Optional.of(publication));
+  when(sheets.findAllByOrganizationIdAndAcademicYearIdAndExaminationIdAndGradeLevelIdAndSectionIdOrderByScheduledAssessmentIdAsc(1L,2L,3L,4L,7L))
+    .thenReturn(List.of(sheet));
+  when(marks.findAllBySubjectSheetIdInOrderBySubjectSheetIdAscRollNumberSnapshotAscIdAsc(List.of(30L)))
+    .thenReturn(List.of(mark(true)));
+  when(gradeSubjects.findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndIdIn(1L,2L,4L,Set.of(5L)))
+    .thenReturn(List.of(mapping));
+  when(subjects.findAllByOrganizationIdAndAcademicYearIdAndIdIn(1L,2L,Set.of(8L)))
+    .thenReturn(List.of(subject));
+
+  var details=service.detailsForPublication(1,40);
+
+  assertEquals(1,details.size()); assertEquals("Mathematics",details.getFirst().subjects().getFirst().subjectName());
+  verify(gradeSubjects,never()).findByIdAndGradeLevelIdAndAcademicYearIdAndOrganizationId(anyLong(),anyLong(),anyLong(),anyLong());
+  verify(subjects,never()).findByIdAndAcademicYearIdAndOrganizationId(anyLong(),anyLong(),anyLong());
+ }
+
  @Test void withdrawnPublicationIsNeitherAlreadyPublishedNorIdempotentlyReturned(){
   scheduled();
   ResultPublication withdrawn=publication();
