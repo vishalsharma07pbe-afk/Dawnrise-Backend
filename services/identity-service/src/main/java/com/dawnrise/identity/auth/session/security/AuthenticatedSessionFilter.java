@@ -1,7 +1,7 @@
 package com.dawnrise.identity.auth.session.security;
 
 import com.dawnrise.identity.auth.model.IdentityType;
-import com.dawnrise.identity.auth.parentsession.exception.RecentParentAuthenticationRequiredException;
+import com.dawnrise.identity.auth.session.exception.RecentAuthenticationRequiredException;
 import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
 import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import jakarta.servlet.FilterChain;
@@ -71,7 +71,7 @@ public class AuthenticatedSessionFilter extends OncePerRequestFilter {
             if (isSensitive(request)) {
                 sessions.requireRecentAuthentication(sessionId, identityType, ownerId);
             }
-        } catch (RecentParentAuthenticationRequiredException exception) {
+        } catch (RecentAuthenticationRequiredException exception) {
             reject(response, 403, "RECENT_AUTHENTICATION_REQUIRED", "Recent authentication is required");
             return;
         } catch (AuthenticatedSessionLockedException exception) {

@@ -32,6 +32,13 @@ public interface GradeLevelSubjectRepository
             Collection<Long> gradeLevelIds
     );
 
+    List<GradeLevelSubject> findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndIdIn(
+            Long organizationId,
+            Long academicYearId,
+            Long gradeLevelId,
+            Collection<Long> assignmentIds
+    );
+
     List<GradeLevelSubject>
     findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdInOrderByGradeLevelIdAscDisplayOrderAscIdAsc(
             Long organizationId,

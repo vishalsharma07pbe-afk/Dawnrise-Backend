@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -154,6 +155,109 @@ public class ResultPublicationService {
     ) {
         ResultPublication publication = published(organizationId, publicationId);
         return detail(publication, studentUserId);
+    }
+
+    /**
+     * Loads the immutable published-mark source for every student in a publication in one
+     * mark query. Reference data is resolved once per publication/subject, never once per
+     * student, so report-card bulk generation does not introduce an N+1 query pattern.
+     */
+    @Transactional(readOnly = true)
+    public List<PublishedResultDetailResponse> detailsForPublication(
+            long organizationId,
+            long publicationId
+    ) {
+        ResultPublication publication = published(organizationId, publicationId);
+        List<ResultSubjectSheet> publicationSheets = publicationSheets(publication);
+        List<Long> sheetIds = publicationSheets.stream().map(ResultSubjectSheet::getId).toList();
+        if (sheetIds.isEmpty()) return List.of();
+
+        List<ResultSubjectMark> allMarks =
+                marks.findAllBySubjectSheetIdInOrderBySubjectSheetIdAscRollNumberSnapshotAscIdAsc(sheetIds);
+        Map<Long, List<ResultSubjectMark>> marksByStudent = allMarks.stream().collect(Collectors.groupingBy(
+                ResultSubjectMark::getStudentUserId,
+                LinkedHashMap::new,
+                Collectors.toList()
+        ));
+        Map<Long, ScheduledAssessment> assessmentById = assessments
+                .findAllByOrganizationIdAndAcademicYearIdAndExaminationIdAndGradeLevelIdOrderByIdAsc(
+                        organizationId, publication.getAcademicYearId(), publication.getExaminationId(),
+                        publication.getGradeLevelId())
+                .stream().collect(Collectors.toMap(ScheduledAssessment::getId, Function.identity()));
+        Set<Long> assignmentIds = publicationSheets.stream()
+                .map(ResultSubjectSheet::getGradeLevelSubjectId)
+                .collect(Collectors.toSet());
+        Map<Long, GradeLevelSubject> assignmentById = gradeSubjects
+                .findAllByOrganizationIdAndAcademicYearIdAndGradeLevelIdAndIdIn(
+                        organizationId, publication.getAcademicYearId(),
+                        publication.getGradeLevelId(), assignmentIds)
+                .stream().collect(Collectors.toMap(GradeLevelSubject::getId, Function.identity()));
+        if (assignmentById.size() != assignmentIds.size()) {
+            throw new ResultNotFoundException("Published result subject assignment not found");
+        }
+        Set<Long> subjectIds = assignmentById.values().stream()
+                .map(GradeLevelSubject::getSubjectId)
+                .collect(Collectors.toSet());
+        Map<Long, Subject> subjectById = subjects
+                .findAllByOrganizationIdAndAcademicYearIdAndIdIn(
+                        organizationId, publication.getAcademicYearId(), subjectIds)
+                .stream().collect(Collectors.toMap(Subject::getId, Function.identity()));
+        if (subjectById.size() != subjectIds.size()) {
+            throw new ResultNotFoundException("Published result subject not found");
+        }
+        Map<Long, Subject> subjectBySheet = publicationSheets.stream().collect(Collectors.toMap(
+                ResultSubjectSheet::getId,
+                sheet -> subjectById.get(assignmentById.get(sheet.getGradeLevelSubjectId()).getSubjectId())
+        ));
+        AcademicYear year = year(publication);
+        Examination examination = examination(publication);
+        GradeLevel grade = grade(publication);
+        Section section = section(publication);
+
+        List<PublishedResultDetailResponse> details = new ArrayList<>();
+        for (Map.Entry<Long, List<ResultSubjectMark>> studentEntry : marksByStudent.entrySet()) {
+            Map<Long, ResultSubjectMark> markBySheet = studentEntry.getValue().stream().collect(Collectors.toMap(
+                    ResultSubjectMark::getSubjectSheetId, Function.identity(), (first, ignored) -> first));
+            List<PublishedResultSubjectResponse> rows = new ArrayList<>();
+            BigDecimal maximum = BigDecimal.ZERO;
+            BigDecimal obtained = BigDecimal.ZERO;
+            int absent = 0;
+            for (ResultSubjectSheet sheet : publicationSheets) {
+                ResultSubjectMark mark = markBySheet.get(sheet.getId());
+                if (mark == null) continue;
+                ScheduledAssessment assessment = assessmentById.get(sheet.getScheduledAssessmentId());
+                Subject subject = subjectBySheet.get(sheet.getId());
+                if (assessment == null || subject == null) {
+                    throw new ResultNotFoundException("Published result not found");
+                }
+                rows.add(new PublishedResultSubjectResponse(subject.getId(), subject.getCode(), subject.getName(),
+                        assessment.getMaximumMarks(), mark.getMarksObtained(), Boolean.TRUE.equals(mark.getAbsent())));
+                maximum = maximum.add(assessment.getMaximumMarks());
+                if (mark.getMarksObtained() != null) obtained = obtained.add(mark.getMarksObtained());
+                if (Boolean.TRUE.equals(mark.getAbsent())) absent++;
+            }
+            ResultSubjectMark first = studentEntry.getValue().getFirst();
+            details.add(new PublishedResultDetailResponse(publication.getId(), year.getId(), year.getName(),
+                    examination.getId(), examination.getName(), grade.getId(), grade.getName(), section.getId(),
+                    section.getName(), publication.getPublishedAt(), studentEntry.getKey(),
+                    first.getStudentEnrollmentId(), first.getRollNumberSnapshot(), List.copyOf(rows), maximum,
+                    obtained, absent));
+        }
+        return List.copyOf(details);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> studentIdsForPublication(long organizationId, long publicationId) {
+        ResultPublication publication = published(organizationId, publicationId);
+        List<Long> sheetIds = publicationSheets(publication).stream().map(ResultSubjectSheet::getId).toList();
+        if (sheetIds.isEmpty()) return List.of();
+        return marks.findAllBySubjectSheetIdInOrderBySubjectSheetIdAscRollNumberSnapshotAscIdAsc(sheetIds)
+                .stream().map(ResultSubjectMark::getStudentUserId).distinct().sorted().toList();
+    }
+
+    @Transactional(readOnly = true)
+    public int publishedSubjectCount(long organizationId, long publicationId) {
+        return publicationSheets(published(organizationId, publicationId)).size();
     }
 
     @Transactional(readOnly = true)

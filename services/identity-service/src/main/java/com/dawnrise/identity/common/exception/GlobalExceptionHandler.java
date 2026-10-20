@@ -10,6 +10,7 @@ import com.dawnrise.identity.roleremoval.exception.ProtectedRoleRemovalException
 import com.dawnrise.identity.user.exception.InvalidUserStatusTransitionException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -28,6 +29,7 @@ import com.dawnrise.identity.auth.parentsession.exception.ParentSessionLockedExc
 import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
 import com.dawnrise.identity.auth.session.exception.SessionValidationUnavailableException;
 import com.dawnrise.identity.auth.parentsession.exception.RecentParentAuthenticationRequiredException;
+import com.dawnrise.identity.auth.session.exception.RecentAuthenticationRequiredException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningConflictException;
 import com.dawnrise.identity.organization.provisioning.exception.ProvisioningInProgressException;
 import com.dawnrise.identity.profilechange.exception.InvalidProfileChangeStateException;
@@ -185,6 +187,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.badRequest().body(createErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                "Request parameter or path value is invalid",
+                request.getRequestURI(),
+                null
+        ));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -575,6 +590,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RecentParentAuthenticationRequiredException.class)
     public ResponseEntity<ApiErrorResponse> handleRecentParentAuthentication(RecentParentAuthenticationRequiredException exception, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(createErrorResponse(HttpStatus.FORBIDDEN, exception.getMessage(), request.getRequestURI(), Map.of("code", "RECENT_PARENT_AUTHENTICATION_REQUIRED")));
+    }
+
+    @ExceptionHandler(RecentAuthenticationRequiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleRecentAuthentication(RecentAuthenticationRequiredException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(createErrorResponse(HttpStatus.FORBIDDEN, exception.getMessage(), request.getRequestURI(), Map.of("code", "RECENT_AUTHENTICATION_REQUIRED")));
     }
 
 }

@@ -27,6 +27,10 @@ public interface ResultPublicationRepository extends JpaRepository<ResultPublica
             ResultPublicationStatus status
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ResultPublication p WHERE p.id=:id AND p.organizationId=:organizationId")
+    Optional<ResultPublication> findByIdAndOrganizationIdForUpdate(@Param("id") Long id, @Param("organizationId") Long organizationId);
+
     @Query("""
             SELECT DISTINCT publication
             FROM ResultPublication publication

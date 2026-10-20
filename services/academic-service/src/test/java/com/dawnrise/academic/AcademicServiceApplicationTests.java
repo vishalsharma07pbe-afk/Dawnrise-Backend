@@ -8,6 +8,8 @@ import com.dawnrise.academic.examination.repository.ScheduledAssessmentRepositor
 import com.dawnrise.academic.results.repository.ResultSubjectMarkRepository;
 import com.dawnrise.academic.results.repository.ResultPublicationRepository;
 import com.dawnrise.academic.results.repository.ResultSubjectSheetRepository;
+import com.dawnrise.academic.grading.repository.GradingPolicyRepository;
+import com.dawnrise.academic.reportcard.repository.ReportCardRepository;
 import com.dawnrise.academic.academiccalendar.repository.AcademicCalendarDayRepository;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
@@ -59,6 +61,18 @@ class AcademicServiceApplicationTests {
 
 	@TestConfiguration
 	static class TestConfig {
+
+		private static <T> T repositoryStub(Class<T> type) {
+			return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
+				if (method.getName().equals("hashCode")) return System.identityHashCode(proxy);
+				if (method.getName().equals("equals")) return proxy == args[0];
+				if (method.getName().equals("toString")) return type.getSimpleName() + "Stub";
+				throw new UnsupportedOperationException(method.getName());
+			}));
+		}
+
+		@Bean GradingPolicyRepository gradingPolicyRepository() { return repositoryStub(GradingPolicyRepository.class); }
+		@Bean ReportCardRepository reportCardRepository() { return repositoryStub(ReportCardRepository.class); }
 
 		@Bean
 		ResultPublicationRepository resultPublicationRepository() {

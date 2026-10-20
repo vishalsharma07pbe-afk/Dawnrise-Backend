@@ -172,4 +172,12 @@ public enum PermissionCode {
     RESULT_REVIEW,
     RESULT_PUBLISH,
     RESULT_PUBLISHED_VIEW_SELF,
+
+    /* Grading policies and report cards */
+    GRADING_POLICY_VIEW,
+    GRADING_POLICY_MANAGE,
+    REPORT_CARD_GENERATE,
+    REPORT_CARD_REVIEW,
+    REPORT_CARD_PUBLISH,
+    REPORT_CARD_VIEW_SELF,
 }

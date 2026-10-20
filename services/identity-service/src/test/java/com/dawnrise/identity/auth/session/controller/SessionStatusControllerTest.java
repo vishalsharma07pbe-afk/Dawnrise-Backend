@@ -7,6 +7,7 @@ import com.dawnrise.identity.auth.refreshtoken.model.RefreshTokenSession;
 import com.dawnrise.identity.auth.refreshtoken.service.RefreshTokenService;
 import com.dawnrise.identity.auth.service.AuthService;
 import com.dawnrise.identity.auth.session.exception.AuthenticatedSessionLockedException;
+import com.dawnrise.identity.auth.session.exception.RecentAuthenticationRequiredException;
 import com.dawnrise.identity.auth.session.service.AuthenticatedSessionService;
 import com.dawnrise.identity.common.exception.GlobalExceptionHandler;
 import com.dawnrise.identity.platform.auth.controller.PlatformAuthController;
@@ -24,11 +25,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.TransactionSystemException;
 
+import java.lang.reflect.Method;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -172,5 +178,63 @@ class SessionStatusControllerTest {
                 .andExpect(status().isLocked())
                 .andExpect(jsonPath("$.validationErrors.code")
                         .value("SESSION_LOCKED"));
+    }
+
+    @Test
+    void recentAuthentication_whenRecent_returnsNoContent() throws Exception {
+        tenantMockMvc.perform(post("/internal/v1/authenticated-sessions/{id}/recent-authentication", SESSION_ID)
+                        .queryParam("identityType", "ORGANIZATION_USER").queryParam("ownerId", OWNER_ID.toString()))
+                .andExpect(status().isNoContent());
+        verify(sessions).requireRecentAuthentication(SESSION_ID, IdentityType.ORGANIZATION_USER, OWNER_ID);
+    }
+
+    @Test
+    void recentAuthentication_whenStale_returnsForbidden() throws Exception {
+        doThrow(new RecentAuthenticationRequiredException("Recent authentication is required"))
+                .when(sessions).requireRecentAuthentication(SESSION_ID, IdentityType.ORGANIZATION_USER, OWNER_ID);
+        tenantMockMvc.perform(post("/internal/v1/authenticated-sessions/{id}/recent-authentication", SESSION_ID)
+                        .queryParam("identityType", "ORGANIZATION_USER").queryParam("ownerId", OWNER_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.validationErrors.code").value("RECENT_AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void recentAuthentication_whenLocked_returnsLocked() throws Exception {
+        doThrow(new AuthenticatedSessionLockedException("Workspace is locked")).when(sessions)
+                .requireRecentAuthentication(SESSION_ID, IdentityType.ORGANIZATION_USER, OWNER_ID);
+        tenantMockMvc.perform(post("/internal/v1/authenticated-sessions/{id}/recent-authentication", SESSION_ID)
+                        .queryParam("identityType", "ORGANIZATION_USER").queryParam("ownerId", OWNER_ID.toString()))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.validationErrors.code").value("SESSION_LOCKED"));
+    }
+
+    @Test
+    void recentAuthentication_whenInfrastructureFails_returnsUnavailable() throws Exception {
+        doThrow(new DataAccessResourceFailureException("down")).when(sessions)
+                .requireRecentAuthentication(SESSION_ID, IdentityType.ORGANIZATION_USER, OWNER_ID);
+        tenantMockMvc.perform(post("/internal/v1/authenticated-sessions/{id}/recent-authentication", SESSION_ID)
+                        .queryParam("identityType", "ORGANIZATION_USER").queryParam("ownerId", OWNER_ID.toString()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SESSION_VALIDATION_UNAVAILABLE"));
+    }
+
+    @Test
+    void recentAuthentication_rejectsMalformedInputs() throws Exception {
+        tenantMockMvc.perform(post("/internal/v1/authenticated-sessions/not-a-uuid/recent-authentication")
+                        .queryParam("identityType", "ORGANIZATION_USER").queryParam("ownerId", "0"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void activityOwnerId_isPositiveConstrained() throws Exception {
+        Method activity = AuthenticatedSessionController.class.getMethod(
+                "validate",
+                UUID.class,
+                IdentityType.class,
+                Long.class
+        );
+
+        assertTrue(activity.getParameters()[2]
+                .isAnnotationPresent(jakarta.validation.constraints.Positive.class));
     }
 }
