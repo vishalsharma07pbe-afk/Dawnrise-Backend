@@ -5,6 +5,7 @@ import com.dawnrise.academic.grading.service.*;
 import com.dawnrise.academic.security.AuthenticatedAcademicActor;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
@@ -48,6 +49,14 @@ public class GradingPolicyController {
     @PreAuthorize("@academicTenantSecurity.hasOrganization(authentication) and hasAuthority('GRADING_POLICY_MANAGE')")
     public GradingPolicyResponse activate(@PathVariable @Positive long id, JwtAuthenticationToken a) {
         return service.activate(org(a), user(a), id);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@academicTenantSecurity.hasOrganization(authentication) and hasAuthority('GRADING_POLICY_MANAGE')")
+    public void deleteDraft(@PathVariable @Positive long id,
+                            @RequestParam @PositiveOrZero long version,
+                            JwtAuthenticationToken a) {
+        service.deleteDraft(org(a), id, version);
     }
 
     private static long org(JwtAuthenticationToken a) {

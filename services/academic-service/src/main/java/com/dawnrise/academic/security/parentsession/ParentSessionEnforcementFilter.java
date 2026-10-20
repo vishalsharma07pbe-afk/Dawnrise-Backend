@@ -114,7 +114,7 @@ public class ParentSessionEnforcementFilter extends OncePerRequestFilter {
         String method = request.getMethod();
         String path = request.getRequestURI();
         if ("POST".equals(method) && path.equals("/api/v1/grading-policies")) return true;
-        if (("PUT".equals(method) && path.matches("/api/v1/grading-policies/\\d+"))
+        if ((("PUT".equals(method) || "DELETE".equals(method)) && path.matches("/api/v1/grading-policies/\\d+"))
                 || ("POST".equals(method) && path.matches("/api/v1/grading-policies/\\d+/activate"))) return true;
         return "POST".equals(method) && (
                 path.matches("/api/v1/report-cards/publications/\\d+/generate")

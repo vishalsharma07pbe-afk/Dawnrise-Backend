@@ -85,6 +85,15 @@ public class GradingPolicy {
         apply(request, actorUserId);
     }
 
+    public void requireDeletable(long expectedVersion) {
+        if (status != GradingPolicyStatus.DRAFT) {
+            throw new ResultConflictException("Only a draft grading policy can be deleted");
+        }
+        if (!Objects.equals(version, expectedVersion)) {
+            throw new ResultConflictException("Grading policy was updated by another user");
+        }
+    }
+
     private void apply(GradingPolicyRequest request, long actorUserId) {
         validateConfiguration(request);
         academicYearId = request.academicYearId();
@@ -164,7 +173,8 @@ public class GradingPolicy {
     }
 
     private static void validateScale(BigDecimal value, int scale, String field) {
-        if (value.scale() > scale) {
+        int meaningfulScale = Math.max(0, value.stripTrailingZeros().scale());
+        if (meaningfulScale > scale) {
             throw new InvalidResultException(field + " exceeds the configured decimal scale");
         }
     }

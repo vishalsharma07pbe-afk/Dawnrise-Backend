@@ -105,7 +105,8 @@ class ParentSessionEnforcementFilterTest {
     @ParameterizedTest
     @CsvSource({
             "POST,/api/v1/grading-policies", "PUT,/api/v1/grading-policies/9",
-            "POST,/api/v1/grading-policies/9/activate", "POST,/api/v1/report-cards/publications/8/generate",
+            "POST,/api/v1/grading-policies/9/activate", "DELETE,/api/v1/grading-policies/9",
+            "POST,/api/v1/report-cards/publications/8/generate",
             "POST,/api/v1/report-cards/7/submit", "POST,/api/v1/report-cards/7/approve",
             "POST,/api/v1/report-cards/7/return", "POST,/api/v1/report-cards/7/publish"
     })
@@ -135,8 +136,7 @@ class ParentSessionEnforcementFilterTest {
     @ParameterizedTest
     @CsvSource({
             "GET,/api/v1/grading-policies", "GET,/api/v1/report-cards/7",
-            "GET,/api/v1/report-cards/7/pdf", "POST,/api/v1/report-cards/7/archive",
-            "DELETE,/api/v1/grading-policies/9"
+            "GET,/api/v1/report-cards/7/pdf", "POST,/api/v1/report-cards/7/archive"
     })
     void recentAuthenticationIsNotCalledForOtherRoutes(String verb, String path) throws Exception {
         Fixture fixture = fixture();

@@ -75,6 +75,14 @@ public class GradingPolicyService {
         return response(policies.saveAndFlush(policy));
     }
 
+    @Transactional
+    public void deleteDraft(long organizationId, long id, long expectedVersion) {
+        GradingPolicy policy = get(organizationId, id);
+        policy.requireDeletable(expectedVersion);
+        policies.delete(policy);
+        policies.flush();
+    }
+
     private void requireScope(long organizationId, long academicYearId, long gradeLevelId) {
         years.findByIdAndOrganizationId(academicYearId, organizationId)
                 .orElseThrow(() -> new ResultNotFoundException("Academic year not found"));

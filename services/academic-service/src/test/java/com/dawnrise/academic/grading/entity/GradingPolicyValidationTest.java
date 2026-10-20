@@ -27,6 +27,16 @@ class GradingPolicyValidationTest {
     }
 
     @Test
+    void activationIgnoresDatabaseTrailingZeroScale() {
+        GradingPolicy policy = policy(2, RoundingMode.HALF_UP, List.of(
+                band("Fail", new BigDecimal("0.000000"), new BigDecimal("39.990000"), 1),
+                band("Pass", new BigDecimal("40.000000"), new BigDecimal("100.000000"), 2)));
+
+        assertDoesNotThrow(() -> policy.activate(9, 1));
+        assertEquals(1, policy.getPolicyVersion());
+    }
+
+    @Test
     void rejectsSharedInclusiveBoundary() {
         assertThrows(InvalidResultException.class, () -> policy(2, RoundingMode.HALF_UP, List.of(
                 band("Fail", new BigDecimal("0.00"), new BigDecimal("40.00"), 1),

@@ -14,7 +14,12 @@ import com.dawnrise.academic.results.exception.*;
 import com.dawnrise.academic.results.integration.identity.IdentityGuardianAccessClient;
 import com.dawnrise.academic.results.repository.ResultPublicationRepository;
 import com.dawnrise.academic.results.service.ResultPublicationService;
+import com.dawnrise.academic.studentenrollment.integration.identity.BatchStudentEnrollmentEligibilityResponse;
+import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStudentEligibilityClient;
+import com.dawnrise.academic.studentenrollment.integration.identity.IdentityStudentEligibilityException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,19 +27,22 @@ import java.util.*;
 
 @Service
 public class ReportCardService {
+    private static final Logger log = LoggerFactory.getLogger(ReportCardService.class);
     private final ReportCardRepository cards;
     private final ResultPublicationRepository publications;
     private final GradingPolicyRepository policies;
     private final ResultPublicationService results;
     private final IdentityGuardianAccessClient guardians;
+    private final IdentityStudentEligibilityClient identityStudents;
     private final ReportCardCalculator calculator = new ReportCardCalculator();
 
-    public ReportCardService(ReportCardRepository c, ResultPublicationRepository p, GradingPolicyRepository gp, ResultPublicationService r, IdentityGuardianAccessClient g) {
+    public ReportCardService(ReportCardRepository c, ResultPublicationRepository p, GradingPolicyRepository gp, ResultPublicationService r, IdentityGuardianAccessClient g, IdentityStudentEligibilityClient identityStudents) {
         cards = c;
         publications = p;
         policies = gp;
         results = r;
         guardians = g;
+        this.identityStudents = identityStudents;
     }
 
     @Transactional(readOnly = true)
@@ -72,57 +80,57 @@ public class ReportCardService {
         } catch (DataIntegrityViolationException e) {
             throw new ResultConflictException("Report cards were generated concurrently; reload the workspace");
         }
-        return generated.stream().map(this::response).toList();
+        return responses(o, generated);
     }
 
     @Transactional(readOnly = true)
     public List<ReportCardResponse> list(long o, long publication) {
         published(o, publication);
-        return cards.findAllByOrganizationIdAndPublicationIdOrderByRollNumberAscIdAsc(o, publication).stream().map(this::response).toList();
+        return responses(o, cards.findAllByOrganizationIdAndPublicationIdOrderByRollNumberAscIdAsc(o, publication));
     }
 
     @Transactional(readOnly = true)
     public ReportCardResponse detail(long o, long id) {
-        return response(owned(o, id));
+        return response(o, owned(o, id));
     }
 
     @Transactional
     public ReportCardResponse submit(long o, long id, long version) {
         var c = locked(o, id);
         c.submit(version);
-        return response(c);
+        return response(o, c);
     }
 
     @Transactional
     public ReportCardResponse approve(long o, long actor, long id, long version) {
         var c = locked(o, id);
         c.approve(version, actor);
-        return response(c);
+        return response(o, c);
     }
 
     @Transactional
     public ReportCardResponse returnToDraft(long o, long actor, long id, long version, String reason) {
         var c = locked(o, id);
         c.returnToDraft(version, actor, reason);
-        return response(c);
+        return response(o, c);
     }
 
     @Transactional
     public ReportCardResponse publish(long o, long actor, long id, long version) {
         var c = locked(o, id);
         c.publish(version, actor);
-        return response(c);
+        return response(o, c);
     }
 
     @Transactional(readOnly = true)
     public List<ReportCardResponse> self(long o, long student) {
-        return cards.findAllByOrganizationIdAndStudentUserIdAndStatusOrderByPublishedAtDescIdDesc(o, student, ReportCardStatus.PUBLISHED).stream().map(this::response).toList();
+        return responses(o, cards.findAllByOrganizationIdAndStudentUserIdAndStatusOrderByPublishedAtDescIdDesc(o, student, ReportCardStatus.PUBLISHED));
     }
 
     @Transactional(readOnly = true)
     public ReportCardResponse selfDetail(long o, long student, long id) {
         var c = cards.findByIdAndOrganizationIdAndStatus(id, o, ReportCardStatus.PUBLISHED).filter(x -> x.getStudentUserId() == student).orElseThrow(() -> new ResultNotFoundException("Report card not found"));
-        return response(c);
+        return response(o, c);
     }
 
     @Transactional(readOnly = true)
@@ -153,7 +161,34 @@ public class ReportCardService {
         return cards.findForUpdate(id, o).orElseThrow(() -> new ResultNotFoundException("Report card not found"));
     }
 
-    ReportCardResponse response(ReportCard c) {
-        return new ReportCardResponse(c.getId(), c.getPublicationId(), c.getAcademicYearId(), c.getExaminationId(), c.getGradeLevelId(), c.getSectionId(), c.getStudentUserId(), c.getEnrollmentId(), c.getStatus(), c.getAcademicYearName(), c.getExaminationName(), c.getGradeName(), c.getSectionName(), c.getRollNumber(), c.getResultPublishedAt(), c.getPolicyName(), c.getPolicyVersion(), c.getSubjectPassPercentage(), c.getOverallPassPercentage(), c.getAbsentCountsAsFailure(), c.getRequireEverySubjectToPass(), c.getDecimalScale(), c.getRoundingMode(), c.getSubjects().stream().map(s -> new ReportCardSubjectResponse(s.getSubjectId(), s.getSubjectCode(), s.getSubjectName(), s.getMaximumMarks(), s.getObtainedMarks(), s.getAbsent(), s.getPercentage(), s.getGradeLabel(), s.getPassed(), s.getDisplayOrder())).toList(), c.getTotalMaximumMarks(), c.getTotalObtainedMarks(), c.getAggregatePercentage(), c.getOverallGrade(), c.getPassed(), c.getAbsentSubjectCount(), c.getPartial(), c.getReturnReason(), c.getVersion(), c.getPublishedAt());
+    private List<ReportCardResponse> responses(long organizationId, List<ReportCard> reportCards) {
+        Map<Long, String> names = studentNames(organizationId, reportCards);
+        return reportCards.stream().map(card -> response(card, names.get(card.getStudentUserId()))).toList();
+    }
+
+    private ReportCardResponse response(long organizationId, ReportCard card) {
+        return response(card, studentNames(organizationId, List.of(card)).get(card.getStudentUserId()));
+    }
+
+    private Map<Long, String> studentNames(long organizationId, List<ReportCard> reportCards) {
+        List<Long> ids = reportCards.stream().map(ReportCard::getStudentUserId).distinct().sorted().toList();
+        if (ids.isEmpty()) return Map.of();
+        try {
+            BatchStudentEnrollmentEligibilityResponse result = identityStudents.checkBatch(organizationId, ids);
+            if (result == null || result.results() == null) return Map.of();
+            Map<Long, String> names = new HashMap<>();
+            result.results().stream().filter(Objects::nonNull)
+                    .filter(item -> Objects.equals(item.organizationId(), organizationId))
+                    .filter(item -> item.displayName() != null && !item.displayName().isBlank())
+                    .forEach(item -> names.put(item.userId(), item.displayName().trim()));
+            return Map.copyOf(names);
+        } catch (IdentityStudentEligibilityException | IllegalStateException exception) {
+            log.warn("Student display names could not be enriched for report cards in organization {}", organizationId, exception);
+            return Map.of();
+        }
+    }
+
+    ReportCardResponse response(ReportCard c, String studentDisplayName) {
+        return new ReportCardResponse(c.getId(), c.getPublicationId(), c.getAcademicYearId(), c.getExaminationId(), c.getGradeLevelId(), c.getSectionId(), c.getStudentUserId(), studentDisplayName, c.getEnrollmentId(), c.getStatus(), c.getAcademicYearName(), c.getExaminationName(), c.getGradeName(), c.getSectionName(), c.getRollNumber(), c.getResultPublishedAt(), c.getPolicyName(), c.getPolicyVersion(), c.getSubjectPassPercentage(), c.getOverallPassPercentage(), c.getAbsentCountsAsFailure(), c.getRequireEverySubjectToPass(), c.getDecimalScale(), c.getRoundingMode(), c.getSubjects().stream().map(s -> new ReportCardSubjectResponse(s.getSubjectId(), s.getSubjectCode(), s.getSubjectName(), s.getMaximumMarks(), s.getObtainedMarks(), s.getAbsent(), s.getPercentage(), s.getGradeLabel(), s.getPassed(), s.getDisplayOrder())).toList(), c.getTotalMaximumMarks(), c.getTotalObtainedMarks(), c.getAggregatePercentage(), c.getOverallGrade(), c.getPassed(), c.getAbsentSubjectCount(), c.getPartial(), c.getReturnReason(), c.getVersion(), c.getPublishedAt());
     }
 }

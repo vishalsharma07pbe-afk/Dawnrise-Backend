@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -76,6 +77,38 @@ class GradingPolicyServiceTest {
         order.verify(grades).findScopeForUpdate(3L, 2L, 1L);
         order.verify(policies).lockScope(1L, 2L, 3L);
         order.verify(policies).saveAndFlush(draft);
+    }
+
+    @Test
+    void deletesDraftWhenVersionMatches() throws Exception {
+        GradingPolicy draft = draft(13);
+        when(policies.findByIdAndOrganizationId(13L, 1L)).thenReturn(Optional.of(draft));
+
+        service.deleteDraft(1, 13, 0);
+
+        verify(policies).delete(draft);
+        verify(policies).flush();
+    }
+
+    @Test
+    void refusesToDeleteActivePolicy() throws Exception {
+        GradingPolicy active = draft(14);
+        active.activate(9, 1);
+        when(policies.findByIdAndOrganizationId(14L, 1L)).thenReturn(Optional.of(active));
+
+        assertThrows(RuntimeException.class, () -> service.deleteDraft(1, 14, 0));
+
+        verify(policies, never()).delete(any());
+    }
+
+    @Test
+    void refusesToDeleteStaleDraft() throws Exception {
+        GradingPolicy draft = draft(15);
+        when(policies.findByIdAndOrganizationId(15L, 1L)).thenReturn(Optional.of(draft));
+
+        assertThrows(RuntimeException.class, () -> service.deleteDraft(1, 15, 1));
+
+        verify(policies, never()).delete(any());
     }
 
     private void arrangeActivation(GradingPolicy draft, List<GradingPolicy> scope) {

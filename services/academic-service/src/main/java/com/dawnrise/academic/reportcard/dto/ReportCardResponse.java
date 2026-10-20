@@ -7,7 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 public record ReportCardResponse(long id, long publicationId, long academicYearId, long examinationId,
-                                 long gradeLevelId, long sectionId, long studentUserId, long enrollmentId,
+                                 long gradeLevelId, long sectionId, long studentUserId, String studentDisplayName, long enrollmentId,
                                  ReportCardStatus status, String academicYearName, String examinationName,
                                  String gradeName, String sectionName, String rollNumber,
                                  OffsetDateTime resultPublishedAt, String policyName, int policyVersion,
