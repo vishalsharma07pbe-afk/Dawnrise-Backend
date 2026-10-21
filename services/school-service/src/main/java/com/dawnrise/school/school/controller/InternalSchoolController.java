@@ -1,6 +1,7 @@
 package com.dawnrise.school.school.controller;
 
 import com.dawnrise.school.school.DTO.SchoolTimeZoneResponse;
+import com.dawnrise.school.school.DTO.SchoolBrandingResponse;
 import com.dawnrise.school.school.service.SchoolService;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
@@ -35,5 +36,12 @@ public class InternalSchoolController {
         return ResponseEntity.ok(
                 schoolService.getSchoolTimeZone(organizationId)
         );
+    }
+
+    @GetMapping("/{organizationId}/branding")
+    @PreAuthorize("hasRole('INTERNAL_SERVICE') and authentication.name == 'academic-service'")
+    public ResponseEntity<SchoolBrandingResponse> getSchoolBranding(
+            @PathVariable @Positive(message = "Organization ID must be positive") Long organizationId) {
+        return ResponseEntity.ok(schoolService.getSchoolBranding(organizationId));
     }
 }

@@ -5,4 +5,8 @@ import java.time.ZoneId;
 public interface SchoolTimeZoneClient {
 
     ZoneId getTimeZone(long organizationId);
+
+    default String getSchoolName(long organizationId) {
+        return "Dawnrise School";
+    }
 }
