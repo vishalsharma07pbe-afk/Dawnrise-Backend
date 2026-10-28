@@ -56,6 +56,44 @@ class TimetableScoreCalculatorTest {
     }
 
     @Test
+    void allowsButDoesNotRequireConsecutiveSubjectPeriods(){
+        SlotOption first=option(1,1,"09:00","09:40",1,50);
+        SlotOption second=option(2,1,"09:40","10:20",1,50);
+        Lesson a=new Lesson(1,10,1,100,false,"Math",2,0,true,false,null,false,List.of(first),first);
+        Lesson b=new Lesson(2,10,1,100,false,"Math",2,0,true,false,null,false,List.of(second),second);
+        assertTrue(calculator.calculateScore(schedule(a,b)).isFeasible());
+        b.setOption(option(3,2,"09:00","09:40",1,50));
+        assertTrue(calculator.calculateScore(schedule(a,b)).isFeasible());
+    }
+
+    @Test
+    void treatsShortChangeoverAsPartOfAConsecutiveTeachingRun(){
+        SlotOption first=option(1,1,"09:00","09:40",1,50);
+        SlotOption second=option(2,1,"09:42","10:22",1,50);
+        Lesson a=new Lesson(1,10,1,100,false,"Math",2,1,true,false,null,false,List.of(first),first);
+        Lesson b=new Lesson(2,10,1,100,false,"Math",2,1,true,false,null,false,List.of(second),second);
+        Schedule schedule=new Schedule(List.of(a,b),Map.of(50L,new TeacherPolicy(8,40,2,20)),false);
+        assertTrue(calculator.calculateScore(schedule).isFeasible());
+    }
+
+    @Test
+    void shortChangeoverDoesNotViolateTeacherMinimumRestByItself(){
+        Lesson first=lesson(1,10,100,option(1,1,"09:00","09:40",1,50));
+        Lesson second=lesson(2,11,101,option(2,1,"09:42","10:22",2,50));
+        Schedule schedule=new Schedule(List.of(first,second),Map.of(50L,new TeacherPolicy(8,40,2,20)),false);
+        assertTrue(calculator.calculateScore(schedule).isFeasible());
+    }
+
+    @Test
+    void enforcesMaximumConsecutiveAcrossShortChangeovers(){
+        Lesson first=lesson(1,10,100,option(1,1,"09:00","09:40",1,50));
+        Lesson second=lesson(2,11,101,option(2,1,"09:42","10:22",2,50));
+        Lesson third=lesson(3,12,102,option(3,1,"10:24","11:04",3,50));
+        Schedule schedule=new Schedule(List.of(first,second,third),Map.of(50L,new TeacherPolicy(8,40,2,20)),false);
+        assertTrue(calculator.calculateScore(schedule).hardScore()<0);
+    }
+
+    @Test
     void timefoldSolvesDeterministicallyAndKeepsPins(){
         SlotOption fixed=option(1,1,"09:00","09:40",1,50);SlotOption available=option(2,1,"09:40","10:20",1,50);
         Lesson pinned=new Lesson(1,10,1,100,"Math",1,0,false,null,true,List.of(fixed),fixed);
@@ -68,6 +106,32 @@ class TimetableScoreCalculatorTest {
         assertEquals(fixed,solved.getLessons().getFirst().getOption());
         assertEquals(available,solved.getLessons().get(1).getOption());
         assertTrue(solved.getScore().isFeasible());
+    }
+
+    @Test
+    void solverAssignsAllLessonsBeforeBalancingEveryWorkingDay(){
+        SlotOption monday=option(1,1,"09:00","09:40",1,50);
+        SlotOption tuesday=option(2,2,"09:00","09:40",1,50);
+        Lesson first=new Lesson(1,10,1,100,false,"English",1,0,false,true,null,false,List.of(monday,tuesday),null);
+        Lesson second=new Lesson(2,10,1,100,false,"English",1,0,false,true,null,false,List.of(monday,tuesday),null);
+        Schedule problem=new Schedule(new java.util.ArrayList<>(List.of(first,second)),Map.of(50L,new TeacherPolicy(8,40,8,0)),false);
+        var solver=SolverFactory.<Schedule>create(new SolverConfig().withSolutionClass(Schedule.class).withEntityClasses(Lesson.class)
+                .withScoreDirectorFactory(new ScoreDirectorFactoryConfig().withEasyScoreCalculatorClass(TimetableScoreCalculator.class))
+                .withTerminationSpentLimit(Duration.ofMillis(250)).withRandomSeed(123L)).buildSolver();
+        Schedule solved=solver.solve(problem);
+        assertTrue(solved.getScore().isFeasible());
+        assertTrue(solved.getLessons().stream().allMatch(lesson->lesson.getOption()!=null));
+        assertEquals(2,solved.getLessons().stream().map(lesson->lesson.getOption().dayOfWeek()).distinct().count());
+    }
+
+    @Test
+    void usesGenerationSeedOnlyToBreakOtherwiseEqualSchedules(){
+        Lesson lesson=lesson(1,10,100,option(1,1,"09:00","09:40",1,50));
+        Schedule first=schedule(lesson);first.setVariationSeed(41);
+        Schedule second=schedule(lesson);second.setVariationSeed(42);
+        assertTrue(calculator.calculateScore(first).isFeasible());
+        assertTrue(calculator.calculateScore(second).isFeasible());
+        assertTrue(calculator.calculateScore(first).softScore()!=calculator.calculateScore(second).softScore());
     }
 
     private Schedule schedule(Lesson... lessons){return new Schedule(List.of(lessons),Map.of(50L,new TeacherPolicy(8,40,8,0)),false);}

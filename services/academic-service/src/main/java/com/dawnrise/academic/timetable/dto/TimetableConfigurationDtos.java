@@ -75,11 +75,13 @@ public final class TimetableConfigurationDtos {
                                             @Positive int periodsPerWeek, boolean requiredEachWorkingDay,
                                             @Positive int maximumPeriodsPerDay,
                                             @Min(0) int doublePeriodBlocksPerWeek,
+                                            boolean allowConsecutivePeriods,
                                             @Min(0) Long expectedVersion) {}
     public record SubjectRequirementResponse(long id, long academicYearId, long gradeLevelId,
                                              long sectionId, long gradeLevelSubjectId,
                                              int periodsPerWeek, boolean requiredEachWorkingDay,
                                              int maximumPeriodsPerDay, int doublePeriodBlocksPerWeek,
+                                             boolean allowConsecutivePeriods,
                                              long version) {}
 
     public record TeacherPolicyRequest(@Positive long academicYearId, @Positive long teacherUserId,
@@ -126,6 +128,13 @@ public final class TimetableConfigurationDtos {
     public record RoomResponse(long id, Long wingId, String code, String name, Integer capacity,
                                boolean exclusiveUse, boolean active, Set<String> capabilities,
                                long version) {}
+    public record SectionHomeRoomRequest(@Positive long academicYearId,
+                                         @Positive long gradeLevelId,
+                                         @Positive long sectionId,
+                                         @Positive long roomId,
+                                         @Min(0) Long expectedVersion) {}
+    public record SectionHomeRoomResponse(long id, long academicYearId, long gradeLevelId,
+                                          long sectionId, long roomId, long version) {}
     public record SubjectRoomRequirementRequest(@Positive long academicYearId,
                                                 @Positive long gradeLevelId,
                                                 @Positive long gradeLevelSubjectId,
@@ -142,6 +151,7 @@ public final class TimetableConfigurationDtos {
                                             List<TeacherPolicyResponse> teacherPolicies,
                                             List<TeacherAvailabilityResponse> teacherAvailability,
                                             List<AlternateEligibilityResponse> alternateTeacherEligibilities,
+                                            List<SectionHomeRoomResponse> sectionHomeRooms,
                                             List<SubjectRoomRequirementResponse> subjectRoomRequirements) {}
 
     public record ResolvedSectionSchedule(long organizationId, long academicYearId,

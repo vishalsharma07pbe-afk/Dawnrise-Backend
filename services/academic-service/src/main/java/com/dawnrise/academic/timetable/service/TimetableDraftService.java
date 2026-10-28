@@ -5,6 +5,7 @@ import com.dawnrise.academic.timetable.dto.TimetableConfigurationDtos.BellInterv
 import com.dawnrise.academic.timetable.dto.TimetableConfigurationDtos.IntervalType;
 import com.dawnrise.academic.timetable.dto.TimetableConfigurationDtos.ResolvedSectionSchedule;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.ActivityType;
+import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.BulkLessonRequest;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.Conflict;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.ConflictPreview;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.ConflictSeverity;
@@ -100,7 +101,7 @@ public class TimetableDraftService {
     @Transactional
     public DraftResponse updateIntent(long org, long actor, long draftId, EffectiveDateIntentRequest request) {
         DraftHead draft = head(org, draftId, true);
-        requireMutable(draft);
+        requireValidityMutable(draft);
         requireDraftVersion(draft, request.expectedVersion());
         if (request.effectiveToExclusive() != null && (request.effectiveFrom() == null
                 || !request.effectiveToExclusive().isAfter(request.effectiveFrom()))) {
@@ -202,6 +203,17 @@ public class TimetableDraftService {
         }
         audit(org, draft.year(), draftId, actor, "ADD", id);
         return slot(org, draft.year(), draftId, id);
+    }
+
+    @Transactional
+    public DraftResponse addMany(long org,long actor,long draftId,BulkLessonRequest request) {
+        DraftHead draft=head(org,draftId,true);requireMutable(draft);requireDraftVersion(draft,request.expectedDraftVersion());
+        long version=request.expectedDraftVersion();
+        for(LessonRequest lesson:request.lessons()){
+            add(org,actor,draftId,new LessonRequest(lesson.sectionId(),lesson.bellScheduleIntervalId(),lesson.activityType(),
+                    lesson.activityName(),lesson.gradeLevelSubjectId(),lesson.teacherUserId(),lesson.roomId(),version++));
+        }
+        return get(org,draftId);
     }
 
     @Transactional
@@ -346,11 +358,10 @@ public class TimetableDraftService {
         for (long sectionId : sectionIds(org,draft.year())) {
             ResolvedSectionSchedule schedule = configurationService.resolvedSchedule(org,draft.year(),sectionId);
             for (BellDayResponse day : schedule.bellSchedule().days()) for (BellIntervalResponse interval : day.intervals())
-                if (requiresSectionEntry(interval) && !slotExists(org,draft.year(),draftId,sectionId,day.dayOfWeek(),interval.id()))
+                if (interval.intervalType()!=IntervalType.TEACHING && requiresSectionEntry(interval)
+                        && !slotExists(org,draft.year(),draftId,sectionId,day.dayOfWeek(),interval.id()))
                     issues.add(conflict("MISSING_ACTIVITY",ConflictSeverity.INCOMPLETE,
-                            interval.intervalType()==IntervalType.TEACHING
-                                    ? "Teaching period has no named activity"
-                                    : "Section-supervised period has no named activity or approved coverage",
+                            "Section-supervised period has no named activity or approved coverage",
                             null,null,null,sectionId,null));
         }
         addFrequencyCompleteness(org,draft,issues);
@@ -375,12 +386,35 @@ public class TimetableDraftService {
     }
 
     private void clash(long org,long draftId,Long excluded,String column,long value,Candidate c,String code,List<Conflict> out) {
-        List<Long> ids=jdbc.sql("SELECT id FROM timetable_draft_section_slots WHERE organization_id=:org AND academic_year_id=:year AND draft_id=:draft AND "+column+"=:value AND day_of_week=:day AND start_time<:end AND end_time>:start AND (CAST(:excluded AS BIGINT) IS NULL OR id<>:excluded)")
+        List<ClashRow> clashes=jdbc.sql("""
+                SELECT slot.id,slot.section_id,grade.name,section.name,slot.activity_name,
+                       slot.teacher_user_id,slot.start_time,slot.end_time
+                FROM timetable_draft_section_slots slot
+                JOIN sections section ON section.id=slot.section_id AND section.organization_id=slot.organization_id
+                JOIN grade_levels grade ON grade.id=slot.grade_level_id AND grade.organization_id=slot.organization_id
+                WHERE slot.organization_id=:org AND slot.academic_year_id=:year AND slot.draft_id=:draft AND slot.%s=:value
+                  AND slot.day_of_week=:day AND slot.start_time<:end AND slot.end_time>:start
+                  AND (CAST(:excluded AS BIGINT) IS NULL OR slot.id<>:excluded)
+                """.formatted(column))
                 .param("org",org).param("year",c.year()).param("draft",draftId).param("value",value).param("day",c.day())
-                .param("start",c.start()).param("end",c.end()).param("excluded",excluded).query(Long.class).list();
-        for(Long id:ids) out.add(conflict(code,ConflictSeverity.ERROR,code.replace('_',' ').toLowerCase(),id,
-                code.startsWith("TEACHER")?c.teacher():null,code.startsWith("ROOM")?c.room():null,c.section(),c.subject()));
+                .param("start",c.start()).param("end",c.end()).param("excluded",excluded)
+                .query((rs,n)->new ClashRow(rs.getLong(1),rs.getLong(2),rs.getString(3),rs.getString(4),rs.getString(5),
+                        (Long)rs.getObject(6),rs.getObject(7,LocalTime.class),rs.getObject(8,LocalTime.class))).list();
+        for(ClashRow clash:clashes){
+            String when=dayName(c.day())+" "+clash.start()+"–"+clash.end();
+            String className=clash.gradeName()+" · "+clash.sectionName();
+            String detail=switch(code){
+                case "TEACHER_OVERLAP" -> when+": the selected teacher is already teaching "+className+" — "+clash.activity()+".";
+                case "SECTION_OVERLAP" -> when+": "+className+" already has "+clash.activity()+(clash.teacher()==null?".":" with teacher #"+clash.teacher()+".");
+                case "ROOM_OVERLAP" -> when+": this classroom is already being used by "+className+" — "+clash.activity()+".";
+                default -> when+": the selected lesson conflicts with an existing lesson for "+className+".";
+            };
+            out.add(conflict(code,ConflictSeverity.ERROR,detail,clash.id(),code.startsWith("TEACHER")?c.teacher():null,
+                    code.startsWith("ROOM")?c.room():null,c.section(),c.subject()));
+        }
     }
+
+    private String dayName(int day){return switch(day){case 1->"Monday";case 2->"Tuesday";case 3->"Wednesday";case 4->"Thursday";case 5->"Friday";case 6->"Saturday";case 7->"Sunday";default->"Day "+day;};}
 
     private void validateAvailability(long org,Candidate c,List<Conflict> out) {
         long unavailable=count("SELECT COUNT(*) FROM timetable_teacher_availability WHERE organization_id=:org AND academic_year_id=:year AND teacher_user_id=:teacher AND day_of_week=:day AND availability_type='UNAVAILABLE' AND start_time<:end AND end_time>:start",org,c);
@@ -407,7 +441,8 @@ public class TimetableDraftService {
         spans=new ArrayList<>(spans);spans.add(new TimeSpan(c.start(),c.end()));spans.sort(Comparator.comparing(TimeSpan::start));
         int consecutive=1;
         for(int i=1;i<spans.size();i++){ long gap=Duration.between(spans.get(i-1).end(),spans.get(i).start()).toMinutes();
-            if(gap==0) consecutive++; else {consecutive=1;if(gap>0&&gap<p.rest())out.add(conflict("TEACHER_REST_VIOLATION",ConflictSeverity.ERROR,"Teacher minimum rest would be violated",null,c.teacher(),null,c.section(),c.subject()));}
+            boolean meaningfulBreak=p.rest()<=0?gap>10:gap>=p.rest();
+            if(meaningfulBreak)consecutive=1;else consecutive++;
             if(consecutive>p.consecutive())out.add(conflict("TEACHER_CONSECUTIVE_LIMIT",ConflictSeverity.ERROR,"Teacher consecutive-period limit would be exceeded",null,c.teacher(),null,c.section(),c.subject())); }
     }
 
@@ -469,7 +504,13 @@ public class TimetableDraftService {
         if(r.activityType()==ActivityType.TEACHING&&found.intervalType()!=IntervalType.TEACHING||r.activityType()==ActivityType.SUPERVISED_ACTIVITY&&found.intervalType()!=IntervalType.SUPERVISED_ACTIVITY)
             throw new InvalidTimetableConfigurationException("Activity type does not match the resolved bell interval");
         if(r.activityType()==ActivityType.TEACHING&&r.gradeLevelSubjectId()==null)throw new InvalidTimetableConfigurationException("Teaching lessons require a grade subject mapping");
-        Room room=r.roomId()==null?new Room(null,false):jdbc.sql("SELECT id,exclusive_use FROM timetable_rooms WHERE id=:id AND organization_id=:org").param("id",r.roomId()).param("org",org).query((rs,n)->new Room(rs.getLong(1),rs.getBoolean(2))).optional().orElseThrow(()->new TimetableConfigurationNotFoundException("Room not found"));
+        Room room=r.roomId()==null?jdbc.sql("""
+                SELECT room.id,room.exclusive_use FROM timetable_section_home_rooms home
+                JOIN timetable_rooms room ON room.id=home.room_id AND room.organization_id=home.organization_id
+                WHERE home.organization_id=:org AND home.academic_year_id=:year AND home.section_id=:section AND room.active
+                """).param("org",org).param("year",year).param("section",r.sectionId())
+                .query((rs,n)->new Room(rs.getLong(1),rs.getBoolean(2))).optional().orElse(new Room(null,false))
+                :jdbc.sql("SELECT id,exclusive_use FROM timetable_rooms WHERE id=:id AND organization_id=:org").param("id",r.roomId()).param("org",org).query((rs,n)->new Room(rs.getLong(1),rs.getBoolean(2))).optional().orElseThrow(()->new TimetableConfigurationNotFoundException("Room not found"));
         return new Candidate(year,r.sectionId(),resolved.gradeLevelId(),resolved.wingId(),r.bellScheduleIntervalId(),foundDay.dayOfWeek(),found.startTime(),found.endTime(),r.activityType(),r.activityName().trim(),r.gradeLevelSubjectId(),r.teacherUserId(),room.id(),room.exclusive());}
 
     private boolean teacherEligible(long org,Candidate c,long teacher){long count=jdbc.sql("SELECT COUNT(*) FROM teacher_assignments WHERE organization_id=:org AND academic_year_id=:year AND section_id=:section AND grade_level_subject_id=:subject AND teacher_user_id=:teacher AND assignment_type='SUBJECT_TEACHER'")
@@ -497,6 +538,7 @@ public class TimetableDraftService {
     private void ensureNotPinned(long org,long year,long draft,long slot){if(jdbc.sql("SELECT COUNT(*) FROM timetable_draft_slot_pins WHERE organization_id=:org AND academic_year_id=:year AND draft_id=:draft AND slot_id=:slot").param("org",org).param("year",year).param("draft",draft).param("slot",slot).query(Long.class).single()>0)throw new TimetableConfigurationConflictException("Pinned lesson must be unpinned before editing");}
     private void requireDraftVersion(DraftHead d,long v){if(d.version()!=v)throw stale("Draft");} private void requireSlotVersion(SlotResponse s,long v){if(s.version()!=v)throw stale("Lesson");}
     private void requireMutable(DraftHead draft){if(draft.status()!=WorkflowStatus.DRAFT)throw new TimetableConfigurationConflictException("Only a DRAFT timetable can be edited");}
+    private void requireValidityMutable(DraftHead draft){if(draft.status()==WorkflowStatus.PUBLISHED)throw new TimetableConfigurationConflictException("A published timetable's validity cannot be changed");}
     private boolean requiresSectionEntry(BellIntervalResponse interval){return interval.schedulable() &&
             (interval.intervalType()==IntervalType.TEACHING || interval.intervalType()==IntervalType.SUPERVISED_ACTIVITY) &&
             interval.coverageMode()==CoverageMode.SECTION && interval.assigneeRequirement()!=AssigneeRequirement.NONE;}
@@ -529,10 +571,11 @@ public class TimetableDraftService {
     private List<SubjectSpan> subjectSpans(long org,long draft,Long excluded,Candidate c){return new ArrayList<>(jdbc.sql("SELECT day_of_week,start_time,end_time FROM timetable_draft_section_slots WHERE organization_id=:org AND academic_year_id=:year AND draft_id=:draft AND section_id=:section AND grade_level_subject_id=:subject AND (CAST(:excluded AS BIGINT) IS NULL OR id<>:excluded) ORDER BY day_of_week,start_time")
             .param("org",org).param("year",c.year()).param("draft",draft).param("section",c.section()).param("subject",c.subject()).param("excluded",excluded)
             .query((rs,n)->new SubjectSpan(rs.getInt(1),rs.getObject(2,LocalTime.class),rs.getObject(3,LocalTime.class))).list());}
-    private int doubleBlocks(List<SubjectSpan> source){List<SubjectSpan> spans=new ArrayList<>(source);spans.sort(Comparator.comparingInt(SubjectSpan::day).thenComparing(SubjectSpan::start));int blocks=0,run=1;for(int i=1;i<spans.size();i++){SubjectSpan previous=spans.get(i-1),current=spans.get(i);if(previous.day()==current.day()&&previous.end().equals(current.start()))run++;else{blocks+=run/2;run=1;}}return spans.isEmpty()?0:blocks+run/2;}
+    private int doubleBlocks(List<SubjectSpan> source){List<SubjectSpan> spans=new ArrayList<>(source);spans.sort(Comparator.comparingInt(SubjectSpan::day).thenComparing(SubjectSpan::start));int blocks=0,run=1;for(int i=1;i<spans.size();i++){SubjectSpan previous=spans.get(i-1),current=spans.get(i);long gap=Duration.between(previous.end(),current.start()).toMinutes();if(previous.day()==current.day()&&gap>=0&&gap<=10)run++;else{blocks+=run/2;run=1;}}return spans.isEmpty()?0:blocks+run/2;}
     private Conflict conflict(String code,ConflictSeverity severity,String message,Long slot,Long teacher,Long room,Long section,Long subject){return new Conflict(code,severity,message,slot,teacher,room,section,subject);}
     private record DraftHead(long id,long year,String name,WorkflowStatus status,long version,long createdBy,long updatedBy,java.time.OffsetDateTime createdAt,java.time.OffsetDateTime updatedAt){}
     private record Candidate(long year,long section,long grade,long wing,long interval,int day,LocalTime start,LocalTime end,ActivityType type,String name,Long subject,Long teacher,Long room,boolean roomExclusive){}
     private record Room(Long id,boolean exclusive){} private record Policy(int daily,int weekly,int consecutive,int rest){} private record Requirement(int weekly,int daily,int doubles,boolean requiredDaily){} private record TimeSpan(LocalTime start,LocalTime end){}
+    private record ClashRow(long id,long section,String gradeName,String sectionName,String activity,Long teacher,LocalTime start,LocalTime end){}
     private record SubjectSpan(int day,LocalTime start,LocalTime end){} private record RequirementRow(long section,long subject,int weekly,boolean requiredDaily,int doubles){}
 }

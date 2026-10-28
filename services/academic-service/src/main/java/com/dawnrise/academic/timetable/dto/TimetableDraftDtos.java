@@ -1,5 +1,6 @@
 package com.dawnrise.academic.timetable.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,6 +27,8 @@ public final class TimetableDraftDtos {
                                 @NotNull ActivityType activityType, @NotBlank @Size(max=120) String activityName,
                                 Long gradeLevelSubjectId, Long teacherUserId, Long roomId,
                                 @Min(0) long expectedDraftVersion) {}
+    public record BulkLessonRequest(@NotNull @Size(min=1,max=50) List<@NotNull @Valid LessonRequest> lessons,
+                                    @Min(0) long expectedDraftVersion) {}
     public record MoveLessonRequest(@Positive long sectionId, @Positive long bellScheduleIntervalId,
                                     Long teacherUserId, Long roomId,
                                     @Min(0) long expectedDraftVersion, @Min(0) long expectedSlotVersion) {}

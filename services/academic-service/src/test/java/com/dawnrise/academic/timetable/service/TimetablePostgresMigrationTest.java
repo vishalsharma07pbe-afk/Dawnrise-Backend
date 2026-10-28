@@ -336,6 +336,8 @@ class TimetablePostgresMigrationTest {
             statement.execute("INSERT INTO grade_level_subjects(id,organization_id,academic_year_id,grade_level_id,subject_id,display_order) VALUES (50,5,50,50,50,1)");
             statement.execute("INSERT INTO timetable_wings(id,organization_id,code,name,display_order) VALUES (50,5,'JR','Junior',1)");
             statement.execute("INSERT INTO timetable_grade_wings(organization_id,academic_year_id,grade_level_id,wing_id) VALUES (5,50,50,50)");
+            statement.execute("INSERT INTO timetable_rooms(id,organization_id,wing_id,code,name,exclusive_use) VALUES (50,5,50,'G1A','Grade 1 A',true)");
+            statement.execute("INSERT INTO timetable_section_home_rooms(organization_id,academic_year_id,section_id,room_id) VALUES (5,50,50,50)");
             statement.execute("INSERT INTO timetable_bell_schedules(id,organization_id,name) VALUES (50,5,'Standard')");
             statement.execute("INSERT INTO timetable_bell_schedule_days(id,organization_id,bell_schedule_id,day_of_week,working_day,day_start_time,day_end_time) VALUES (50,5,50,1,true,'09:00','12:00')");
             statement.execute("INSERT INTO timetable_bell_intervals(id,organization_id,bell_schedule_day_id,interval_type,name,start_time,end_time,display_order,coverage_mode,assignee_requirement,schedulable) VALUES (50,5,50,'TEACHING','Period 1','09:00','09:40',1,'SECTION','QUALIFIED_SUBJECT_TEACHER',true),(51,5,50,'TEACHING','Period 2','09:40','10:20',2,'SECTION','QUALIFIED_SUBJECT_TEACHER',true)");

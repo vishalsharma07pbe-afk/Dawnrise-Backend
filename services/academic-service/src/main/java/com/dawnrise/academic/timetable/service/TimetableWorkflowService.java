@@ -25,12 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.LinkedHashSet;
 
 @Service
 public class TimetableWorkflowService {
@@ -86,6 +88,9 @@ public class TimetableWorkflowService {
         requireComplete(org,draftId);
         YearRange year=year(org,h.year());
         if(from==null)throw new InvalidTimetableConfigurationException("effectiveFrom is required");
+        LocalDate today=LocalDate.now(timeZones.getTimeZone(org));
+        if(from.isBefore(today))
+            throw new InvalidTimetableConfigurationException("Timetable validity cannot start before today");
         if(from.isBefore(year.start())||from.isAfter(year.end())||toExclusive!=null&&
                 (!toExclusive.isAfter(from)||toExclusive.isAfter(year.end().plusDays(1))))
             throw new InvalidTimetableConfigurationException("Effective range must be inside the academic year and use an exclusive end date");
@@ -126,7 +131,26 @@ public class TimetableWorkflowService {
     @Transactional(readOnly=true)
     public PublishedTimetable section(long org,long year,long section,LocalDate date){return published(org,year,date,null,null,section,null);}
     @Transactional(readOnly=true)
-    public PublishedTimetable teacher(long org,long year,long teacher,LocalDate date){return published(org,year,date,null,null,null,teacher);}
+    public PublishedTimetable teacher(long org,long year,long teacher,LocalDate date){
+        PublishedTimetable school=published(org,year,date,null,null,null,null);
+        Map<String,List<PublishedEntry>> cells=school.entries().stream().collect(java.util.stream.Collectors.groupingBy(
+                entry->entry.dayOfWeek()+":"+entry.startTime()+":"+entry.endTime(),LinkedHashMap::new,java.util.stream.Collectors.toList()));
+        List<PublishedEntry> entries=new ArrayList<>();
+        for(List<PublishedEntry> cell:cells.values()){
+            List<PublishedEntry> assigned=cell.stream().filter(entry->Objects.equals(entry.teacherUserId(),teacher)).toList();
+            if(!assigned.isEmpty()){entries.addAll(assigned);continue;}
+            PublishedEntry representative=cell.get(0);
+            if(representative.intervalType()!=com.dawnrise.academic.timetable.dto.TimetableConfigurationDtos.IntervalType.TEACHING){
+                entries.add(representative);continue;
+            }
+            entries.add(new PublishedEntry(representative.gradeLevelId(),representative.gradeName(),representative.sectionId(),
+                    representative.sectionName(),representative.wingId(),representative.wingName(),representative.bellScheduleIntervalId(),
+                    representative.dayOfWeek(),representative.startTime(),representative.endTime(),representative.intervalType(),
+                    "Free period",null,null,null,null,null,null));
+        }
+        return new PublishedTimetable(school.publicationId(),school.academicYearId(),school.schoolName(),school.academicYearName(),
+                school.effectiveFrom(),school.effectiveToExclusive(),school.publishedAt(),school.generatedAt(),school.timeZoneId(),List.copyOf(entries));
+    }
     @Transactional(readOnly=true)
     public PublishedTimetable student(long org,long student,long year,LocalDate date){
         long section=jdbc.sql("SELECT section_id FROM student_enrollments WHERE organization_id=:org AND academic_year_id=:year AND student_user_id=:student AND enrolled_on<=:date AND (ended_on IS NULL OR ended_on>=:date) ORDER BY id DESC LIMIT 1")

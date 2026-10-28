@@ -134,7 +134,7 @@ public class TimetableGenerationService {
             if(!build.unmet().isEmpty()){for(int index=1;index<=initial.count();index++)persistProposal(initial,index,null,null,HardSoftScore.of(-build.unmet().size(),0),List.of(),build.unmet());finish(initial.id(),JobStatus.COMPLETED,null);return;}
             for(int index=1;index<=initial.count();index++){
                 if(cancelled(initial.id())){finish(initial.id(),JobStatus.CANCELLED,null);return;}
-                Schedule problem=copy(build.schedule());Solver<Schedule> solver=solver(initial.seed()+index-1,Duration.ofSeconds(Math.max(1,initial.seconds()/initial.count())));runningSolvers.put(initial.id(),solver);
+                long proposalSeed=initial.seed()+index-1;Schedule problem=copy(build.schedule());problem.setVariationSeed(proposalSeed);Solver<Schedule> solver=solver(proposalSeed,Duration.ofSeconds(Math.max(1,initial.seconds()/initial.count())));runningSolvers.put(initial.id(),solver);
                 Schedule solved=solver.solve(problem);runningSolvers.remove(initial.id());HardSoftScore score=solved.getScore();
                 if(cancelled(initial.id())){finish(initial.id(),JobStatus.CANCELLED,null);return;}
                 saveProposal(initial,index,solved,score);progress(initial.id(),index);
@@ -153,12 +153,13 @@ public class TimetableGenerationService {
     private BuildResult buildProblem(JobRow job){
         List<Requirement> requirements=jdbc.sql("""
                 SELECT r.section_id,r.grade_level_id,r.grade_level_subject_id,r.periods_per_week,
-                r.required_each_working_day,r.maximum_periods_per_day,r.double_period_blocks_per_week,s.name
+                r.required_each_working_day,r.maximum_periods_per_day,r.double_period_blocks_per_week,
+                r.allow_consecutive_periods,s.name
                 FROM timetable_section_subject_requirements r JOIN grade_level_subjects gs
                 ON gs.id=r.grade_level_subject_id AND gs.organization_id=r.organization_id AND gs.academic_year_id=r.academic_year_id
                 JOIN subjects s ON s.id=gs.subject_id AND s.organization_id=gs.organization_id AND s.academic_year_id=gs.academic_year_id
                 WHERE r.organization_id=:org AND r.academic_year_id=:year ORDER BY r.section_id,r.grade_level_subject_id
-                """).param("org",job.org()).param("year",job.year()).query((rs,n)->new Requirement(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getInt(4),rs.getBoolean(5),rs.getInt(6),rs.getInt(7),rs.getString(8))).list();
+                """).param("org",job.org()).param("year",job.year()).query((rs,n)->new Requirement(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getInt(4),rs.getBoolean(5),rs.getInt(6),rs.getInt(7),rs.getBoolean(8),rs.getString(9))).list();
         List<String> unmet=new ArrayList<>();List<Lesson> lessons=new ArrayList<>();long lessonId=1;
         Map<Long,List<SlotResponse>> pins=new HashMap<>();
         if(job.source()!=null)for(SlotResponse slot:draftService.get(job.org(),job.source()).slots())if(slot.pinned())pins.computeIfAbsent(slot.sectionId(),key->new ArrayList<>()).add(slot);
@@ -168,7 +169,7 @@ public class TimetableGenerationService {
             ResolvedSectionSchedule resolved=configurationService.resolvedSchedule(job.org(),job.year(),section);
             int capacity=resolved.bellSchedule().days().stream().flatMap(day->day.intervals().stream()).mapToInt(interval->interval.intervalType()==IntervalType.TEACHING?1:0).sum();
             int required=requiredBySection.getOrDefault(section,0);
-            if(capacity!=required)unmet.add("Section "+section+" has "+capacity+" teaching slots but subject requirements total "+required);
+            if(required>capacity)unmet.add("Section "+section+" needs "+required+" subject periods but has only "+capacity+" teaching slots");
         }
         Set<Long> consumedPins=new LinkedHashSet<>();
         for(Requirement requirement:requirements){
@@ -176,8 +177,8 @@ public class TimetableGenerationService {
             if(subjectPins.size()>requirement.weekly()){unmet.add("Section "+requirement.section()+" has more pinned "+requirement.name()+" lessons than required");continue;}
             Long classTeacher=classTeacher(job.org(),job.year(),requirement.section());List<SlotOption> options=options(job,requirement);
             if(options.isEmpty()){unmet.add("No eligible time, teacher, and room combination for "+requirement.name()+" in section "+requirement.section());continue;}
-            for(SlotResponse pin:subjectPins){consumedPins.add(pin.id());SlotOption fixed=pinOption(pin,options);if(fixed==null){unmet.add("Pinned lesson "+pin.id()+" is no longer eligible");continue;}lessons.add(new Lesson(lessonId++,requirement.section(),requirement.grade(),requirement.subject(),false,requirement.name(),requirement.daily(),requirement.doubles(),requirement.requiredDaily(),classTeacher,true,List.of(fixed),fixed));}
-            for(int occurrence=subjectPins.size();occurrence<requirement.weekly();occurrence++)lessons.add(new Lesson(lessonId++,requirement.section(),requirement.grade(),requirement.subject(),false,requirement.name(),requirement.daily(),requirement.doubles(),requirement.requiredDaily(),classTeacher,false,options,null));
+            for(SlotResponse pin:subjectPins){consumedPins.add(pin.id());SlotOption fixed=pinOption(pin,options);if(fixed==null){unmet.add("Pinned lesson "+pin.id()+" is no longer eligible");continue;}lessons.add(new Lesson(lessonId++,requirement.section(),requirement.grade(),requirement.subject(),false,requirement.name(),requirement.daily(),requirement.doubles(),requirement.allowConsecutive(),requirement.requiredDaily(),classTeacher,true,List.of(fixed),fixed));}
+            for(int occurrence=subjectPins.size();occurrence<requirement.weekly();occurrence++)lessons.add(new Lesson(lessonId++,requirement.section(),requirement.grade(),requirement.subject(),false,requirement.name(),requirement.daily(),requirement.doubles(),requirement.allowConsecutive(),requirement.requiredDaily(),classTeacher,false,options,null));
         }
         for(var entry:pins.entrySet())for(SlotResponse pin:entry.getValue())if(!consumedPins.contains(pin.id())){
             if(pin.activityType()!=ActivityType.SUPERVISED_ACTIVITY){unmet.add("Pinned slot "+pin.id()+" does not match a configured teaching requirement");continue;}
@@ -202,7 +203,7 @@ public class TimetableGenerationService {
                 AND (valid_from IS NULL OR valid_from<=CURRENT_DATE) AND (valid_to IS NULL OR valid_to>=CURRENT_DATE)
                 ORDER BY teacher_user_id
                 """).param("org",job.org()).param("year",job.year()).param("section",requirement.section()).param("subject",requirement.subject()).param("wing",schedule.wingId()).query(Long.class).list();
-        List<RoomChoice> rooms=rooms(job.org(),job.year(),requirement.subject());if(rooms.isEmpty())return List.of();
+        List<RoomChoice> rooms=rooms(job.org(),job.year(),requirement.section(),requirement.subject());if(rooms.isEmpty())return List.of();
         List<SlotOption> result=new ArrayList<>();
         for(BellDayResponse day:schedule.bellSchedule().days()){
             List<BellIntervalResponse> teaching=day.intervals().stream().filter(i->i.intervalType()==IntervalType.TEACHING).toList();
@@ -214,10 +215,16 @@ public class TimetableGenerationService {
         return List.copyOf(result);
     }
 
-    private List<RoomChoice> rooms(long org,long year,long subject){
+    private List<RoomChoice> rooms(long org,long year,long section,long subject){
         long required=jdbc.sql("SELECT COUNT(*) FROM timetable_subject_room_requirements WHERE organization_id=:org AND academic_year_id=:year AND grade_level_subject_id=:subject AND required")
                 .param("org",org).param("year",year).param("subject",subject).query(Long.class).single();
-        if(required==0)return List.of(new RoomChoice(null,false));
+        if(required==0)return jdbc.sql("""
+                SELECT room.id,room.exclusive_use FROM timetable_section_home_rooms home
+                JOIN timetable_rooms room ON room.id=home.room_id AND room.organization_id=home.organization_id
+                WHERE home.organization_id=:org AND home.academic_year_id=:year
+                    AND home.section_id=:section AND room.active
+                """).param("org",org).param("year",year).param("section",section)
+                .query((rs,n)->new RoomChoice(rs.getLong(1),rs.getBoolean(2))).list();
         return jdbc.sql("""
                 SELECT r.id,r.exclusive_use FROM timetable_rooms r WHERE r.organization_id=:org AND r.active
                 AND NOT EXISTS(SELECT 1 FROM timetable_subject_room_requirements rr WHERE rr.organization_id=:org
@@ -240,7 +247,11 @@ public class TimetableGenerationService {
     private SlotOption pinOption(SlotResponse pin,List<SlotOption> options){return options.stream().filter(o->o.intervalId()==pin.bellScheduleIntervalId()&&java.util.Objects.equals(o.teacherUserId(),pin.teacherUserId())&&java.util.Objects.equals(o.roomId(),pin.roomId())).findFirst().orElse(null);}
 
     private void saveProposal(JobRow job,int index,Schedule solved,HardSoftScore score){
-        if(score==null||!score.isFeasible()){persistProposal(job,index,null,solved,score==null?HardSoftScore.of(-1,0):score,List.of(),List.of("Solver did not find a fully assigned hard-constraint-feasible timetable within the limit"));return;}
+        if(score==null||!score.isFeasible()){
+            List<String> reasons=solved==null?List.of("The timetable could not be created. Review teacher availability, daily limits and classroom rules, then try again.")
+                    :new TimetableScoreCalculator().explainHardConstraintViolations(solved);
+            persistProposal(job,index,null,solved,score==null?HardSoftScore.of(-1,0):score,List.of(),reasons);return;
+        }
         SaveResult result=new TransactionTemplate(transactionManager).execute(status->{
             DraftResponse draft=draftService.create(job.org(),job.actor(),new CreateDraftRequest(job.year(),"Generated "+job.id()+" proposal "+index));long version=draft.version();
             for(Lesson lesson:solved.getLessons()){SlotOption option=lesson.getOption();if(option==null){status.setRollbackOnly();return new SaveResult(null,List.of(),List.of("Solver returned an unassigned teaching requirement"));}
@@ -273,7 +284,7 @@ public class TimetableGenerationService {
     private JobRow mapJob(java.sql.ResultSet rs)throws java.sql.SQLException{return new JobRow(rs.getLong("id"),rs.getLong("organization_id"),rs.getLong("academic_year_id"),rs.getString("request_key"),JobStatus.valueOf(rs.getString("status")),rs.getInt("proposal_count"),rs.getInt("completed_proposals"),rs.getLong("seed"),rs.getInt("solve_time_seconds"),(Long)rs.getObject("source_draft_id"),rs.getBoolean("prefer_class_teacher_first"),rs.getBoolean("cancel_requested"),rs.getString("failure_message"),rs.getLong("created_by_user_id"),rs.getObject("created_at",OffsetDateTime.class),rs.getObject("started_at",OffsetDateTime.class),rs.getObject("finished_at",OffsetDateTime.class),rs.getLong("version"));}
     private void requireYear(long org,long year){if(jdbc.sql("SELECT COUNT(*) FROM academic_years WHERE id=:year AND organization_id=:org").param("year",year).param("org",org).query(Long.class).single()==0)throw new TimetableConfigurationNotFoundException("Academic year not found");}
     private TransactionTemplate transaction(){return new TransactionTemplate(transactionManager);}
-    private Schedule copy(Schedule source){List<Lesson> lessons=source.getLessons().stream().map(l->new Lesson(l.getId(),l.getSectionId(),l.getGradeLevelId(),l.getSubjectId(),l.isSupervisedActivity(),l.getActivityName(),l.getMaximumPerDay(),l.getRequiredDoubleBlocks(),l.isRequiredEachDay(),l.getClassTeacherId(),l.isPinned(),l.getOptions(),l.isPinned()?l.getOption():null)).toList();return new Schedule(new ArrayList<>(lessons),source.getTeacherPolicies(),source.isPreferClassTeacherFirst());}
+    private Schedule copy(Schedule source){List<Lesson> lessons=source.getLessons().stream().map(l->new Lesson(l.getId(),l.getSectionId(),l.getGradeLevelId(),l.getSubjectId(),l.isSupervisedActivity(),l.getActivityName(),l.getMaximumPerDay(),l.getRequiredDoubleBlocks(),l.isConsecutivePeriodsAllowed(),l.isRequiredEachDay(),l.getClassTeacherId(),l.isPinned(),l.getOptions(),l.isPinned()?l.getOption():null)).toList();Schedule copy=new Schedule(new ArrayList<>(lessons),source.getTeacherPolicies(),source.isPreferClassTeacherFirst());copy.setVariationSeed(source.getVariationSeed());return copy;}
     private Map<String,Long> scoreBreakdown(HardSoftScore score,Schedule schedule){Map<String,Long> values=new LinkedHashMap<>();values.put("hardConstraintScore",score==null?-1:score.hardScore());values.put("softPreferenceScore",score==null?0:score.softScore());if(schedule!=null){values.put("assignedLessons",schedule.getLessons().stream().filter(l->l.getOption()!=null).count());values.put("preferredAvailabilityAssignments",schedule.getLessons().stream().filter(l->l.getOption()!=null&&l.getOption().preferredTeacherTime()).count());values.put("discouragedAvailabilityAssignments",schedule.getLessons().stream().filter(l->l.getOption()!=null&&l.getOption().discouragedTeacherTime()).count());values.put("pinnedLessons",schedule.getLessons().stream().filter(Lesson::isPinned).count());}return Map.copyOf(values);}
     private String json(Object value){try{return objectMapper.writeValueAsString(value);}catch(Exception exception){throw new IllegalStateException("Unable to serialize generation result",exception);}}
     private List<String> jsonStrings(String value){try{return value==null?List.of():objectMapper.readValue(value,objectMapper.getTypeFactory().constructCollectionType(List.class,String.class));}catch(Exception exception){return List.of("Stored result could not be decoded");}}
@@ -281,7 +292,7 @@ public class TimetableGenerationService {
     private List<Conflict> jsonConflicts(String value){try{return value==null?List.of():objectMapper.readValue(value,objectMapper.getTypeFactory().constructCollectionType(List.class,Conflict.class));}catch(Exception exception){return List.of();}}
     private String safeMessage(Exception exception){String message=exception.getMessage();return message==null?"Timetable generation failed":message.substring(0,Math.min(500,message.length()));}
 
-    private record Requirement(long section,long grade,long subject,int weekly,boolean requiredDaily,int daily,int doubles,String name){}
+    private record Requirement(long section,long grade,long subject,int weekly,boolean requiredDaily,int daily,int doubles,boolean allowConsecutive,String name){}
     private record RoomChoice(Long id,boolean exclusive){}
     private record BuildResult(Schedule schedule,List<String> unmet){}
     private record SaveResult(Long draft,List<Conflict> findings,List<String> unmet){}

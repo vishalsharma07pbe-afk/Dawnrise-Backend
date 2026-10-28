@@ -2,6 +2,7 @@ package com.dawnrise.academic.timetable.controller;
 
 import com.dawnrise.academic.security.AuthenticatedAcademicActor;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.ConflictPreview;
+import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.BulkLessonRequest;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.ConflictPreviewRequest;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.CreateDraftRequest;
 import com.dawnrise.academic.timetable.dto.TimetableDraftDtos.DraftResponse;
@@ -42,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TimetableDraftController {
     private static final String VIEW="@academicTenantSecurity.hasOrganization(authentication) and hasAuthority('TIMETABLE_DRAFT_VIEW')";
     private static final String EDIT="@academicTenantSecurity.hasOrganization(authentication) and hasAuthority('TIMETABLE_DRAFT_EDIT')";
+    private static final String MANAGE_VALIDITY="@academicTenantSecurity.hasOrganization(authentication) and (hasAuthority('TIMETABLE_DRAFT_EDIT') or hasAuthority('TIMETABLE_REVIEW') or hasAuthority('TIMETABLE_APPROVE') or hasAuthority('TIMETABLE_PUBLISH'))";
     private final TimetableDraftService service;
     public TimetableDraftController(TimetableDraftService service){this.service=service;}
 
@@ -61,7 +63,7 @@ public class TimetableDraftController {
     public DraftHistory history(@PathVariable @Positive long draftId, JwtAuthenticationToken auth) {
         return service.history(org(auth), draftId);
     }
-    @PutMapping("/{draftId}/effective-date-intent") @PreAuthorize(EDIT)
+    @PutMapping("/{draftId}/effective-date-intent") @PreAuthorize(MANAGE_VALIDITY)
     public DraftResponse updateIntent(@PathVariable @Positive long draftId,
                                       @Valid @RequestBody EffectiveDateIntentRequest request,
                                       JwtAuthenticationToken auth) {
@@ -73,6 +75,8 @@ public class TimetableDraftController {
     public ConflictPreview preview(@PathVariable @Positive long draftId,@Valid @RequestBody ConflictPreviewRequest request,JwtAuthenticationToken auth){return service.preview(org(auth),draftId,request.slotId(),request.proposed());}
     @PostMapping("/{draftId}/lessons") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize(EDIT)
     public SlotResponse add(@PathVariable @Positive long draftId,@Valid @RequestBody LessonRequest request,JwtAuthenticationToken auth){return service.add(org(auth),actor(auth),draftId,request);}
+    @PostMapping("/{draftId}/lessons/bulk") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize(EDIT)
+    public DraftResponse addMany(@PathVariable @Positive long draftId,@Valid @RequestBody BulkLessonRequest request,JwtAuthenticationToken auth){return service.addMany(org(auth),actor(auth),draftId,request);}
     @PutMapping("/{draftId}/lessons/{slotId}/move") @PreAuthorize(EDIT)
     public SlotResponse move(@PathVariable @Positive long draftId,@PathVariable @Positive long slotId,@Valid @RequestBody MoveLessonRequest request,JwtAuthenticationToken auth){return service.move(org(auth),actor(auth),draftId,slotId,request);}
     @PostMapping("/{draftId}/lessons/{slotId}/swap") @PreAuthorize(EDIT)

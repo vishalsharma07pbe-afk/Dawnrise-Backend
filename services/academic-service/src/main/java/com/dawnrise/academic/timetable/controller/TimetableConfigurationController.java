@@ -117,6 +117,12 @@ public class TimetableConfigurationController {
         return service.updateRoom(org(auth), actor(auth), id, request);
     }
 
+    @PutMapping("/section-home-rooms") @PreAuthorize(MANAGE)
+    public SectionHomeRoomResponse assignSectionHomeRoom(@Valid @RequestBody SectionHomeRoomRequest request,
+                                                         JwtAuthenticationToken auth) {
+        return service.assignSectionHomeRoom(org(auth), actor(auth), request);
+    }
+
     @PutMapping("/subject-room-requirements") @PreAuthorize(MANAGE)
     public Map<String, Long> saveSubjectRoomRequirement(@Valid @RequestBody SubjectRoomRequirementRequest request,
                                                        JwtAuthenticationToken auth) {

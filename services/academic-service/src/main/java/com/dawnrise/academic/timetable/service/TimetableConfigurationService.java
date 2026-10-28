@@ -237,22 +237,26 @@ public class TimetableConfigurationService {
             id = jdbc.sql("""
                     INSERT INTO timetable_section_subject_requirements
                     (organization_id,academic_year_id,grade_level_id,section_id,grade_level_subject_id,
-                     periods_per_week,required_each_working_day,maximum_periods_per_day,double_period_blocks_per_week)
-                    VALUES (:org,:year,:grade,:section,:subject,:weekly,:daily,:maximum,:doubles) RETURNING id
+                     periods_per_week,required_each_working_day,maximum_periods_per_day,
+                     double_period_blocks_per_week,allow_consecutive_periods)
+                    VALUES (:org,:year,:grade,:section,:subject,:weekly,:daily,:maximum,:doubles,:allowed) RETURNING id
                     """).param("org", organizationId).param("year", request.academicYearId())
                     .param("grade", request.gradeLevelId()).param("section", request.sectionId())
                     .param("subject", request.gradeLevelSubjectId()).param("weekly", request.periodsPerWeek())
                     .param("daily", request.requiredEachWorkingDay()).param("maximum", request.maximumPeriodsPerDay())
-                    .param("doubles", request.doublePeriodBlocksPerWeek()).query(Long.class).single();
+                    .param("doubles", request.doublePeriodBlocksPerWeek())
+                    .param("allowed", request.allowConsecutivePeriods()).query(Long.class).single();
         } else {
             requireVersion(request.expectedVersion());
             int changed = jdbc.sql("""
                     UPDATE timetable_section_subject_requirements SET periods_per_week=:weekly,
                     required_each_working_day=:daily, maximum_periods_per_day=:maximum,
-                    double_period_blocks_per_week=:doubles, version=version+1, updated_at=CURRENT_TIMESTAMP
+                    double_period_blocks_per_week=:doubles, allow_consecutive_periods=:allowed,
+                    version=version+1, updated_at=CURRENT_TIMESTAMP
                     WHERE id=:id AND organization_id=:org AND version=:version
                     """).param("weekly", request.periodsPerWeek()).param("daily", request.requiredEachWorkingDay())
                     .param("maximum", request.maximumPeriodsPerDay()).param("doubles", request.doublePeriodBlocksPerWeek())
+                    .param("allowed", request.allowConsecutivePeriods())
                     .param("id", existing).param("org", organizationId).param("version", request.expectedVersion()).update();
             ensureChanged(changed, "Subject requirement", existing, organizationId);
             id = existing;
@@ -452,7 +456,8 @@ public class TimetableConfigurationService {
                 """).param("org", organizationId).param("year", academicYearId).query((rs,n) -> new SubjectRequirementResponse(
                 rs.getLong("id"),rs.getLong("academic_year_id"),rs.getLong("grade_level_id"),rs.getLong("section_id"),
                 rs.getLong("grade_level_subject_id"),rs.getInt("periods_per_week"),rs.getBoolean("required_each_working_day"),
-                rs.getInt("maximum_periods_per_day"),rs.getInt("double_period_blocks_per_week"),rs.getLong("version"))).list();
+                rs.getInt("maximum_periods_per_day"),rs.getInt("double_period_blocks_per_week"),
+                rs.getBoolean("allow_consecutive_periods"),rs.getLong("version"))).list();
         List<TeacherPolicyResponse> policies = jdbc.sql("""
                 SELECT * FROM timetable_teacher_policies WHERE organization_id=:org AND academic_year_id=:year ORDER BY teacher_user_id
                 """).param("org", organizationId).param("year", academicYearId).query((rs,n) -> new TeacherPolicyResponse(
@@ -475,6 +480,14 @@ public class TimetableConfigurationService {
                 (Long)rs.getObject("wing_id"),EligibilityType.valueOf(rs.getString("eligibility_type")),
                 rs.getObject("valid_from",java.time.LocalDate.class),rs.getObject("valid_to",java.time.LocalDate.class),
                 rs.getBoolean("active"),rs.getLong("approved_by_user_id"),rs.getLong("version"))).list();
+        List<SectionHomeRoomResponse> homeRooms = jdbc.sql("""
+                SELECT h.id,h.academic_year_id,s.grade_level_id,h.section_id,h.room_id,h.version
+                FROM timetable_section_home_rooms h JOIN sections s ON s.id=h.section_id
+                    AND s.academic_year_id=h.academic_year_id AND s.organization_id=h.organization_id
+                WHERE h.organization_id=:org AND h.academic_year_id=:year ORDER BY s.grade_level_id,h.section_id
+                """).param("org", organizationId).param("year", academicYearId).query((rs,n) -> new SectionHomeRoomResponse(
+                rs.getLong("id"),rs.getLong("academic_year_id"),rs.getLong("grade_level_id"),
+                rs.getLong("section_id"),rs.getLong("room_id"),rs.getLong("version"))).list();
         List<SubjectRoomRequirementResponse> roomRequirements = jdbc.sql("""
                 SELECT * FROM timetable_subject_room_requirements WHERE organization_id=:org AND academic_year_id=:year
                 ORDER BY grade_level_subject_id,capability_code
@@ -482,7 +495,7 @@ public class TimetableConfigurationService {
                 rs.getLong("id"),rs.getLong("academic_year_id"),rs.getLong("grade_level_id"),
                 rs.getLong("grade_level_subject_id"),rs.getString("capability_code"),rs.getBoolean("required"),rs.getLong("version"))).list();
         return new AcademicYearConfiguration(academicYearId, gradeWings, assignments, requirements, policies,
-                availability, eligibilities, roomRequirements);
+                availability, eligibilities, homeRooms, roomRequirements);
     }
 
     @Transactional(readOnly = true)
@@ -580,6 +593,12 @@ public class TimetableConfigurationService {
                                            SubjectRoomRequirementRequest request) {
         assertGradeSubject(organizationId, request.academicYearId(), request.gradeLevelId(), request.gradeLevelSubjectId());
         String capability = normalizeCode(request.capabilityCode());
+        if (request.required()) jdbc.sql("""
+                UPDATE timetable_subject_room_requirements SET required=FALSE,version=version+1
+                WHERE organization_id=:org AND academic_year_id=:year AND grade_level_subject_id=:subject
+                    AND capability_code<>:capability AND required
+                """).param("org", organizationId).param("year", request.academicYearId())
+                .param("subject", request.gradeLevelSubjectId()).param("capability", capability).update();
         Long existing = jdbc.sql("""
                 SELECT id FROM timetable_subject_room_requirements WHERE organization_id=:org
                 AND academic_year_id=:year AND grade_level_subject_id=:subject AND capability_code=:capability
@@ -607,6 +626,55 @@ public class TimetableConfigurationService {
         }
         audit(organizationId, actorId, existing == null ? "CREATE" : "UPDATE", "SUBJECT_ROOM_REQUIREMENT", id);
         return id;
+    }
+
+    @Transactional
+    public SectionHomeRoomResponse assignSectionHomeRoom(long organizationId, long actorId,
+                                                         SectionHomeRoomRequest request) {
+        assertSection(organizationId, request.academicYearId(), request.gradeLevelId(), request.sectionId());
+        long eligibleRoom = jdbc.sql("""
+                SELECT COUNT(*) FROM timetable_rooms room
+                LEFT JOIN timetable_grade_wings gw ON gw.organization_id=room.organization_id
+                    AND gw.academic_year_id=:year AND gw.grade_level_id=:grade
+                WHERE room.id=:room AND room.organization_id=:org AND room.active
+                    AND (room.wing_id IS NULL OR room.wing_id=gw.wing_id)
+                """).param("year", request.academicYearId()).param("grade", request.gradeLevelId())
+                .param("room", request.roomId()).param("org", organizationId).query(Long.class).single();
+        if (eligibleRoom == 0) throw new InvalidTimetableConfigurationException(
+                "Choose an active classroom in the same school wing as this section");
+        Long existing = jdbc.sql("""
+                SELECT id FROM timetable_section_home_rooms WHERE organization_id=:org
+                    AND academic_year_id=:year AND section_id=:section
+                """).param("org", organizationId).param("year", request.academicYearId())
+                .param("section", request.sectionId()).query(Long.class).optional().orElse(null);
+        long id;
+        if (existing == null) {
+            id = jdbc.sql("""
+                    INSERT INTO timetable_section_home_rooms
+                        (organization_id,academic_year_id,section_id,room_id)
+                    VALUES (:org,:year,:section,:room) RETURNING id
+                    """).param("org", organizationId).param("year", request.academicYearId())
+                    .param("section", request.sectionId()).param("room", request.roomId())
+                    .query(Long.class).single();
+        } else {
+            requireVersion(request.expectedVersion());
+            int changed = jdbc.sql("""
+                    UPDATE timetable_section_home_rooms SET room_id=:room,version=version+1,updated_at=CURRENT_TIMESTAMP
+                    WHERE id=:id AND organization_id=:org AND version=:version
+                    """).param("room", request.roomId()).param("id", existing).param("org", organizationId)
+                    .param("version", request.expectedVersion()).update();
+            ensureChanged(changed, "Section regular classroom", existing, organizationId);
+            id = existing;
+        }
+        audit(organizationId, actorId, existing == null ? "CREATE" : "UPDATE", "SECTION_HOME_ROOM", id);
+        return jdbc.sql("""
+                SELECT h.id,h.academic_year_id,s.grade_level_id,h.section_id,h.room_id,h.version
+                FROM timetable_section_home_rooms h JOIN sections s ON s.id=h.section_id
+                    AND s.academic_year_id=h.academic_year_id AND s.organization_id=h.organization_id
+                WHERE h.id=:id AND h.organization_id=:org
+                """).param("id", id).param("org", organizationId).query((rs,n) -> new SectionHomeRoomResponse(
+                rs.getLong("id"),rs.getLong("academic_year_id"),rs.getLong("grade_level_id"),
+                rs.getLong("section_id"),rs.getLong("room_id"),rs.getLong("version"))).single();
     }
 
     @Transactional(readOnly = true)
@@ -718,6 +786,19 @@ public class TimetableConfigurationService {
                     return 0;
                 }).list();
         jdbc.sql("""
+                SELECT DISTINCT r.section_id
+                FROM timetable_section_subject_requirements r
+                WHERE r.organization_id=:org AND r.academic_year_id=:year
+                    AND NOT EXISTS (SELECT 1 FROM timetable_section_home_rooms home
+                        JOIN timetable_rooms room ON room.id=home.room_id AND room.organization_id=home.organization_id
+                        WHERE home.organization_id=r.organization_id AND home.academic_year_id=r.academic_year_id
+                            AND home.section_id=r.section_id AND room.active)
+                """).param("org", organizationId).param("year", academicYearId).query((rs, n) -> {
+                    issues.add(issue("MISSING_HOME_CLASSROOM", "Choose the regular classroom for this section",
+                            rs.getLong("section_id"), null, null, null));
+                    return 0;
+                }).list();
+        jdbc.sql("""
                 SELECT DISTINCT rr.grade_level_subject_id,rr.capability_code
                 FROM timetable_subject_room_requirements rr
                 WHERE rr.organization_id=:org AND rr.academic_year_id=:year AND rr.required
@@ -821,7 +902,8 @@ public class TimetableConfigurationService {
                 .param("id", id).param("org", org).query((rs, n) -> new SubjectRequirementResponse(rs.getLong("id"),
                         rs.getLong("academic_year_id"), rs.getLong("grade_level_id"), rs.getLong("section_id"),
                         rs.getLong("grade_level_subject_id"), rs.getInt("periods_per_week"), rs.getBoolean("required_each_working_day"),
-                        rs.getInt("maximum_periods_per_day"), rs.getInt("double_period_blocks_per_week"), rs.getLong("version"))).single();
+                        rs.getInt("maximum_periods_per_day"), rs.getInt("double_period_blocks_per_week"),
+                        rs.getBoolean("allow_consecutive_periods"), rs.getLong("version"))).single();
     }
 
     private RoomResponse room(long org, long id) {
