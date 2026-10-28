@@ -72,6 +72,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
+import com.dawnrise.academic.timetable.exception.InvalidTimetableConfigurationException;
+import com.dawnrise.academic.timetable.exception.TimetableConfigurationConflictException;
+import com.dawnrise.academic.timetable.exception.TimetableConfigurationNotFoundException;
 
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -82,6 +85,24 @@ public class GlobalExceptionHandler {
 
     private static final Logger LOGGER =
             LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(InvalidTimetableConfigurationException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidTimetableConfiguration(
+            InvalidTimetableConfigurationException exception, HttpServletRequest request) {
+        return response(HttpStatus.BAD_REQUEST, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(TimetableConfigurationNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleTimetableConfigurationNotFound(
+            TimetableConfigurationNotFoundException exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(TimetableConfigurationConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleTimetableConfigurationConflict(
+            TimetableConfigurationConflictException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
 
     @ExceptionHandler(InvalidAcademicYearException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidAcademicYear(

@@ -113,6 +113,13 @@ public class ParentSessionEnforcementFilter extends OncePerRequestFilter {
     private boolean requiresRecentAuthentication(HttpServletRequest request) {
         String method = request.getMethod();
         String path = request.getRequestURI();
+        if (("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method))
+                && path.startsWith("/api/v1/timetable-configuration")) return true;
+        if (("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method))
+                && path.startsWith("/api/v1/timetable-drafts")
+                && !path.endsWith("/conflict-preview") && !path.endsWith("/swap-preview")) return true;
+        if ("POST".equals(method) && path.startsWith("/api/v1/timetable-generation-jobs")) return true;
+        if ("POST".equals(method) && path.matches("/api/v1/timetables/drafts/\\d+/(submit|return|approve|publish)")) return true;
         if ("POST".equals(method) && path.equals("/api/v1/grading-policies")) return true;
         if ((("PUT".equals(method) || "DELETE".equals(method)) && path.matches("/api/v1/grading-policies/\\d+"))
                 || ("POST".equals(method) && path.matches("/api/v1/grading-policies/\\d+/activate"))) return true;

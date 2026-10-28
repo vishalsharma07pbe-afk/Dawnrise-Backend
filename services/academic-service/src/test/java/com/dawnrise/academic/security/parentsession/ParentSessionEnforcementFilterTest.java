@@ -108,7 +108,17 @@ class ParentSessionEnforcementFilterTest {
             "POST,/api/v1/grading-policies/9/activate", "DELETE,/api/v1/grading-policies/9",
             "POST,/api/v1/report-cards/publications/8/generate",
             "POST,/api/v1/report-cards/7/submit", "POST,/api/v1/report-cards/7/approve",
-            "POST,/api/v1/report-cards/7/return", "POST,/api/v1/report-cards/7/publish"
+            "POST,/api/v1/report-cards/7/return", "POST,/api/v1/report-cards/7/publish",
+            "POST,/api/v1/timetable-configuration/wings",
+            "PUT,/api/v1/timetable-configuration/bell-schedules/7",
+            "POST,/api/v1/timetable-drafts",
+            "PUT,/api/v1/timetable-drafts/4/lessons/9/move",
+            "POST,/api/v1/timetable-generation-jobs",
+            "POST,/api/v1/timetable-generation-jobs/8/cancel",
+            "POST,/api/v1/timetables/drafts/4/submit",
+            "POST,/api/v1/timetables/drafts/4/return",
+            "POST,/api/v1/timetables/drafts/4/approve",
+            "POST,/api/v1/timetables/drafts/4/publish"
     })
     void sensitiveMutationsRequireAuthoritativeRecentAuthentication(String verb, String path) throws Exception {
         Fixture fixture = fixture();
@@ -136,7 +146,9 @@ class ParentSessionEnforcementFilterTest {
     @ParameterizedTest
     @CsvSource({
             "GET,/api/v1/grading-policies", "GET,/api/v1/report-cards/7",
-            "GET,/api/v1/report-cards/7/pdf", "POST,/api/v1/report-cards/7/archive"
+            "GET,/api/v1/report-cards/7/pdf", "POST,/api/v1/report-cards/7/archive",
+            "POST,/api/v1/timetable-drafts/4/conflict-preview",
+            "POST,/api/v1/timetable-drafts/4/lessons/9/swap-preview"
     })
     void recentAuthenticationIsNotCalledForOtherRoutes(String verb, String path) throws Exception {
         Fixture fixture = fixture();

@@ -73,6 +73,11 @@
 			<artifactId>pdfbox</artifactId>
 			<version>3.0.4</version>
 		</dependency>
+		<dependency>
+			<groupId>ai.timefold.solver</groupId>
+			<artifactId>timefold-solver-core</artifactId>
+			<version>2.7.1</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.postgresql</groupId>

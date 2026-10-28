@@ -37,6 +37,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionException;
@@ -46,6 +47,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.lang.reflect.Proxy;
 import java.time.ZoneId;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude=" +
@@ -61,6 +65,8 @@ class AcademicServiceApplicationTests {
 
 	@TestConfiguration
 	static class TestConfig {
+
+		@Bean JdbcClient jdbcClient() { return mock(JdbcClient.class, RETURNS_DEEP_STUBS); }
 
 		private static <T> T repositoryStub(Class<T> type) {
 			return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
@@ -194,8 +200,8 @@ class AcademicServiceApplicationTests {
 		}
 
 		@Bean
-		TransactionTemplate transactionTemplate() {
-			return new TransactionTemplate(new PlatformTransactionManager() {
+		PlatformTransactionManager transactionManager() {
+			return new PlatformTransactionManager() {
 				@Override
 				public TransactionStatus getTransaction(
 						TransactionDefinition definition
@@ -212,7 +218,12 @@ class AcademicServiceApplicationTests {
 				public void rollback(TransactionStatus status)
 						throws TransactionException {
 				}
-			});
+			};
+		}
+
+		@Bean
+		TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+			return new TransactionTemplate(transactionManager);
 		}
 
 		@Bean

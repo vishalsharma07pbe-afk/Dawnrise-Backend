@@ -51,6 +51,21 @@ public class HttpSchoolTimeZoneClient implements SchoolTimeZoneClient {
         }
     }
 
+    @Override
+    public String getSchoolName(long organizationId) {
+        validateConfiguration();
+        try {
+            OrganizationBrandingResponse response=schoolServiceRestClient.get()
+                    .uri("/internal/v1/organizations/{organizationId}/branding",organizationId)
+                    .header("X-Service-Name",properties.getServiceName())
+                    .header("X-Internal-Api-Key",properties.getApiKey()).retrieve()
+                    .body(OrganizationBrandingResponse.class);
+            if(response==null||response.id()==null||response.id()!=organizationId||response.name()==null||response.name().isBlank())
+                throw new SchoolTimeZoneUnavailableException("School branding could not be verified");
+            return response.name().trim();
+        } catch(RestClientException exception){throw new SchoolTimeZoneUnavailableException("School branding could not be verified",exception);}
+    }
+
     private ZoneId validateResponse(
             long organizationId,
             OrganizationTimeZoneResponse response
