@@ -118,7 +118,10 @@ class ParentSessionEnforcementFilterTest {
             "POST,/api/v1/timetables/drafts/4/submit",
             "POST,/api/v1/timetables/drafts/4/return",
             "POST,/api/v1/timetables/drafts/4/approve",
-            "POST,/api/v1/timetables/drafts/4/publish"
+            "POST,/api/v1/timetables/drafts/4/publish",
+            "POST,/api/v1/daily-timetable-cover/absences",
+            "POST,/api/v1/daily-timetable-cover/cases/4/manual-proposals",
+            "POST,/api/v1/daily-timetable-cover/proposals/8/approve"
     })
     void sensitiveMutationsRequireAuthoritativeRecentAuthentication(String verb, String path) throws Exception {
         Fixture fixture = fixture();
@@ -148,7 +151,8 @@ class ParentSessionEnforcementFilterTest {
             "GET,/api/v1/grading-policies", "GET,/api/v1/report-cards/7",
             "GET,/api/v1/report-cards/7/pdf", "POST,/api/v1/report-cards/7/archive",
             "POST,/api/v1/timetable-drafts/4/conflict-preview",
-            "POST,/api/v1/timetable-drafts/4/lessons/9/swap-preview"
+            "POST,/api/v1/timetable-drafts/4/lessons/9/swap-preview",
+            "POST,/api/v1/daily-timetable-cover/cases/4/manual-preview"
     })
     void recentAuthenticationIsNotCalledForOtherRoutes(String verb, String path) throws Exception {
         Fixture fixture = fixture();
