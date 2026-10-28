@@ -18,6 +18,11 @@ import com.dawnrise.academic.timetable.dto.TimetableConfigurationDtos.TeacherAva
 import com.dawnrise.academic.timetable.dto.TimetableGenerationDtos.GenerateRequest;
 import com.dawnrise.academic.timetable.dto.TimetableGenerationDtos.JobStatus;
 import com.dawnrise.academic.timetable.exception.TimetableConfigurationConflictException;
+import com.dawnrise.academic.dailycoverage.service.DailyCoverageService;
+import com.dawnrise.academic.dailycoverage.dto.DailyCoverageDtos.AbsenceType;
+import com.dawnrise.academic.dailycoverage.dto.DailyCoverageDtos.CandidateChoiceRequest;
+import com.dawnrise.academic.dailycoverage.dto.DailyCoverageDtos.RecordAbsenceRequest;
+import com.dawnrise.academic.dailycoverage.dto.DailyCoverageDtos.VersionRequest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -39,6 +44,8 @@ import java.util.Comparator;
 import java.util.Set;
 import java.util.List;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -408,10 +415,11 @@ class TimetablePostgresMigrationTest {
         assertEquals(com.dawnrise.academic.timetable.dto.TimetableDraftDtos.WorkflowStatus.IN_REVIEW,submitted.status());
         assertThrows(TimetableConfigurationConflictException.class,()->transactions.execute(status->service.add(5,90,pinnedDraft.id(),adjacent)));
         var approved=transactions.execute(status->workflow.approve(5,92,pinnedDraft.id(),submitted.version()));
-        var published=transactions.execute(status->workflow.publish(5,93,pinnedDraft.id(),approved.version(),LocalDate.of(2026,1,1),null));
+        LocalDate publicationDate=LocalDate.now(publicationSchool.getTimeZone(5));
+        var published=transactions.execute(status->workflow.publish(5,93,pinnedDraft.id(),approved.version(),publicationDate,null));
         assertEquals(com.dawnrise.academic.timetable.dto.TimetableDraftDtos.WorkflowStatus.PUBLISHED,published.status());
         assertTrue(published.publicationId()!=null);
-        var schoolView=workflow.school(5,50,LocalDate.of(2026,3,1));
+        var schoolView=workflow.school(5,50,publicationDate);
         assertEquals(published.publicationId(),schoolView.publicationId());
         assertEquals("Asia/Kolkata",schoolView.timeZoneId());
         assertEquals("Original School Name",schoolView.schoolName());
@@ -422,7 +430,7 @@ class TimetablePostgresMigrationTest {
                 .thenAnswer(invocation->new BatchTeachingEligibilityResponse(invocation.<List<Long>>getArgument(1).stream()
                         .map(id->new TeachingEligibilityResponse(id,5L,"Renamed Teacher",true,TeachingEligibilityReason.ELIGIBLE)).toList()));
         schoolName.set("Renamed School");
-        var historical=workflow.school(5,50,LocalDate.of(2026,3,1));
+        var historical=workflow.school(5,50,publicationDate);
         assertEquals("Original School Name",historical.schoolName());
         assertTrue(historical.entries().stream().filter(entry->entry.teacherUserId()!=null)
                 .allMatch(entry->entry.teacherDisplayName().startsWith("Original Teacher")));
@@ -453,6 +461,81 @@ class TimetablePostgresMigrationTest {
         var active=transactions.execute(status->cancellable.submit(5,90,new GenerateRequest(50,1,789,1,null,false,"generation-active")));
         assertEquals(JobStatus.QUEUED,active.status());
         assertThrows(TimetableConfigurationConflictException.class,()->transactions.execute(status->cancellable.submit(5,90,new GenerateRequest(50,1,790,1,null,false,"generation-concurrent"))));
+    }
+
+    @Test
+    void dailyCoverKeepsOriginalAssignmentAndProjectsOnlyApprovedProposal() throws Exception {
+        LocalDate date = LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(1);
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO academic_years(id,organization_id,name,start_date,end_date,status) VALUES (90,9,'2026','2026-01-01','2026-12-31','ACTIVE')");
+            statement.execute("INSERT INTO grade_levels(id,organization_id,academic_year_id,code,name,display_order) VALUES (90,9,90,'G1','Grade 1',1)");
+            statement.execute("INSERT INTO sections(id,organization_id,academic_year_id,grade_level_id,code,name,display_order) VALUES (90,9,90,90,'A','Section A',1),(91,9,90,90,'B','Section B',2)");
+            statement.execute("INSERT INTO subjects(id,organization_id,academic_year_id,code,name) VALUES (90,9,90,'ENG','English')");
+            statement.execute("INSERT INTO grade_level_subjects(id,organization_id,academic_year_id,grade_level_id,subject_id,display_order) VALUES (90,9,90,90,90,1)");
+            statement.execute("INSERT INTO timetable_wings(id,organization_id,code,name,display_order) VALUES (90,9,'JR','Junior',1)");
+            statement.execute("INSERT INTO timetable_grade_wings(organization_id,academic_year_id,grade_level_id,wing_id) VALUES (9,90,90,90)");
+            statement.execute("INSERT INTO teacher_assignments(organization_id,academic_year_id,grade_level_id,section_id,grade_level_subject_id,teacher_user_id,assignment_type) VALUES (9,90,90,90,90,901,'SUBJECT_TEACHER'),(9,90,90,91,90,902,'SUBJECT_TEACHER')");
+            statement.execute("INSERT INTO student_enrollments(organization_id,academic_year_id,grade_level_id,section_id,student_user_id,roll_number,enrolled_on) VALUES (9,90,90,90,903,'1','2026-01-01')");
+            statement.execute("INSERT INTO timetable_teacher_policies(organization_id,academic_year_id,teacher_user_id,maximum_periods_per_day,maximum_periods_per_week,maximum_consecutive_periods) VALUES (9,90,902,1,1,1)");
+            statement.execute("INSERT INTO timetable_drafts(id,organization_id,academic_year_id,name,created_by_user_id,updated_by_user_id) VALUES (90,9,90,'Published source',900,900)");
+            statement.execute("INSERT INTO timetable_publications(id,organization_id,academic_year_id,source_draft_id,publication_number,effective_from,published_by_user_id,school_name) VALUES (90,9,90,90,1,'2026-01-01',900,'Coverage School')");
+            statement.execute("""
+                    INSERT INTO timetable_publication_entries
+                    (id,organization_id,academic_year_id,publication_id,grade_level_id,grade_name,section_id,section_name,
+                     wing_id,wing_name,bell_schedule_interval_id,day_of_week,start_time,end_time,interval_type,
+                     activity_name,grade_level_subject_id,subject_name,teacher_user_id,teacher_display_name)
+                    VALUES (90,9,90,90,90,'Grade 1',90,'Section A',90,'Junior',900,
+                    """ + date.getDayOfWeek().getValue() + ",'09:00','09:40','TEACHING','English',90,'English',901,'Absent Teacher')");
+        }
+        DriverManagerDataSource source = new DriverManagerDataSource(jdbcUrl, "postgres", "");
+        JdbcClient client = JdbcClient.create(source);
+        IdentityTeacherEligibilityClient identity = mock(IdentityTeacherEligibilityClient.class);
+        AtomicBoolean coverEligible = new AtomicBoolean(true);
+        org.mockito.Mockito.when(identity.check(9, 901)).thenReturn(
+                new TeachingEligibilityResponse(901L, 9L, "Absent Teacher", true, TeachingEligibilityReason.ELIGIBLE));
+        org.mockito.Mockito.when(identity.checkBatch(org.mockito.ArgumentMatchers.eq(9L), org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> new BatchTeachingEligibilityResponse(invocation.<List<Long>>getArgument(1).stream()
+                        .map(id -> new TeachingEligibilityResponse(id, 9L, id == 902 ? "Cover Teacher" : "Absent Teacher",
+                                id != 902 || coverEligible.get(), id != 902 || coverEligible.get()
+                                ? TeachingEligibilityReason.ELIGIBLE : TeachingEligibilityReason.USER_NOT_ACTIVE)).toList()));
+        IdentityGuardianAccessClient guardians = mock(IdentityGuardianAccessClient.class);
+        org.mockito.Mockito.when(guardians.hasActiveRelationship(9, 904, 903)).thenReturn(true);
+        DailyCoverageService coverage = new DailyCoverageService(client, org -> ZoneId.of("Asia/Kolkata"), identity, guardians);
+        var recorded = coverage.recordAbsence(9, 900,
+                new RecordAbsenceRequest(901, date, AbsenceType.KNOWN_LEAVE, null, null, List.of(),
+                        "Approved leave", "absence-90"));
+        assertEquals(recorded, coverage.recordAbsence(9, 900,
+                new RecordAbsenceRequest(901, date, AbsenceType.KNOWN_LEAVE, null, null, List.of(),
+                        "Approved leave", "absence-90")));
+        var affected = coverage.cases(9, 90, date, null, null).getFirst();
+        var candidate = coverage.candidates(9, affected.id()).stream()
+                .filter(item -> item.candidateKey().equals("TEACHER:902")).findFirst().orElseThrow();
+        assertTrue(candidate.eligible());
+        assertTrue(candidate.recommended());
+        var proposal = coverage.manualProposal(9, 900, affected.id(),
+                new CandidateChoiceRequest(candidate.candidateKey(), affected.version(), null, "proposal-90"));
+        assertEquals("PENDING_APPROVAL", proposal.status());
+        var beforeApproval = coverage.daily(9, 90, date, null, null, 90L, null).entries().getFirst();
+        assertEquals("Absent Teacher", beforeApproval.actualAssignment().teacherDisplayName());
+        assertTrue(beforeApproval.coverage() == null);
+        coverEligible.set(false);
+        assertThrows(TimetableConfigurationConflictException.class,
+                () -> coverage.approve(9, 901, proposal.id(), new VersionRequest(proposal.version(), "approval-ineligible-90")));
+        coverEligible.set(true);
+        coverage.approve(9, 901, proposal.id(), new VersionRequest(proposal.version(), "approval-90"));
+        var approved = coverage.daily(9, 90, date, null, null, 90L, null).entries().getFirst();
+        assertEquals("Absent Teacher", approved.originalAssignment().teacherDisplayName());
+        assertEquals("Cover Teacher", approved.actualAssignment().teacherDisplayName());
+        assertEquals("APPROVED", approved.coverage().status());
+        assertEquals("Cover Teacher", coverage.daily(9, 90, date, null, null, null, 902L)
+                .entries().getFirst().actualAssignment().teacherDisplayName());
+        assertEquals("Cover Teacher", coverage.student(9, 903, 90, date)
+                .entries().getFirst().actualAssignment().teacherDisplayName());
+        assertEquals("Cover Teacher", coverage.parent(9, 904, 903, 90, date)
+                .entries().getFirst().actualAssignment().teacherDisplayName());
+        org.mockito.Mockito.verify(guardians).hasActiveRelationship(9, 904, 903);
+        assertThrows(com.dawnrise.academic.timetable.exception.TimetableConfigurationNotFoundException.class,
+                () -> coverage.parent(9, 905, 903, 90, date));
     }
 
     private void seedAcademicStructure(Statement statement) throws SQLException {
