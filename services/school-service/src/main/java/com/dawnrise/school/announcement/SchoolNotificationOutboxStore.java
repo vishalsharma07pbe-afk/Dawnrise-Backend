@@ -1,0 +1,15 @@
+package com.dawnrise.school.announcement;
+
+import org.springframework.jdbc.core.namedparam.*;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.*;import java.util.*;
+
+@Component
+public class SchoolNotificationOutboxStore {
+ public record Row(long id,long organizationId,String sourceEventId,String eventType,String importance,String heading,String context,String audienceSpec,long sourceId,int attemptCount){}
+ private final NamedParameterJdbcTemplate jdbc; public SchoolNotificationOutboxStore(NamedParameterJdbcTemplate jdbc){this.jdbc=jdbc;}
+ @Transactional public Optional<Row> claim(UUID owner,Duration lease){var p=new MapSqlParameterSource("owner",owner).addValue("lease",lease.toSeconds());var rows=jdbc.query("WITH candidate AS (SELECT o.id FROM school_notification_outbox o WHERE o.status='PENDING' AND o.available_at<=CURRENT_TIMESTAMP AND (o.lease_until IS NULL OR o.lease_until<CURRENT_TIMESTAMP) AND ((o.source_type='ANNOUNCEMENT' AND EXISTS(SELECT 1 FROM school_announcements a WHERE a.id=o.source_id AND a.organization_id=o.organization_id AND a.status IN ('SCHEDULED','PUBLISHED') AND (a.expires_at IS NULL OR a.expires_at>CURRENT_TIMESTAMP))) OR (o.source_type='RELEASE' AND EXISTS(SELECT 1 FROM dawnrise_releases r WHERE r.id=o.source_id AND r.status IN ('SCHEDULED','PUBLISHED') AND (r.expires_at IS NULL OR r.expires_at>CURRENT_TIMESTAMP)))) ORDER BY o.available_at,o.id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE school_notification_outbox o SET lease_owner=:owner,lease_until=CURRENT_TIMESTAMP+(:lease * INTERVAL '1 second'),updated_at=CURRENT_TIMESTAMP FROM candidate c WHERE o.id=c.id RETURNING o.*",p,(rs,n)->new Row(rs.getLong("id"),rs.getLong("organization_id"),rs.getString("source_event_id"),rs.getString("event_type"),rs.getString("importance"),rs.getString("heading"),rs.getString("context"),rs.getString("audience_spec"),rs.getLong("source_id"),rs.getInt("attempt_count")));return rows.stream().findFirst();}
+ @Transactional public void published(long id,UUID owner){jdbc.update("UPDATE school_notification_outbox SET status='PUBLISHED',published_at=CURRENT_TIMESTAMP,lease_owner=NULL,lease_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=:id AND lease_owner=:owner",new MapSqlParameterSource("id",id).addValue("owner",owner));}
+ @Transactional public void failed(long id,UUID owner,int attempts,int max,String error){long delay=Math.min(3600L,15L*(1L<<Math.min(attempts,7)));jdbc.update("UPDATE school_notification_outbox SET status=CASE WHEN :attempts>=:max THEN 'DEAD_LETTER' ELSE 'PENDING' END,attempt_count=:attempts,available_at=CURRENT_TIMESTAMP+(:delay * INTERVAL '1 second'),dead_lettered_at=CASE WHEN :attempts>=:max THEN CURRENT_TIMESTAMP ELSE NULL END,last_error=:error,lease_owner=NULL,lease_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=:id AND lease_owner=:owner",new MapSqlParameterSource("id",id).addValue("owner",owner).addValue("attempts",attempts).addValue("max",max).addValue("delay",delay).addValue("error",error.substring(0,Math.min(1000,error.length()))));}
+}

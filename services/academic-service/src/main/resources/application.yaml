@@ -17,6 +17,12 @@ school-service:
 server:
   port: 8082
 
+security:
+  internal:
+    api-key: ${ACADEMIC_INTERNAL_API_KEY}
+    allowed-service-names:
+      - school-service
+
 spring:
   servlet:
     multipart:
@@ -51,6 +57,14 @@ management:
         include: health,info
 
 dawnrise:
+  notification-delivery:
+    enabled: ${ACADEMIC_NOTIFICATION_DELIVERY_ENABLED:true}
+    batch-size: ${ACADEMIC_NOTIFICATION_DELIVERY_BATCH_SIZE:25}
+    maximum-attempts: ${ACADEMIC_NOTIFICATION_DELIVERY_MAX_ATTEMPTS:5}
+    lease-duration: ${ACADEMIC_NOTIFICATION_DELIVERY_LEASE_DURATION:PT2M}
+    base-backoff: ${ACADEMIC_NOTIFICATION_DELIVERY_BASE_BACKOFF:PT30S}
+    delay: ${ACADEMIC_NOTIFICATION_DELIVERY_DELAY:PT15S}
+    initial-delay: ${ACADEMIC_NOTIFICATION_DELIVERY_INITIAL_DELAY:PT15S}
   student-attendance:
     import:
       max-file-bytes: ${STUDENT_ATTENDANCE_IMPORT_MAX_FILE_BYTES:2097152}

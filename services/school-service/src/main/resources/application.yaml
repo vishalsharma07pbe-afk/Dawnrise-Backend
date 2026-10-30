@@ -38,6 +38,9 @@ management:
 dawnrise:
   school:
     default-time-zone: ${SCHOOL_DEFAULT_TIME_ZONE:Asia/Kolkata}
+  notification-relay:
+    academic-base-url: ${ACADEMIC_SERVICE_BASE_URL:http://localhost:8082}
+    api-key: ${ACADEMIC_INTERNAL_API_KEY:}
 
 identity-service:
   provisioning:

@@ -8,6 +8,7 @@ import com.dawnrise.academic.gradelevel.entity.GradeLevel;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.entity.GradeLevelSubject;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
+import com.dawnrise.academic.notificationdelivery.AcademicPublicationNotificationOutboxService;
 import com.dawnrise.academic.results.entity.*;
 import com.dawnrise.academic.results.enums.ResultSubjectSheetStatus;
 import com.dawnrise.academic.results.enums.ResultPublicationStatus;
@@ -46,11 +47,12 @@ class ResultPublicationServiceTest {
  @Mock SubjectRepository subjects; @Mock StudentEnrollmentRepository enrollments;
  @Mock ResultSubjectSheetRepository sheets; @Mock ResultSubjectMarkRepository marks;
  @Mock ResultPublicationRepository publications; @Mock IdentityGuardianAccessClient guardian;
+ @Mock AcademicPublicationNotificationOutboxService notificationOutbox;
  ResultPublicationService service; AcademicYear year; Examination examination; ScheduledAssessment assessment;
  GradeLevel grade; Section section; GradeLevelSubject mapping; Subject subject;
 
  @BeforeEach void setup(){
-  service=new ResultPublicationService(years,examinations,assessments,grades,sections,gradeSubjects,subjects,enrollments,sheets,marks,publications,guardian);
+  service=new ResultPublicationService(years,examinations,assessments,grades,sections,gradeSubjects,subjects,enrollments,sheets,marks,publications,guardian,notificationOutbox);
   year=new AcademicYear(1L,"2026-27",LocalDate.of(2026,4,1),LocalDate.of(2027,3,31)); id(year,2); year.activate();
   examination=new Examination(1,2,"Mid-term"); id(examination,3); examination.publish();
   grade=new GradeLevel(1L,2L,"10","Class 10",1); id(grade,4);
@@ -192,6 +194,7 @@ class ResultPublicationServiceTest {
   when(examinations.findForUpdate(3L,2L,1L)).thenReturn(Optional.of(examination));
   when(publications.findScopeForUpdate(1L,2L,3L,4L,7L)).thenReturn(Optional.of(publication));
   assertEquals(40,service.publish(1,100,2,3,4,7).id()); verify(publications,never()).saveAndFlush(any());
+  verify(notificationOutbox,never()).resultPublished(any());
  }
 
  @Test void bulkPublicationDetailsResolveAssignmentsAndSubjectsWithoutPerSheetLookups(){

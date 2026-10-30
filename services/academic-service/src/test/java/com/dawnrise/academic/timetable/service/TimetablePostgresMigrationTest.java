@@ -522,11 +522,22 @@ class TimetablePostgresMigrationTest {
         assertThrows(TimetableConfigurationConflictException.class,
                 () -> coverage.approve(9, 901, proposal.id(), new VersionRequest(proposal.version(), "approval-ineligible-90")));
         coverEligible.set(true);
+        client.sql("""
+                INSERT INTO timetable_daily_cover_incidents
+                    (organization_id,case_id,status,first_alert_at,next_escalation_at,escalation_level)
+                VALUES(9,:case,'OPEN',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,1)
+                """).param("case", affected.id()).update();
         coverage.approve(9, 901, proposal.id(), new VersionRequest(proposal.version(), "approval-90"));
         var approved = coverage.daily(9, 90, date, null, null, 90L, null).entries().getFirst();
         assertEquals("Absent Teacher", approved.originalAssignment().teacherDisplayName());
         assertEquals("Cover Teacher", approved.actualAssignment().teacherDisplayName());
         assertEquals("APPROVED", approved.coverage().status());
+        assertEquals("RESOLVED", client.sql("SELECT status FROM timetable_daily_cover_incidents "
+                        + "WHERE organization_id=9 AND case_id=:case")
+                .param("case", affected.id()).query(String.class).single());
+        assertEquals(1, client.sql("SELECT COUNT(*) FROM timetable_daily_cover_notification_outbox "
+                        + "WHERE organization_id=9 AND case_id=:case AND event_type='CONFIRMED_SUBSTITUTION'")
+                .param("case", affected.id()).query(Integer.class).single());
         assertEquals("Cover Teacher", coverage.daily(9, 90, date, null, null, null, 902L)
                 .entries().getFirst().actualAssignment().teacherDisplayName());
         assertEquals("Cover Teacher", coverage.student(9, 903, 90, date)

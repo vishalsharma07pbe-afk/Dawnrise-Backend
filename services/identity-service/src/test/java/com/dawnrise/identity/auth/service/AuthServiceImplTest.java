@@ -110,7 +110,8 @@ class AuthServiceImplTest {
                 passwordChangeProperties,
                 permissionService,
                 auditService,
-                authenticatedSessionService
+                authenticatedSessionService,
+                mock(org.springframework.context.ApplicationEventPublisher.class)
         );
         lenient().when(refreshTokenService.createRefreshTokenSession(anyLong()))
                 .thenAnswer(invocation -> new RefreshTokenCreationResult(

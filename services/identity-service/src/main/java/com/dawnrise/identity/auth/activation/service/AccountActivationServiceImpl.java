@@ -18,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.dawnrise.identity.notification.securityevent.IdentitySecurityNotificationEvent;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -190,6 +191,9 @@ public class AccountActivationServiceImpl
         // Activation sets the first password and moves the account to ACTIVE.
         user.activate(passwordHash);
         activationToken.markUsed(currentTime);
+        eventPublisher.publishEvent(new IdentitySecurityNotificationEvent(user.getOrganizationId(),user.getId(),
+                IdentitySecurityNotificationEvent.Kind.ACCOUNT_ACTIVATED,
+                "account-activated:"+user.getId()+":"+currentTime));
     }
 
     @Override

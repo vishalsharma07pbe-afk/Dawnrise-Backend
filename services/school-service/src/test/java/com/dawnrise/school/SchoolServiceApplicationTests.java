@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude="
@@ -29,6 +30,9 @@ class SchoolServiceApplicationTests {
 
 	@MockitoBean
 	private TransactionTemplate transactionTemplate;
+
+	@MockitoBean
+	private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
 	@Test
 	void contextLoads() {

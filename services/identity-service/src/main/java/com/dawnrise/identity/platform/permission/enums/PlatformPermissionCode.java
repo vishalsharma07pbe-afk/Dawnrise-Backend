@@ -66,5 +66,6 @@ public enum PlatformPermissionCode {
     DATA_IMPORT_EXECUTE,
 
     // Platform security and audit
-    PLATFORM_SECURITY_AUDIT_VIEW
+    PLATFORM_SECURITY_AUDIT_VIEW,
+    PLATFORM_RELEASE_PUBLISH
 }

@@ -25,6 +25,7 @@ import com.dawnrise.identity.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = "spring.autoconfigure.exclude="
@@ -85,6 +86,8 @@ class IdentityServiceApplicationTests {
             platformSecurityAuditEventRepository;
     @MockitoBean
     private JavaMailSender mailSender;
+    @MockitoBean
+    private NamedParameterJdbcTemplate notificationJdbcTemplate;
 
     @Test
     void contextLoads() {

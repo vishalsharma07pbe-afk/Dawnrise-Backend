@@ -26,6 +26,8 @@ import com.dawnrise.identity.user.enums.UserStatus;
 import com.dawnrise.identity.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import com.dawnrise.identity.notification.securityevent.IdentitySecurityNotificationEvent;
 import org.springframework.transaction.annotation.Transactional;
 import com.dawnrise.identity.permission.enums.PermissionCode;
 import com.dawnrise.identity.permission.service.PermissionService;
@@ -54,6 +56,7 @@ public class AuthServiceImpl implements AuthService {
     private final PermissionService permissionService;
     private final SecurityAuditService auditService;
     private final AuthenticatedSessionService authenticatedSessionService;
+    private final ApplicationEventPublisher eventPublisher;
     public AuthServiceImpl(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
@@ -64,7 +67,8 @@ public class AuthServiceImpl implements AuthService {
             PasswordChangeProperties passwordChangeProperties,
             PermissionService permissionService,
             SecurityAuditService auditService,
-            AuthenticatedSessionService authenticatedSessionService
+            AuthenticatedSessionService authenticatedSessionService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
@@ -76,6 +80,7 @@ public class AuthServiceImpl implements AuthService {
         this.permissionService = permissionService;
         this.auditService = auditService;
         this.authenticatedSessionService = authenticatedSessionService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -335,6 +340,9 @@ public class AuthServiceImpl implements AuthService {
                 user.getId(),
                 Map.of("sessionsRevoked", true)
         );
+        eventPublisher.publishEvent(new IdentitySecurityNotificationEvent(user.getOrganizationId(),user.getId(),
+                IdentitySecurityNotificationEvent.Kind.PASSWORD_CHANGED,
+                "password-changed:"+user.getId()+":"+user.getPasswordChangedAt()));
     }
 
     private void enforcePasswordChangeCooldown(User user) {

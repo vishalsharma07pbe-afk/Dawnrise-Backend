@@ -17,19 +17,27 @@ import com.dawnrise.academic.common.integration.identity.IdentityServiceProperti
 import com.dawnrise.academic.security.parentsession.ParentSessionEnforcementFilter;
 import org.springframework.context.ApplicationContext;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.dawnrise.academic.security.internal.InternalServiceAuthenticationFilter;
+import com.dawnrise.academic.security.internal.InternalServiceSecurityProperties;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
 
 @Configuration
 @EnableMethodSecurity
+@EnableConfigurationProperties(InternalServiceSecurityProperties.class)
 public class SecurityConfig {
+
+    @Bean InternalServiceAuthenticationFilter internalServiceAuthenticationFilter(InternalServiceSecurityProperties properties){return new InternalServiceAuthenticationFilter(properties);}
+    @Bean FilterRegistrationBean<InternalServiceAuthenticationFilter> disableInternalServiceFilterRegistration(InternalServiceAuthenticationFilter filter){FilterRegistrationBean<InternalServiceAuthenticationFilter> registration=new FilterRegistrationBean<>(filter);registration.setEnabled(false);return registration;}
 
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            ParentSessionEnforcementFilter parentSessionFilter
+            ParentSessionEnforcementFilter parentSessionFilter,
+            InternalServiceAuthenticationFilter internalServiceFilter
     ) throws Exception {
 
         http
@@ -47,9 +55,12 @@ public class SecurityConfig {
                                 "/actuator/info"
                         ).permitAll()
 
+                        .requestMatchers("/internal/**").hasRole("INTERNAL_SERVICE")
+
                         .anyRequest().authenticated()
                 )
 
+                .addFilterBefore(internalServiceFilter,BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(

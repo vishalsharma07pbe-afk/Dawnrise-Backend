@@ -12,6 +12,7 @@ import com.dawnrise.academic.examination.exception.InvalidExaminationException;
 import com.dawnrise.academic.examination.repository.ExaminationRepository;
 import com.dawnrise.academic.examination.repository.ScheduledAssessmentRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
+import com.dawnrise.academic.notificationdelivery.ExaminationNotificationOutboxService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,13 +40,14 @@ class ExaminationServiceTest {
     @Mock GradeLevelSubjectRepository gradeSubjects;
     @Mock ExaminationRepository examinations;
     @Mock ScheduledAssessmentRepository assessments;
+    @Mock ExaminationNotificationOutboxService notificationOutbox;
     ExaminationService service;
     AcademicYear year;
     Examination examination;
 
     @BeforeEach
     void setUp() {
-        service = new ExaminationService(years, gradeSubjects, examinations, assessments);
+        service = new ExaminationService(years, gradeSubjects, examinations, assessments, notificationOutbox);
         year = new AcademicYear(1L, "2026-27",
                 LocalDate.of(2026, 4, 1), LocalDate.of(2027, 3, 31));
         examination = new Examination(1, 2, "Mid-term");
@@ -67,7 +69,7 @@ class ExaminationServiceTest {
         when(years.findByIdAndOrganizationId(2L, 1L)).thenReturn(Optional.of(year));
         when(examinations.findForUpdate(3L, 2L, 1L)).thenReturn(Optional.of(examination));
         assertThrows(ExaminationConflictException.class,
-                () -> service.publish(1, 2, 3, new VersionRequest(0L)));
+                () -> service.publish(1, 2, 3, 9, new VersionRequest(0L)));
         verify(examinations, never()).saveAndFlush(any());
     }
 
