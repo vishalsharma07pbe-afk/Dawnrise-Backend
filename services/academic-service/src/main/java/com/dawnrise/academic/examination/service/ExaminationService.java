@@ -19,6 +19,7 @@ import com.dawnrise.academic.examination.exception.InvalidExaminationException;
 import com.dawnrise.academic.examination.repository.ExaminationRepository;
 import com.dawnrise.academic.examination.repository.ScheduledAssessmentRepository;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
+import com.dawnrise.academic.notificationdelivery.ExaminationNotificationOutboxService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,15 +35,18 @@ public class ExaminationService {
     private final GradeLevelSubjectRepository gradeSubjects;
     private final ExaminationRepository examinations;
     private final ScheduledAssessmentRepository assessments;
+    private final ExaminationNotificationOutboxService notificationOutbox;
 
     public ExaminationService(AcademicYearRepository academicYears,
                               GradeLevelSubjectRepository gradeSubjects,
                               ExaminationRepository examinations,
-                              ScheduledAssessmentRepository assessments) {
+                              ScheduledAssessmentRepository assessments,
+                              ExaminationNotificationOutboxService notificationOutbox) {
         this.academicYears = academicYears;
         this.gradeSubjects = gradeSubjects;
         this.examinations = examinations;
         this.assessments = assessments;
+        this.notificationOutbox = notificationOutbox;
     }
 
     public ExaminationResponse create(long organizationId, long yearId,
@@ -93,7 +97,7 @@ public class ExaminationService {
     }
 
     public ExaminationResponse publish(long organizationId, long yearId,
-                                        long examinationId, VersionRequest request) {
+                                        long examinationId, long actorUserId, VersionRequest request) {
         modifiableYear(organizationId, yearId);
         Examination examination = locked(organizationId, yearId, examinationId);
         matchVersion(examination.getVersion(), request.version());
@@ -103,7 +107,9 @@ public class ExaminationService {
             throw new ExaminationConflictException("Add at least one scheduled assessment before publishing");
         }
         examination.publish();
-        return response(examinations.saveAndFlush(examination));
+        Examination saved = examinations.saveAndFlush(examination);
+        notificationOutbox.published(organizationId, yearId, examinationId, actorUserId, saved.getName());
+        return response(saved);
     }
 
     public ExaminationResponse cancel(long organizationId, long yearId,

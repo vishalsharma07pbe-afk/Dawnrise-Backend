@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class TimetableWorkflowService {
@@ -113,6 +114,8 @@ public class TimetableWorkflowService {
                     .param("org",org).param("year",h.year()).param("draft",draftId).param("number",number)
                     .param("from",from).param("to",toExclusive).param("actor",actor).param("schoolName",schoolName).query(Long.class).single();
             snapshot(org,h.year(),draftId,publicationId,teacherNames);
+            enqueuePublicationNotification(org, h.year(), publicationId,
+                    number == 1 ? "TIMETABLE_PUBLISHED" : "TIMETABLE_CHANGED");
         } catch(DataIntegrityViolationException ex){throw conflict("The effective range overlaps another publication; reload and retry");}
         jdbc.sql("""
                 UPDATE timetable_drafts SET effective_from_intent=:from,
@@ -120,6 +123,18 @@ public class TimetableWorkflowService {
                 """).param("from",from).param("to",toExclusive).param("draft",draftId).param("org",org).update();
         WorkflowResponse response=transition(org,actor,h,WorkflowStatus.PUBLISHED,null);
         return new WorkflowResponse(response.draftId(),response.academicYearId(),response.status(),response.version(),publicationId,response.history());
+    }
+
+    private void enqueuePublicationNotification(long org, long year, long publicationId, String eventType) {
+        jdbc.sql("""
+                INSERT INTO timetable_expiry_notification_outbox
+                    (event_id,organization_id,academic_year_id,publication_id,event_type,
+                     idempotency_key,payload,occurred_at)
+                VALUES(:event,:org,:year,:publication,:type,:key,'{}'::JSONB,CURRENT_TIMESTAMP)
+                ON CONFLICT(organization_id,idempotency_key) DO NOTHING
+                """).param("event", UUID.randomUUID()).param("org", org).param("year", year)
+                .param("publication", publicationId).param("type", eventType)
+                .param("key", "timetable-publication:" + publicationId).update();
     }
 
     @Transactional(readOnly=true)

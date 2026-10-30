@@ -3,6 +3,8 @@ package com.dawnrise.academic.notificationdelivery;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.CoverContext;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Item;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Source;
+import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.TimetableAudience;
+import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.ExaminationAudience;
 import com.dawnrise.academic.results.integration.identity.IdentityGuardianAccessClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,6 +91,33 @@ public class AcademicNotificationDeliveryWorker {
             recipients.addAll(guardians.activeGuardianUserIds(item.organizationId(), item.studentUserId()));
             return Set.copyOf(recipients);
         }
+        if (item.source() == Source.TIMETABLE_EXPIRY) {
+            LinkedHashSet<Long> recipients = new LinkedHashSet<>(identity.resolveRoles(
+                    item.organizationId(), Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")));
+            if ("TIMETABLE_PUBLISHED".equals(item.eventType())
+                    || "TIMETABLE_CHANGED".equals(item.eventType())) {
+                TimetableAudience audience = store.timetableAudience(item.organizationId(), item.artifactId());
+                recipients.addAll(audience.teacherUserIds());
+                recipients.addAll(audience.studentUserIds());
+                for (Long studentUserId : audience.studentUserIds()) {
+                    recipients.addAll(guardians.activeGuardianUserIds(item.organizationId(), studentUserId));
+                }
+            }
+            return Set.copyOf(recipients);
+        }
+        if (item.source() == Source.EXAMINATION) {
+            LinkedHashSet<Long> recipients = new LinkedHashSet<>(identity.resolveRoles(
+                    item.organizationId(), Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")));
+            if (item.actorUserId() != null) recipients.add(item.actorUserId());
+            ExaminationAudience audience = store.examinationAudience(item.organizationId(),
+                    item.academicYearId(), item.artifactId());
+            recipients.addAll(audience.teacherUserIds());
+            recipients.addAll(audience.studentUserIds());
+            for (Long studentUserId : audience.studentUserIds()) {
+                recipients.addAll(guardians.activeGuardianUserIds(item.organizationId(), studentUserId));
+            }
+            return Set.copyOf(recipients);
+        }
         CoverContext context = store.coverContext(item.organizationId(), item.caseId());
         return "CONFIRMED_SUBSTITUTION".equals(item.eventType())
                 ? context.confirmedRecipients() : context.managementRecipients();
@@ -99,7 +128,35 @@ public class AcademicNotificationDeliveryWorker {
             case ATTENDANCE -> attendance(item, recipients);
             case PUBLICATION -> publication(item, recipients);
             case DAILY_COVER -> coverage(item, recipients);
+            case TIMETABLE_EXPIRY -> timetableExpiry(item, recipients);
+            case EXAMINATION -> examination(item, recipients);
         };
+    }
+
+    private IdentityNotificationClient.NotificationRequest examination(Item item, Set<Long> recipients) {
+        return new IdentityNotificationClient.NotificationRequest(item.organizationId(), item.eventId().toString(),
+                "EXAM_SCHEDULE_PUBLISHED", "SCHOOL", "IMPORTANT", "Exam date sheet published",
+                "A new examination schedule is available.",
+                new IdentityNotificationClient.Action("EXAMINATION", item.artifactId(), null,
+                        item.academicYearId()), "examination:" + item.artifactId(),
+                item.occurredAt(), recipients);
+    }
+
+    private IdentityNotificationClient.NotificationRequest timetableExpiry(Item item, Set<Long> recipients) {
+        boolean published = "TIMETABLE_PUBLISHED".equals(item.eventType());
+        boolean changed = "TIMETABLE_CHANGED".equals(item.eventType());
+        boolean finalDay = "TIMETABLE_EXPIRES_TODAY".equals(item.eventType());
+        return new IdentityNotificationClient.NotificationRequest(item.organizationId(), item.eventId().toString(),
+                item.eventType(), "TIMETABLE", finalDay ? "URGENT" : "IMPORTANT",
+                published ? "New timetable published" : changed ? "Timetable updated"
+                        : finalDay ? "Timetable expires today" : "Timetable expires soon",
+                published ? "A new timetable is available for your school."
+                        : changed ? "Your published timetable has changed."
+                        : finalDay ? "Publish the next timetable to avoid a scheduling gap."
+                        : "The current timetable has three days or fewer remaining.",
+                new IdentityNotificationClient.Action("TIMETABLE", item.artifactId(), null,
+                        item.academicYearId()), "timetable-expiry:" + item.artifactId(),
+                item.occurredAt(), recipients);
     }
 
     private IdentityNotificationClient.NotificationRequest attendance(Item item, Set<Long> recipients) {

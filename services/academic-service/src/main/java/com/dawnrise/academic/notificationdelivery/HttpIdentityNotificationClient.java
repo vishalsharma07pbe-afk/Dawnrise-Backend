@@ -6,6 +6,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.Map;
+import java.util.List;
+import java.util.Set;
 
 @Component
 public class HttpIdentityNotificationClient implements IdentityNotificationClient {
@@ -45,6 +47,27 @@ public class HttpIdentityNotificationClient implements IdentityNotificationClien
             throw new NotificationDeliveryException("Identity notification resolution failed", exception);
         }
     }
+
+    @Override
+    public Set<Long> resolveRoles(long organizationId, Set<String> roles) {
+        requireConfiguration();
+        try {
+            List<Map<String, String>> audiences = roles.stream().sorted()
+                    .map(role -> Map.of("type", "ROLE", "key", role)).toList();
+            AudienceResponse response = client.post()
+                    .uri("/internal/v1/organizations/{organizationId}/notification-audience/resolve",
+                            organizationId)
+                    .header("X-Service-Name", properties.getServiceName())
+                    .header("X-Internal-Api-Key", properties.getApiKey())
+                    .body(Map.of("audiences", audiences)).retrieve().body(AudienceResponse.class);
+            return response == null || response.userIds() == null
+                    ? Set.of() : Set.copyOf(response.userIds());
+        } catch (RestClientException exception) {
+            throw new NotificationDeliveryException("Identity notification audience resolution failed", exception);
+        }
+    }
+
+    private record AudienceResponse(Set<Long> userIds) {}
 
     private void requireConfiguration() {
         if (properties.getApiKey() == null || properties.getApiKey().isBlank()

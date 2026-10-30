@@ -83,7 +83,8 @@ public class ExaminationController {
             @PathVariable @Positive long examinationId,
             @Valid @RequestBody VersionRequest request,
             JwtAuthenticationToken authentication) {
-        return service.publish(org(authentication), academicYearId, examinationId, request);
+        return service.publish(org(authentication), academicYearId, examinationId,
+                AuthenticatedAcademicActor.userId(authentication), request);
     }
 
     @PostMapping("/{examinationId}/cancel")

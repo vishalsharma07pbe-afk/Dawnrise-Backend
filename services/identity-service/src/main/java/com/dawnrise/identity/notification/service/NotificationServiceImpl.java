@@ -51,6 +51,9 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationEventType.CLASS_UNCOVERED, NotificationEventType.COVER_CHANGED,
             NotificationEventType.ATTENDANCE_RECORDED, NotificationEventType.ATTENDANCE_CORRECTED,
             NotificationEventType.RESULT_PUBLISHED, NotificationEventType.REPORT_CARD_PUBLISHED,
+            NotificationEventType.TIMETABLE_PUBLISHED, NotificationEventType.TIMETABLE_CHANGED,
+            NotificationEventType.TIMETABLE_EXPIRING, NotificationEventType.TIMETABLE_EXPIRES_TODAY,
+            NotificationEventType.EXAM_SCHEDULE_PUBLISHED,
             NotificationEventType.LEAVE_REQUESTED, NotificationEventType.LEAVE_APPROVAL_REQUIRED,
             NotificationEventType.LEAVE_APPROVED, NotificationEventType.LEAVE_REJECTED,
             NotificationEventType.LEAVE_CANCELLED);
@@ -490,6 +493,12 @@ public class NotificationServiceImpl implements NotificationService {
                     IMMINENT_UNCOVERED, CLASS_UNCOVERED, COVER_CHANGED ->
                     category == NotificationCategory.TIMETABLE
                             && actionType == NotificationActionType.DAILY_COVERAGE;
+            case TIMETABLE_PUBLISHED, TIMETABLE_CHANGED,
+                    TIMETABLE_EXPIRING, TIMETABLE_EXPIRES_TODAY ->
+                    category == NotificationCategory.TIMETABLE
+                            && actionType == NotificationActionType.TIMETABLE;
+            case EXAM_SCHEDULE_PUBLISHED -> category == NotificationCategory.SCHOOL
+                    && actionType == NotificationActionType.EXAMINATION;
             case ATTENDANCE_RECORDED, ATTENDANCE_CORRECTED ->
                     category == NotificationCategory.ATTENDANCE
                             && actionType == NotificationActionType.ATTENDANCE;

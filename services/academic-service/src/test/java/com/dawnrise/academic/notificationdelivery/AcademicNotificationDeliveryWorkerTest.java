@@ -3,6 +3,8 @@ package com.dawnrise.academic.notificationdelivery;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.CoverContext;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Item;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Source;
+import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.TimetableAudience;
+import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.ExaminationAudience;
 import com.dawnrise.academic.results.integration.identity.IdentityGuardianAccessClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -101,6 +103,87 @@ class AcademicNotificationDeliveryWorkerTest {
     }
 
     @Test
+    void timetableExpiryResolvesOnlyActiveTenantAdminsAndUsesTypedTimetableAction() {
+        UUID owner = UUID.randomUUID();
+        Item item = item(Source.TIMETABLE_EXPIRY, "TIMETABLE_EXPIRING", null, null, 40L);
+        when(identity.resolveRoles(1, Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")))
+                .thenReturn(Set.of(7L, 8L));
+        when(store.snapshotRecipients(item, Set.of(7L, 8L))).thenReturn(Set.of(7L, 8L));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals(Set.of(7L, 8L), request.getValue().recipientUserIds());
+        assertEquals("TIMETABLE", request.getValue().action().type());
+        assertEquals("Timetable expires soon", request.getValue().heading());
+        verify(store).markPublished(item, owner, OffsetDateTime.now(clock));
+    }
+
+    @Test
+    void finalTimetableExpiryAlertIsUrgentAndDistinct() {
+        UUID owner = UUID.randomUUID();
+        Item item = item(Source.TIMETABLE_EXPIRY, "TIMETABLE_EXPIRES_TODAY", null, null, 40L);
+        when(identity.resolveRoles(1, Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")))
+                .thenReturn(Set.of(7L));
+        when(store.snapshotRecipients(item, Set.of(7L))).thenReturn(Set.of(7L));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals("URGENT", request.getValue().importance());
+        assertEquals("Timetable expires today", request.getValue().heading());
+    }
+
+    @Test
+    void publishedTimetableTargetsOnlyAffectedPeopleAndLeadershipWithoutDuplicates() {
+        UUID owner = UUID.randomUUID();
+        Item item = item(Source.TIMETABLE_EXPIRY, "TIMETABLE_CHANGED", null, null, 40L);
+        when(identity.resolveRoles(1, Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")))
+                .thenReturn(Set.of(7L));
+        when(store.timetableAudience(1, 40)).thenReturn(
+                new TimetableAudience(Set.of(21L, 22L), Set.of(7L, 30L)));
+        when(guardians.activeGuardianUserIds(1, 21)).thenReturn(List.of(50L));
+        when(guardians.activeGuardianUserIds(1, 22)).thenReturn(List.of(50L, 51L));
+        when(store.snapshotRecipients(eq(item), any())).thenAnswer(invocation -> invocation.getArgument(1));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals(Set.of(7L, 21L, 22L, 30L, 50L, 51L), request.getValue().recipientUserIds());
+        assertEquals("Timetable updated", request.getValue().heading());
+        assertEquals("TIMETABLE", request.getValue().action().type());
+    }
+
+    @Test
+    void publishedExamTargetsPublisherAffectedSchoolCommunityAndLeadership() {
+        UUID owner = UUID.randomUUID();
+        Item item = new Item(Source.EXAMINATION, 1, UUID.randomUUID(), 1, 2L,
+                null, null, 44L, 7L, "EXAM_SCHEDULE_PUBLISHED", "{}",
+                OffsetDateTime.now(clock), 1, Set.of());
+        when(identity.resolveRoles(1, Set.of("ADMIN", "PRINCIPAL", "VICE_PRINCIPAL")))
+                .thenReturn(Set.of(7L, 8L));
+        when(store.examinationAudience(1, 2, 44)).thenReturn(
+                new ExaminationAudience(Set.of(21L), Set.of(30L)));
+        when(guardians.activeGuardianUserIds(1, 21)).thenReturn(List.of(50L));
+        when(store.snapshotRecipients(eq(item), any())).thenAnswer(invocation -> invocation.getArgument(1));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals(Set.of(7L, 8L, 21L, 30L, 50L), request.getValue().recipientUserIds());
+        assertEquals("EXAMINATION", request.getValue().action().type());
+        assertEquals("Exam date sheet published", request.getValue().heading());
+    }
+
+    @Test
     void failedIdentityCallLeavesRowForBoundedRetry() {
         UUID owner = UUID.randomUUID();
         Item item = item(Source.ATTENDANCE, "ABSENCE_RECORDED", 21L, null, null);
@@ -137,7 +220,7 @@ class AcademicNotificationDeliveryWorkerTest {
     }
 
     private Item item(Source source, String type, Long student, Long coverCase, Long artifact) {
-        return new Item(source, 1, UUID.randomUUID(), 1, 2L, student, coverCase, artifact,
+        return new Item(source, 1, UUID.randomUUID(), 1, 2L, student, coverCase, artifact, null,
                 type, "{}", OffsetDateTime.now(clock), 1, Set.of());
     }
 }

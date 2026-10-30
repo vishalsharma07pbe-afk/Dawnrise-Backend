@@ -22,10 +22,11 @@ public class AcademicNotificationOutboxStore {
         this.jdbc = jdbc;
     }
 
-    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION }
+    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION, TIMETABLE_EXPIRY, EXAMINATION }
 
     public record Item(Source source, long id, UUID eventId, long organizationId,
                        Long academicYearId, Long studentUserId, Long caseId, Long artifactId,
+                       Long actorUserId,
                        String eventType, String payload, OffsetDateTime occurredAt, int attemptCount,
                        Set<Long> recipientUserIds) {
     }
@@ -57,6 +58,9 @@ public class AcademicNotificationOutboxStore {
                              int attemptCount, String lastError, OffsetDateTime deadLetteredAt) {
     }
 
+    public record TimetableAudience(Set<Long> studentUserIds, Set<Long> teacherUserIds) {}
+    public record ExaminationAudience(Set<Long> studentUserIds, Set<Long> teacherUserIds) {}
+
     @Transactional
     public List<Item> claim(Source source, UUID owner, OffsetDateTime now,
                             Duration leaseDuration, int limit) {
@@ -64,6 +68,8 @@ public class AcademicNotificationOutboxStore {
             case ATTENDANCE -> claimAttendance(owner, now, leaseDuration, limit);
             case DAILY_COVER -> claimCover(owner, now, leaseDuration, limit);
             case PUBLICATION -> claimPublication(owner, now, leaseDuration, limit);
+            case TIMETABLE_EXPIRY -> claimTimetableExpiry(owner, now, leaseDuration, limit);
+            case EXAMINATION -> claimExamination(owner, now, leaseDuration, limit);
         };
     }
 
@@ -80,7 +86,7 @@ public class AcademicNotificationOutboxStore {
                        last_error=NULL,updated_at=:now,version=version+1
                   FROM candidates c WHERE o.id=c.id
                 RETURNING o.id,o.event_id,o.organization_id,o.academic_year_id,o.student_user_id,
-                          NULL::BIGINT case_id,NULL::BIGINT artifact_id,o.event_type,o.payload::TEXT,
+                          NULL::BIGINT case_id,NULL::BIGINT artifact_id,NULL::BIGINT actor_user_id,o.event_type,o.payload::TEXT,
                           o.occurred_at,o.attempt_count,o.recipient_user_ids
                 """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
                 .param("limit", limit).query((rs, n) -> item(Source.ATTENDANCE, rs)).list();
@@ -99,7 +105,7 @@ public class AcademicNotificationOutboxStore {
                        last_error=NULL,updated_at=:now
                   FROM candidates c WHERE o.id=c.id
                 RETURNING o.id,o.event_id,o.organization_id,NULL::BIGINT academic_year_id,
-                          NULL::BIGINT student_user_id,o.case_id,NULL::BIGINT artifact_id,
+                          NULL::BIGINT student_user_id,o.case_id,NULL::BIGINT artifact_id,NULL::BIGINT actor_user_id,
                           o.event_type,o.payload::TEXT,o.created_at occurred_at,o.attempt_count,
                           o.recipient_user_ids
                 """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
@@ -119,10 +125,50 @@ public class AcademicNotificationOutboxStore {
                        last_error=NULL,updated_at=:now
                   FROM candidates c WHERE o.id=c.id
                 RETURNING o.id,o.event_id,o.organization_id,o.academic_year_id,o.student_user_id,
-                          NULL::BIGINT case_id,o.artifact_id,o.event_type,o.payload::TEXT,
+                          NULL::BIGINT case_id,o.artifact_id,NULL::BIGINT actor_user_id,o.event_type,o.payload::TEXT,
                           o.occurred_at,o.attempt_count,o.recipient_user_ids
                 """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
                 .param("limit", limit).query((rs, n) -> item(Source.PUBLICATION, rs)).list();
+    }
+
+    private List<Item> claimTimetableExpiry(UUID owner, OffsetDateTime now, Duration lease, int limit) {
+        return jdbc.sql("""
+                WITH candidates AS (
+                    SELECT id FROM timetable_expiry_notification_outbox
+                     WHERE publication_status='PENDING' AND available_at<=:now
+                       AND (lease_until IS NULL OR lease_until<:now)
+                     ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT :limit
+                )
+                UPDATE timetable_expiry_notification_outbox o
+                   SET lease_owner=:owner,lease_until=:leaseUntil,attempt_count=attempt_count+1,
+                       last_error=NULL,updated_at=:now
+                  FROM candidates c WHERE o.id=c.id
+                RETURNING o.id,o.event_id,o.organization_id,o.academic_year_id,
+                          NULL::BIGINT student_user_id,NULL::BIGINT case_id,o.publication_id artifact_id,
+                          NULL::BIGINT actor_user_id,
+                          o.event_type,o.payload::TEXT,o.occurred_at,o.attempt_count,o.recipient_user_ids
+                """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
+                .param("limit", limit).query((rs, n) -> item(Source.TIMETABLE_EXPIRY, rs)).list();
+    }
+
+    private List<Item> claimExamination(UUID owner, OffsetDateTime now, Duration lease, int limit) {
+        return jdbc.sql("""
+                WITH candidates AS (
+                    SELECT id FROM examination_notification_outbox
+                     WHERE publication_status='PENDING' AND available_at<=:now
+                       AND (lease_until IS NULL OR lease_until<:now)
+                     ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT :limit
+                )
+                UPDATE examination_notification_outbox o
+                   SET lease_owner=:owner,lease_until=:leaseUntil,attempt_count=attempt_count+1,
+                       last_error=NULL,updated_at=:now
+                  FROM candidates c WHERE o.id=c.id
+                RETURNING o.id,o.event_id,o.organization_id,o.academic_year_id,
+                          NULL::BIGINT student_user_id,NULL::BIGINT case_id,o.examination_id artifact_id,
+                          o.actor_user_id,o.event_type,o.payload::TEXT,o.occurred_at,o.attempt_count,
+                          o.recipient_user_ids
+                """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
+                .param("limit", limit).query((rs, n) -> item(Source.EXAMINATION, rs)).list();
     }
 
     @Transactional
@@ -191,6 +237,93 @@ public class AcademicNotificationOutboxStore {
                 .orElseThrow(() -> new NotificationDeliveryException("Coverage case no longer exists", null));
     }
 
+    public TimetableAudience timetableAudience(long organizationId, long publicationId) {
+        PublicationScope current = jdbc.sql("""
+                SELECT academic_year_id,effective_from FROM timetable_publications
+                 WHERE organization_id=:org AND id=:publication
+                """).param("org", organizationId).param("publication", publicationId)
+                .query((rs, row) -> new PublicationScope(rs.getLong(1),
+                        rs.getObject(2, java.time.LocalDate.class))).optional()
+                .orElseThrow(() -> new NotificationDeliveryException("Timetable publication no longer exists", null));
+        Long previousId = jdbc.sql("""
+                SELECT id FROM timetable_publications
+                 WHERE organization_id=:org AND academic_year_id=:year
+                   AND id<>:publication AND effective_from<:from
+                 ORDER BY effective_from DESC,id DESC LIMIT 1
+                """).param("org", organizationId).param("year", current.academicYearId())
+                .param("publication", publicationId).param("from", current.effectiveFrom())
+                .query(Long.class).optional().orElse(null);
+        List<Long> sections;
+        if (previousId == null) {
+            sections = jdbc.sql("""
+                    SELECT DISTINCT section_id FROM timetable_publication_entries
+                     WHERE organization_id=:org AND publication_id=:publication
+                    """).param("org", organizationId).param("publication", publicationId)
+                    .query(Long.class).list();
+        } else {
+            sections = jdbc.sql("""
+                    WITH old_entries AS (
+                        SELECT * FROM timetable_publication_entries
+                         WHERE organization_id=:org AND publication_id=:previous
+                    ), new_entries AS (
+                        SELECT * FROM timetable_publication_entries
+                         WHERE organization_id=:org AND publication_id=:publication
+                    )
+                    SELECT DISTINCT COALESCE(n.section_id,o.section_id)
+                      FROM old_entries o FULL OUTER JOIN new_entries n
+                        ON n.section_id=o.section_id AND n.day_of_week=o.day_of_week
+                       AND n.bell_schedule_interval_id=o.bell_schedule_interval_id
+                     WHERE o.id IS NULL OR n.id IS NULL OR
+                           ROW(o.start_time,o.end_time,o.interval_type,o.activity_name,
+                               o.grade_level_subject_id,o.teacher_user_id,o.room_id)
+                           IS DISTINCT FROM
+                           ROW(n.start_time,n.end_time,n.interval_type,n.activity_name,
+                               n.grade_level_subject_id,n.teacher_user_id,n.room_id)
+                    """).param("org", organizationId).param("previous", previousId)
+                    .param("publication", publicationId).query(Long.class).list();
+        }
+        if (sections.isEmpty()) return new TimetableAudience(Set.of(), Set.of());
+        Set<Long> students = Set.copyOf(jdbc.sql("""
+                SELECT DISTINCT student_user_id FROM student_enrollments
+                 WHERE organization_id=:org AND academic_year_id=:year
+                   AND status='ENROLLED' AND section_id IN (:sections)
+                """).param("org", organizationId).param("year", current.academicYearId())
+                .param("sections", sections).query(Long.class).list());
+        Set<Long> teachers = Set.copyOf(jdbc.sql("""
+                SELECT DISTINCT teacher_user_id FROM timetable_publication_entries
+                 WHERE organization_id=:org AND section_id IN (:sections)
+                   AND publication_id IN (:publications) AND teacher_user_id IS NOT NULL
+                """).param("org", organizationId).param("sections", sections)
+                .param("publications", previousId == null ? List.of(publicationId)
+                        : List.of(previousId, publicationId)).query(Long.class).list());
+        return new TimetableAudience(students, teachers);
+    }
+
+    private record PublicationScope(long academicYearId, java.time.LocalDate effectiveFrom) {}
+
+    public ExaminationAudience examinationAudience(long organizationId, long academicYearId,
+                                                    long examinationId) {
+        List<Long> grades = jdbc.sql("""
+                SELECT DISTINCT grade_level_id FROM scheduled_assessments
+                 WHERE organization_id=:org AND academic_year_id=:year AND examination_id=:exam
+                """).param("org", organizationId).param("year", academicYearId)
+                .param("exam", examinationId).query(Long.class).list();
+        if (grades.isEmpty()) return new ExaminationAudience(Set.of(), Set.of());
+        Set<Long> students = Set.copyOf(jdbc.sql("""
+                SELECT DISTINCT student_user_id FROM student_enrollments
+                 WHERE organization_id=:org AND academic_year_id=:year
+                   AND status='ENROLLED' AND grade_level_id IN (:grades)
+                """).param("org", organizationId).param("year", academicYearId)
+                .param("grades", grades).query(Long.class).list());
+        Set<Long> teachers = Set.copyOf(jdbc.sql("""
+                SELECT DISTINCT teacher_user_id FROM teacher_assignments
+                 WHERE organization_id=:org AND academic_year_id=:year
+                   AND grade_level_id IN (:grades)
+                """).param("org", organizationId).param("year", academicYearId)
+                .param("grades", grades).query(Long.class).list());
+        return new ExaminationAudience(students, teachers);
+    }
+
     public List<DeadLetter> deadLetters(long organizationId) {
         return jdbc.sql("""
                 SELECT source,id,event_id,event_type,attempt_count,last_error,dead_lettered_at FROM (
@@ -202,6 +335,12 @@ public class AcademicNotificationOutboxStore {
                     UNION ALL
                     SELECT 'PUBLICATION',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
                       FROM academic_publication_notification_outbox WHERE publication_status='DEAD_LETTER'
+                    UNION ALL
+                    SELECT 'TIMETABLE_EXPIRY',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
+                      FROM timetable_expiry_notification_outbox WHERE publication_status='DEAD_LETTER'
+                    UNION ALL
+                    SELECT 'EXAMINATION',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
+                      FROM examination_notification_outbox WHERE publication_status='DEAD_LETTER'
                 ) failures WHERE organization_id=:org ORDER BY dead_lettered_at DESC,id DESC
                 """).param("org", organizationId).query((rs, n) -> new DeadLetter(
                         Source.valueOf(rs.getString(1)), rs.getLong(2), rs.getObject(3, UUID.class),
@@ -230,7 +369,8 @@ public class AcademicNotificationOutboxStore {
         return new Item(source, rs.getLong("id"), rs.getObject("event_id", UUID.class),
                 rs.getLong("organization_id"), (Long) rs.getObject("academic_year_id"),
                 (Long) rs.getObject("student_user_id"), (Long) rs.getObject("case_id"),
-                (Long) rs.getObject("artifact_id"), rs.getString("event_type"), rs.getString("payload"),
+                (Long) rs.getObject("artifact_id"), (Long) rs.getObject("actor_user_id"),
+                rs.getString("event_type"), rs.getString("payload"),
                 rs.getObject("occurred_at", OffsetDateTime.class), rs.getInt("attempt_count"),
                 array(rs.getArray("recipient_user_ids")));
     }
@@ -248,6 +388,8 @@ public class AcademicNotificationOutboxStore {
             case ATTENDANCE -> "student_attendance_notification_outbox";
             case DAILY_COVER -> "timetable_daily_cover_notification_outbox";
             case PUBLICATION -> "academic_publication_notification_outbox";
+            case TIMETABLE_EXPIRY -> "timetable_expiry_notification_outbox";
+            case EXAMINATION -> "examination_notification_outbox";
         };
     }
 
