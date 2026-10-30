@@ -706,6 +706,11 @@ public class UserServiceImpl implements UserService {
                 )
         );
 
+        eventPublisher.publishEvent(new com.dawnrise.identity.notification.securityevent.IdentitySecurityNotificationEvent(
+                organizationId, targetUser.getId(),
+                com.dawnrise.identity.notification.securityevent.IdentitySecurityNotificationEvent.Kind.ACCOUNT_STATUS_CHANGED,
+                "account-status:" + targetUser.getId() + ":" + currentStatus + ":" + requestedStatus + ":" + java.time.OffsetDateTime.now()));
+
         return userMapper.toResponse(updatedUser);
     }
 

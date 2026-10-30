@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import com.dawnrise.identity.notification.securityevent.IdentitySecurityNotificationEvent;
 
 @Service
 public class PasswordResetServiceImpl implements PasswordResetService {
@@ -228,6 +229,9 @@ public class PasswordResetServiceImpl implements PasswordResetService {
 
         // Reset after email proof invalidates every existing session.
         refreshTokenService.revokeAllForUser(user.getId());
+        eventPublisher.publishEvent(new IdentitySecurityNotificationEvent(user.getOrganizationId(),user.getId(),
+                IdentitySecurityNotificationEvent.Kind.PASSWORD_RESET_COMPLETED,
+                "password-reset-completed:"+user.getId()+":"+user.getPasswordChangedAt()));
     }
 
     private InvalidPasswordResetTokenException invalidToken() {

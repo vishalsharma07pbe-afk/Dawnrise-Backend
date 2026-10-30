@@ -3,6 +3,7 @@ package com.dawnrise.academic.reportcard.service;
 import com.dawnrise.academic.grading.entity.GradingPolicy;
 import com.dawnrise.academic.grading.enums.GradingPolicyStatus;
 import com.dawnrise.academic.grading.repository.GradingPolicyRepository;
+import com.dawnrise.academic.notificationdelivery.AcademicPublicationNotificationOutboxService;
 import com.dawnrise.academic.reportcard.dto.*;
 import com.dawnrise.academic.reportcard.entity.*;
 import com.dawnrise.academic.reportcard.enums.ReportCardStatus;
@@ -34,15 +35,17 @@ public class ReportCardService {
     private final ResultPublicationService results;
     private final IdentityGuardianAccessClient guardians;
     private final IdentityStudentEligibilityClient identityStudents;
+    private final AcademicPublicationNotificationOutboxService notificationOutbox;
     private final ReportCardCalculator calculator = new ReportCardCalculator();
 
-    public ReportCardService(ReportCardRepository c, ResultPublicationRepository p, GradingPolicyRepository gp, ResultPublicationService r, IdentityGuardianAccessClient g, IdentityStudentEligibilityClient identityStudents) {
+    public ReportCardService(ReportCardRepository c, ResultPublicationRepository p, GradingPolicyRepository gp, ResultPublicationService r, IdentityGuardianAccessClient g, IdentityStudentEligibilityClient identityStudents, AcademicPublicationNotificationOutboxService notificationOutbox) {
         cards = c;
         publications = p;
         policies = gp;
         results = r;
         guardians = g;
         this.identityStudents = identityStudents;
+        this.notificationOutbox = notificationOutbox;
     }
 
     @Transactional(readOnly = true)
@@ -119,6 +122,7 @@ public class ReportCardService {
     public ReportCardResponse publish(long o, long actor, long id, long version) {
         var c = locked(o, id);
         c.publish(version, actor);
+        notificationOutbox.reportCardPublished(c);
         return response(o, c);
     }
 

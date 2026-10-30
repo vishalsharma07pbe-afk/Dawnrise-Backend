@@ -12,6 +12,7 @@ import com.dawnrise.academic.gradelevel.entity.GradeLevel;
 import com.dawnrise.academic.gradelevel.repository.GradeLevelRepository;
 import com.dawnrise.academic.gradelevelsubject.entity.GradeLevelSubject;
 import com.dawnrise.academic.gradelevelsubject.repository.GradeLevelSubjectRepository;
+import com.dawnrise.academic.notificationdelivery.AcademicPublicationNotificationOutboxService;
 import com.dawnrise.academic.results.dto.PublishedResultDetailResponse;
 import com.dawnrise.academic.results.dto.PublishedResultSubjectResponse;
 import com.dawnrise.academic.results.dto.PublishedResultSummaryResponse;
@@ -63,6 +64,7 @@ public class ResultPublicationService {
     private final ResultSubjectMarkRepository marks;
     private final ResultPublicationRepository publications;
     private final IdentityGuardianAccessClient guardianAccess;
+    private final AcademicPublicationNotificationOutboxService notificationOutbox;
 
     public ResultPublicationService(
             AcademicYearRepository years,
@@ -76,7 +78,8 @@ public class ResultPublicationService {
             ResultSubjectSheetRepository sheets,
             ResultSubjectMarkRepository marks,
             ResultPublicationRepository publications,
-            IdentityGuardianAccessClient guardianAccess
+            IdentityGuardianAccessClient guardianAccess,
+            AcademicPublicationNotificationOutboxService notificationOutbox
     ) {
         this.years = years;
         this.examinations = examinations;
@@ -90,6 +93,7 @@ public class ResultPublicationService {
         this.marks = marks;
         this.publications = publications;
         this.guardianAccess = guardianAccess;
+        this.notificationOutbox = notificationOutbox;
     }
 
     @Transactional(readOnly = true)
@@ -130,8 +134,10 @@ public class ResultPublicationService {
                 organizationId, yearId, examinationId, gradeId, sectionId, true);
         if (!readiness.ready()) throw new ResultConflictException(
                 "Results are not ready for publication: " + String.join("; ", readiness.blockers()));
-        return response(publications.saveAndFlush(new ResultPublication(
-                organizationId, yearId, examinationId, gradeId, sectionId, actorUserId)));
+        ResultPublication publication = publications.saveAndFlush(new ResultPublication(
+                organizationId, yearId, examinationId, gradeId, sectionId, actorUserId));
+        notificationOutbox.resultPublished(publication);
+        return response(publication);
     }
 
     @Transactional(readOnly = true)

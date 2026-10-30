@@ -282,7 +282,12 @@ public class DailyCoverageService {
         jdbc.sql("UPDATE timetable_daily_cover_cases SET status='COVERED',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=:id AND organization_id=:org")
                 .param("id", item.id()).param("org", org).update();
         event(org, item.year(), item.absence(), item.id(), proposalId, "PROPOSAL_APPROVED", "Approved daily cover", actor);
-        outbox(org, item.id(), "COVER_CHANGED", "approved:" + proposalId, "{\"proposalId\":" + proposalId + "}");
+        jdbc.sql("UPDATE timetable_daily_cover_incidents SET status='RESOLVED',resolved_at=CURRENT_TIMESTAMP,"
+                        + "next_escalation_at=NULL,version=version+1,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE organization_id=:org AND case_id=:case AND status='OPEN'")
+                .param("org", org).param("case", item.id()).update();
+        outbox(org, item.id(), "CONFIRMED_SUBSTITUTION", "confirmed:" + proposalId,
+                "{\"caseId\":" + item.id() + ",\"proposalId\":" + proposalId + "}");
         return proposalSummary(org, proposalId);
     }
 
