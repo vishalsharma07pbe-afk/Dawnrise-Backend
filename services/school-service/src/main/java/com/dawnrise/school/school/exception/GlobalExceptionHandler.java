@@ -14,12 +14,34 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.dao.OptimisticLockingFailureException;
+import com.dawnrise.school.leave.RecentAuthenticationGuard;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger LOGGER =
             LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(RecentAuthenticationGuard.RecentAuthenticationRequiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleRecentAuthentication(RuntimeException exception,HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ApiErrorResponse(OffsetDateTime.now(),403,
+                HttpStatus.FORBIDDEN.getReasonPhrase(),exception.getMessage(),request.getRequestURI(),
+                Map.of("code","RECENT_AUTHENTICATION_REQUIRED")));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleOptimistic(OptimisticLockingFailureException exception,HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse(OffsetDateTime.now(),409,
+                HttpStatus.CONFLICT.getReasonPhrase(),exception.getMessage(),request.getRequestURI(),null));
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class,IllegalStateException.class})
+    public ResponseEntity<ApiErrorResponse> handleLeaveRule(RuntimeException exception,HttpServletRequest request) {
+        HttpStatus status=exception instanceof IllegalStateException?HttpStatus.CONFLICT:HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(new ApiErrorResponse(OffsetDateTime.now(),status.value(),
+                status.getReasonPhrase(),exception.getMessage(),request.getRequestURI(),null));
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFoundException(

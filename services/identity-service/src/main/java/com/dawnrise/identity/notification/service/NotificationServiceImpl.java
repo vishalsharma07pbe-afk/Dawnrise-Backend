@@ -56,7 +56,8 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationEventType.EXAM_SCHEDULE_PUBLISHED,
             NotificationEventType.LEAVE_REQUESTED, NotificationEventType.LEAVE_APPROVAL_REQUIRED,
             NotificationEventType.LEAVE_APPROVED, NotificationEventType.LEAVE_REJECTED,
-            NotificationEventType.LEAVE_CANCELLED);
+            NotificationEventType.LEAVE_WITHDRAWN, NotificationEventType.LEAVE_CANCELLED,
+            NotificationEventType.LEAVE_CHANGED);
     private static final Set<NotificationEventType> SCHOOL_EVENTS = EnumSet.of(
             NotificationEventType.SCHOOL_ANNOUNCEMENT, NotificationEventType.DAWNRISE_RELEASE,
             NotificationEventType.SCHOOL_PROVISIONING_COMPLETED,
@@ -521,7 +522,7 @@ public class NotificationServiceImpl implements NotificationService {
             case DAWNRISE_RELEASE -> category == NotificationCategory.SCHOOL
                     && actionType == NotificationActionType.RELEASE_DETAILS;
             case LEAVE_REQUESTED, LEAVE_APPROVAL_REQUIRED, LEAVE_APPROVED,
-                    LEAVE_REJECTED, LEAVE_CANCELLED -> category == NotificationCategory.LEAVE
+                    LEAVE_REJECTED, LEAVE_WITHDRAWN, LEAVE_CANCELLED, LEAVE_CHANGED -> category == NotificationCategory.LEAVE
                     && actionType == NotificationActionType.LEAVE_REQUEST;
             case SCHOOL_PROVISIONING_COMPLETED, SCHOOL_PROVISIONING_FAILED ->
                     category == NotificationCategory.SCHOOL
