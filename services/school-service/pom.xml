@@ -105,6 +105,11 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<systemPropertyVariables>
+						<spring.config.import>optional:file:${maven.multiModuleProjectDirectory}/../../.env.shared.local[.properties]</spring.config.import>
+					</systemPropertyVariables>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

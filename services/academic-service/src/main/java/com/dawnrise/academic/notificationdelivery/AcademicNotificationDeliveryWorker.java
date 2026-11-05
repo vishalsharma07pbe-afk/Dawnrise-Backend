@@ -4,6 +4,7 @@ import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStor
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Item;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.Source;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.TimetableAudience;
+import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.CoverSummary;
 import com.dawnrise.academic.notificationdelivery.AcademicNotificationOutboxStore.ExaminationAudience;
 import com.dawnrise.academic.results.integration.identity.IdentityGuardianAccessClient;
 import org.slf4j.Logger;
@@ -118,6 +119,9 @@ public class AcademicNotificationDeliveryWorker {
             }
             return Set.copyOf(recipients);
         }
+        if (item.source() == Source.STUDENT_LEAVE) {
+            return item.recipientUserIds();
+        }
         CoverContext context = store.coverContext(item.organizationId(), item.caseId());
         return "CONFIRMED_SUBSTITUTION".equals(item.eventType())
                 ? context.confirmedRecipients() : context.managementRecipients();
@@ -130,7 +134,39 @@ public class AcademicNotificationDeliveryWorker {
             case DAILY_COVER -> coverage(item, recipients);
             case TIMETABLE_EXPIRY -> timetableExpiry(item, recipients);
             case EXAMINATION -> examination(item, recipients);
+            case STUDENT_LEAVE -> studentLeave(item, recipients);
         };
+    }
+
+    private IdentityNotificationClient.NotificationRequest studentLeave(Item item, Set<Long> recipients) {
+        String heading = switch (item.eventType()) {
+            case "STUDENT_LEAVE_REQUESTED" -> "Student leave requested";
+            case "STUDENT_LEAVE_RESUBMITTED" -> "Student leave resubmitted";
+            case "STUDENT_LEAVE_APPROVAL_REQUIRED" -> "Student leave approval required";
+            case "STUDENT_LEAVE_CHANGED" -> "Student leave review progressed";
+            case "STUDENT_LEAVE_WITHDRAWN" -> "Student leave withdrawn";
+            case "STUDENT_LEAVE_APPROVED" -> "Student leave approved";
+            case "STUDENT_LEAVE_REJECTED" -> "Student leave rejected";
+            case "STUDENT_LEAVE_RETURNED" -> "Student leave needs correction";
+            case "STUDENT_LEAVE_CANCELLED" -> "Student leave cancelled";
+            default -> "Student leave updated";
+        };
+        String preview = switch (item.eventType()) {
+            case "STUDENT_LEAVE_APPROVAL_REQUIRED" -> "A student leave request needs your review.";
+            case "STUDENT_LEAVE_CHANGED" -> "An approval stage is complete. Further review is pending.";
+            case "STUDENT_LEAVE_WITHDRAWN" -> "A submitted student leave request was withdrawn.";
+            case "STUDENT_LEAVE_RESUBMITTED" -> "A corrected student leave request was submitted for review.";
+            case "STUDENT_LEAVE_APPROVED" -> "A student leave request has completed approval.";
+            case "STUDENT_LEAVE_REJECTED" -> "A student leave request was not approved.";
+            case "STUDENT_LEAVE_RETURNED" -> "Review the comment, correct the request, and resubmit.";
+            case "STUDENT_LEAVE_CANCELLED" -> "An approved student leave request was cancelled.";
+            default -> "A student leave request has been submitted.";
+        };
+        return new IdentityNotificationClient.NotificationRequest(item.organizationId(), item.eventId().toString(),
+                item.eventType(), "LEAVE", "NORMAL", heading, preview,
+                new IdentityNotificationClient.Action("LEAVE_REQUEST", item.artifactId(),
+                        item.studentUserId(), null), "student-leave:" + item.artifactId(),
+                item.occurredAt(), recipients);
     }
 
     private IdentityNotificationClient.NotificationRequest examination(Item item, Set<Long> recipients) {
@@ -187,8 +223,11 @@ public class AcademicNotificationDeliveryWorker {
     private IdentityNotificationClient.NotificationRequest coverage(Item item, Set<Long> recipients) {
         CoverContext context = store.coverContext(item.organizationId(), item.caseId());
         String type = item.eventType();
+        CoverSummary summary = "COVER_NEEDED".equals(type)
+                ? store.coverSummary(item.organizationId(), item.caseId()) : null;
         String heading = switch (type) {
-            case "COVER_NEEDED" -> "Cover needed";
+            case "COVER_NEEDED" -> summary != null && summary.periodCount() > 1
+                    ? "Cover needed for " + summary.periodCount() + " periods" : "Cover needed";
             case "APPROVAL_REQUIRED" -> "Cover approval required";
             case "CONFIRMED_SUBSTITUTION" -> "Substitution confirmed";
             case "IMMINENT_UNCOVERED" -> "Class still uncovered";
@@ -200,7 +239,10 @@ public class AcademicNotificationDeliveryWorker {
             case "COVER_NEEDED", "APPROVAL_REQUIRED", "COVER_CHANGED" -> "IMPORTANT";
             default -> "NORMAL";
         };
-        String preview = context.sectionName() + " · " + context.coverDate() + " · " + context.startTime();
+        String preview = summary == null
+                ? context.sectionName() + " · " + context.coverDate() + " · " + context.startTime()
+                : summary.sections() + " · " + summary.coverDate() + " · "
+                    + summary.firstStart() + "–" + summary.lastEnd();
         return new IdentityNotificationClient.NotificationRequest(item.organizationId(), item.eventId().toString(),
                 type, "TIMETABLE", importance, heading, preview,
                 new IdentityNotificationClient.Action("DAILY_COVERAGE", item.caseId(), null,

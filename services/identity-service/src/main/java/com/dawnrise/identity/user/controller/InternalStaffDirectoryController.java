@@ -53,6 +53,17 @@ public class InternalStaffDirectoryController {
                 rs.getString("display_name"), roles(rs.getLong("id"))));
     }
 
+    @GetMapping("/roles")
+    public List<String> activeStaffRoles(@PathVariable long organizationId) {
+        return jdbc.queryForList("""
+                SELECT DISTINCT r.role FROM user_roles r
+                JOIN users u ON u.id=r.user_id
+                WHERE u.organization_id=:organizationId AND u.status='ACTIVE'
+                  AND r.role NOT IN ('STUDENT','PARENT')
+                ORDER BY r.role
+                """, new MapSqlParameterSource("organizationId", organizationId), String.class);
+    }
+
     private Set<String> roles(long userId) {
         return new LinkedHashSet<>(jdbc.queryForList("SELECT role FROM user_roles WHERE user_id=:userId ORDER BY role",
                 new MapSqlParameterSource("userId", userId), String.class));

@@ -2,7 +2,6 @@ package com.dawnrise.school.leave;
 
 import com.dawnrise.school.leave.LeaveDtos.*;
 import com.dawnrise.school.school.exception.ResourceNotFoundException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -13,14 +12,20 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Array;
+import java.io.IOException;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HexFormat;
+import java.util.UUID;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class StaffLeaveService {
@@ -32,27 +37,38 @@ public class StaffLeaveService {
     }
 
     @Transactional(readOnly=true) public List<PolicyView> policies(long org){
-        return jdbc.query("SELECT * FROM staff_leave_types WHERE organization_id=:org ORDER BY name,id",p("org",org),this::policy);
+        return jdbc.query("SELECT * FROM staff_leave_types WHERE organization_id=:org AND retired_at IS NULL ORDER BY name,id",p("org",org),this::policy);
     }
+    public List<String> activeStaffRoles(long org){return identities.activeStaffRoles(org);}
     @Transactional public PolicyView createPolicy(long org,long actor,PolicyInput input){
-        validatePolicy(input); long id=jdbc.queryForObject("""
+        validatePolicy(org,input); long id=jdbc.queryForObject("""
                 INSERT INTO staff_leave_types(organization_id,code,name,active_from,active_to,yearly_allowance,
                 carry_forward_enabled,carry_forward_limit,maximum_consecutive_days,supporting_document_required,
-                paid,partial_time_enabled,negative_balance_allowed,applicable_roles,created_by_user_id)
+                paid,partial_time_enabled,negative_balance_allowed,applicable_roles,eligibility_gender,created_by_user_id)
                 VALUES(:org,:code,:name,:from,:to,:allowance,:carry,:carryLimit,:maximum,:document,:paid,:partial,
-                :negative,:roles,:actor) RETURNING id
-                """,policyParams(org,actor,input),Long.class);auditPolicy(org,id,actor,"CREATED");return policy(org,id);
+                :negative,:roles,:gender,:actor) RETURNING id
+                """,policyParams(org,actor,input),Long.class);auditPolicy(org,id,actor,"CREATED");notifyPolicy(org,id,"LEAVE_POLICY_CREATED","New staff leave policy","Policy "+input.code()+" is available.");return policy(org,id);
     }
     @Transactional public PolicyView updatePolicy(long org,long actor,long id,PolicyInput input){
-        validatePolicy(input);int changed=jdbc.update("""
+        validatePolicy(org,input);int changed=jdbc.update("""
                 UPDATE staff_leave_types SET code=:code,name=:name,active_from=:from,active_to=:to,
                 yearly_allowance=:allowance,carry_forward_enabled=:carry,carry_forward_limit=:carryLimit,
                 maximum_consecutive_days=:maximum,supporting_document_required=:document,paid=:paid,
-                partial_time_enabled=:partial,negative_balance_allowed=:negative,applicable_roles=:roles,
+                partial_time_enabled=:partial,negative_balance_allowed=:negative,applicable_roles=:roles,eligibility_gender=:gender,
                 version=version+1,updated_at=CURRENT_TIMESTAMP
-                WHERE organization_id=:org AND id=:id AND version=:version
+                WHERE organization_id=:org AND id=:id AND version=:version AND retired_at IS NULL
                 """,policyParams(org,actor,input).addValue("id",id).addValue("version",input.expectedVersion()));
         if(changed!=1)throw new OptimisticLockingFailureException("Leave policy changed");auditPolicy(org,id,actor,"UPDATED");return policy(org,id);
+    }
+    @Transactional public void retirePolicy(long org,long actor,long id,long expectedVersion){
+        int changed=jdbc.update("UPDATE staff_leave_types SET retired_at=CURRENT_TIMESTAMP,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id AND version=:version AND retired_at IS NULL",p("org",org).addValue("id",id).addValue("version",expectedVersion));
+        if(changed!=1)throw new OptimisticLockingFailureException("Leave policy changed or was already retired");
+        auditPolicy(org,id,actor,"RETIRED");
+        notifyPolicy(org,id,"LEAVE_POLICY_RETIRED","Staff leave policy retired","Policy "+policy(org,id).code()+" is no longer available for new requests.");
+    }
+    private void notifyPolicy(long org,long id,String type,String heading,String context){
+        jdbc.update("INSERT INTO school_notification_outbox(source_type,source_id,organization_id,source_event_id,event_type,importance,heading,context,audience_spec,available_at) VALUES('POLICY',:id,:org,:event,:type,'NORMAL',:heading,:context,'[{\"type\":\"STAFF\",\"key\":null}]'::jsonb,CURRENT_TIMESTAMP) ON CONFLICT(organization_id,source_event_id) DO NOTHING",
+                p("org",org).addValue("id",id).addValue("event","leave-policy:"+id+":"+type).addValue("type",type).addValue("heading",heading).addValue("context",context));
     }
     @Transactional(readOnly=true) public List<ApprovalRuleView> approvalRules(long org){
         return jdbc.query("SELECT * FROM staff_leave_approval_rules WHERE organization_id=:org ORDER BY requester_role,step_number,id",p("org",org),
@@ -68,11 +84,15 @@ public class StaffLeaveService {
                 p("org",org).addValue("id",id).addValue("requester",input.requesterRole()).addValue("step",input.stepNumber()).addValue("approver",input.approverRole()).addValue("active",input.active()).addValue("version",input.expectedVersion()));
         if(changed!=1)throw new OptimisticLockingFailureException("Leave approval rule changed");return approvalRule(org,id);
     }
+    @Transactional(readOnly=true) public List<StaffApproverMappingView> approverMappings(long org){return jdbc.query("SELECT id,staff_category,stage,approver_user_id,subject_user_id,active,version FROM staff_leave_approver_mappings WHERE organization_id=:org ORDER BY staff_category,subject_user_id NULLS FIRST,id",p("org",org),(rs,n)->new StaffApproverMappingView(rs.getLong(1),rs.getString(2),rs.getString(3),rs.getLong(4),(Long)rs.getObject(5),rs.getBoolean(6),rs.getLong(7)));}
+    @Transactional public StaffApproverMappingView createApproverMapping(long org,StaffApproverMappingInput input){validateApproverMapping(org,input);long id=jdbc.queryForObject("INSERT INTO staff_leave_approver_mappings(organization_id,staff_category,stage,approver_user_id,subject_user_id,active) VALUES(:org,:category,:stage,:approver,:subject,:active) RETURNING id",mappingParams(org,input),Long.class);return approverMapping(org,id);}
+    @Transactional public StaffApproverMappingView updateApproverMapping(long org,long id,StaffApproverMappingInput input){validateApproverMapping(org,input);int changed=jdbc.update("UPDATE staff_leave_approver_mappings SET staff_category=:category,stage=:stage,approver_user_id=:approver,subject_user_id=:subject,active=:active,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id AND version=:version",mappingParams(org,input).addValue("id",id).addValue("version",input.expectedVersion()));if(changed!=1)throw new OptimisticLockingFailureException("Staff leave approver mapping changed");return approverMapping(org,id);}
 
     @Transactional public List<BalanceView> balances(long org,long staffUserId){
-        var staff=identities.staff(org,staffUserId);int year=LocalDate.now().getYear();
-        for(PolicyView policy:policies(org))if(applies(policy,staff.roles())) ensureBalance(org,staffUserId,policy,year);
-        return jdbc.query("SELECT b.*,t.negative_balance_allowed FROM staff_leave_balances b JOIN staff_leave_types t ON t.id=b.leave_type_id AND t.organization_id=b.organization_id WHERE b.organization_id=:org AND b.staff_user_id=:staff ORDER BY t.name",p("org",org).addValue("staff",staffUserId),this::balance);
+        var staff=identities.staff(org,staffUserId);LocalDate today=LocalDate.now();int year=today.getYear();
+        String gender=staffEligibilityGender(org,staffUserId);
+        for(PolicyView policy:policies(org))if(applies(policy,staff.roles())&&eligible(policy,gender)&&!policy.activeFrom().isAfter(today)&&(policy.activeTo()==null||!policy.activeTo().isBefore(today))) ensureBalance(org,staffUserId,policy,year);
+        return jdbc.query("SELECT b.*,t.negative_balance_allowed FROM staff_leave_balances b JOIN staff_leave_types t ON t.id=b.leave_type_id AND t.organization_id=b.organization_id WHERE b.organization_id=:org AND b.staff_user_id=:staff AND b.leave_year=:year AND t.retired_at IS NULL AND t.active_from<=:today AND (t.active_to IS NULL OR t.active_to>=:today) AND (t.eligibility_gender='ALL' OR t.eligibility_gender=:gender) ORDER BY t.name",p("org",org).addValue("staff",staffUserId).addValue("gender",gender).addValue("year",year).addValue("today",today),this::balance);
     }
     @Transactional public BalanceView adjust(long org,long actor,long balanceId,BalanceAdjustment request){
         var rows=jdbc.query("SELECT b.*,t.negative_balance_allowed FROM staff_leave_balances b JOIN staff_leave_types t ON t.id=b.leave_type_id AND t.organization_id=b.organization_id WHERE b.organization_id=:org AND b.id=:id FOR UPDATE OF b",p("org",org).addValue("id",balanceId),this::balance);
@@ -84,47 +104,72 @@ public class StaffLeaveService {
         return jdbc.query("SELECT b.*,t.negative_balance_allowed FROM staff_leave_balances b JOIN staff_leave_types t ON t.id=b.leave_type_id AND t.organization_id=b.organization_id WHERE b.organization_id=:org AND b.id=:id",p("org",org).addValue("id",balanceId),this::balance).getFirst();
     }
 
-    @Transactional(readOnly=true) public Preview preview(long org,long actor,RequestInput input){
-        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,policy,staff.roles(),input);
+    @Transactional public Preview preview(long org,long actor,RequestInput input){
+        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,actor,policy,staff.roles(),input);
+        rejectOverlap(org,actor,input.startDate(),input.endDate(),0);
         BigDecimal units=units(org,input);BalanceView balance=balanceFor(org,actor,policy,input.startDate().getYear());
         var days=workingDays.days(org,input.startDate(),input.endDate());
-        return new Preview(units,balance.available().subtract(units),policy.negativeBalanceAllowed()||balance.available().compareTo(units)>=0,days.excludedDates());
+        BigDecimal unreserved=balance.available().subtract(balance.pending());
+        return new Preview(units,balance.available().subtract(units),policy.negativeBalanceAllowed()||unreserved.compareTo(units)>=0,days.excludedDates());
     }
     @Transactional public RequestView createDraft(long org,long actor,RequestInput input){
-        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,policy,staff.roles(),input);
+        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,actor,policy,staff.roles(),input);
+        rejectOverlap(org,actor,input.startDate(),input.endDate(),0);
         BigDecimal units=units(org,input);long id=jdbc.queryForObject("""
                 INSERT INTO staff_leave_requests(organization_id,requester_user_id,leave_type_id,request_kind,
                 start_date,end_date,start_time,end_time,half_day_period,units,reason,document_name,
                 document_content_type,document_reference) VALUES(:org,:actor,:type,:kind,:start,:end,:startTime,
                 :endTime,:half,:units,:reason,:document,:contentType,:reference) RETURNING id
-                """,requestParams(org,actor,input,units),Long.class);audit(org,id,actor,"DRAFT_CREATED",null);return request(org,id,true);
+                """,requestParams(org,actor,input,units),Long.class);insertRevision(org,id,1,actor,input,units);audit(org,id,actor,"DRAFT_CREATED",null);return request(org,id,true);
     }
     @Transactional public RequestView updateDraft(long org,long actor,long id,long expectedVersion,RequestInput input){
-        RequestHead head=head(org,id,true);requireOwner(head,actor);requireStatus(head,"DRAFT");requireVersion(head,expectedVersion);
-        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,policy,staff.roles(),input);BigDecimal units=units(org,input);
+        RequestHead head=head(org,id,true);requireOwner(head,actor);if(!List.of("DRAFT","PENDING_CORRECTION").contains(head.status()))throw new IllegalStateException("Only a draft or returned request can be edited");requireVersion(head,expectedVersion);RequestView old=request(org,id,true);boolean correction=head.status().equals("PENDING_CORRECTION");
+        var staff=identities.staff(org,actor);PolicyView policy=policy(org,input.leaveTypeId());validateRequest(org,actor,policy,staff.roles(),input);BigDecimal units=units(org,input);
+        rejectOverlap(org,actor,input.startDate(),input.endDate(),id);
         int changed=jdbc.update("""
                 UPDATE staff_leave_requests SET leave_type_id=:type,request_kind=:kind,start_date=:start,end_date=:end,
                 start_time=:startTime,end_time=:endTime,half_day_period=:half,units=:units,reason=:reason,
-                document_name=:document,document_content_type=:contentType,document_reference=:reference,
+                document_name=:document,document_content_type=:contentType,document_reference=:reference,current_revision=current_revision+:revisionIncrement,
                 version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id AND version=:version
-                """,requestParams(org,actor,input,units).addValue("id",id).addValue("version",expectedVersion));
-        if(changed!=1)throw new OptimisticLockingFailureException("Leave request changed");audit(org,id,actor,"DRAFT_UPDATED",null);return request(org,id,true);
+                """,requestParams(org,actor,input,units).addValue("id",id).addValue("version",expectedVersion).addValue("revisionIncrement",correction?1:0));
+        if(changed!=1)throw new OptimisticLockingFailureException("Leave request changed");if(correction){jdbc.update("UPDATE staff_leave_revisions SET superseded=TRUE WHERE organization_id=:org AND leave_request_id=:id",p("org",org).addValue("id",id));insertRevision(org,id,currentRevision(org,id),actor,input,units);jdbc.update("UPDATE staff_leave_balances SET pending=GREATEST(0,pending+:delta),version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND staff_user_id=:staff AND leave_type_id=:type AND leave_year=:year",p("org",org).addValue("staff",actor).addValue("type",old.leaveTypeId()).addValue("year",old.startDate().getYear()).addValue("delta",units.subtract(old.units())));}audit(org,id,actor,correction?"REVISION_CREATED":"DRAFT_UPDATED",null);return request(org,id,true);
     }
+    @Transactional public void deleteDraft(long org,long actor,long id,long expectedVersion){
+        int changed=jdbc.update("UPDATE staff_leave_requests SET status='DELETED',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id AND requester_user_id=:actor AND status='DRAFT' AND version=:version",p("org",org).addValue("id",id).addValue("actor",actor).addValue("version",expectedVersion));
+        if(changed!=1)throw new OptimisticLockingFailureException("Draft changed or is no longer available");
+        audit(org,id,actor,"DRAFT_DELETED",null);
+    }
+    @Transactional public AttachmentView uploadAttachment(long org,long actor,long id,MultipartFile file){RequestHead head=head(org,id,true);requireOwner(head,actor);if(!List.of("DRAFT","PENDING_CORRECTION").contains(head.status()))throw new IllegalStateException("Attachments can only be changed on a draft or returned request");byte[] bytes;try{bytes=file.getBytes();}catch(IOException exception){throw new IllegalArgumentException("The attachment could not be read",exception);}if(bytes.length<1||bytes.length>10*1024*1024)throw new IllegalArgumentException("Attachments must be between 1 byte and 10 MB");String contentType=validatedAttachmentType(file.getContentType(),bytes);String name=safeFileName(file.getOriginalFilename());String sha=sha256(bytes);UUID attachmentId=UUID.randomUUID();int revision=currentRevision(org,id);jdbc.update("INSERT INTO staff_leave_attachments(id,organization_id,leave_request_id,revision_number,original_name,content_type,byte_size,sha256,content,uploaded_by_user_id) VALUES(:uuid,:org,:id,:revision,:name,:type,:size,:sha,:content,:actor)",p("uuid",attachmentId).addValue("org",org).addValue("id",id).addValue("revision",revision).addValue("name",name).addValue("type",contentType).addValue("size",bytes.length).addValue("sha",sha).addValue("content",bytes).addValue("actor",actor));audit(org,id,actor,"ATTACHMENT_UPLOADED",attachmentId.toString());return attachment(org,id,attachmentId);}
+    @Transactional(readOnly=true) public List<AttachmentView> attachments(long org,long actor,long id){authorizeAttachmentAccess(org,actor,id);return jdbc.query("SELECT id,revision_number,original_name,content_type,byte_size,sha256,uploaded_by_user_id,created_at FROM staff_leave_attachments WHERE organization_id=:org AND leave_request_id=:id AND removed_at IS NULL ORDER BY revision_number,created_at,id",p("org",org).addValue("id",id),(rs,n)->new AttachmentView(rs.getObject(1,UUID.class),rs.getInt(2),rs.getString(3),rs.getString(4),rs.getLong(5),rs.getString(6),rs.getLong(7),rs.getObject(8,OffsetDateTime.class)));}
+    @Transactional(readOnly=true) public AttachmentDownload downloadAttachment(long org,long actor,long id,UUID attachmentId){authorizeAttachmentAccess(org,actor,id);var rows=jdbc.query("SELECT original_name,content_type,content FROM staff_leave_attachments WHERE organization_id=:org AND leave_request_id=:id AND id=:attachment AND removed_at IS NULL",p("org",org).addValue("id",id).addValue("attachment",attachmentId),(rs,n)->new AttachmentDownload(rs.getString(1),rs.getString(2),rs.getBytes(3)));if(rows.isEmpty())throw new ResourceNotFoundException("Leave attachment not found");return rows.getFirst();}
+    @Transactional public void removeAttachment(long org,long actor,long id,UUID attachmentId){RequestHead head=head(org,id,true);requireOwner(head,actor);if(!List.of("DRAFT","PENDING_CORRECTION").contains(head.status()))throw new IllegalStateException("Attachments can only be changed on a draft or returned request");int changed=jdbc.update("UPDATE staff_leave_attachments SET removed_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND leave_request_id=:id AND id=:attachment AND revision_number=:revision AND removed_at IS NULL",p("org",org).addValue("id",id).addValue("attachment",attachmentId).addValue("revision",currentRevision(org,id)));if(changed!=1)throw new ResourceNotFoundException("Leave attachment not found");audit(org,id,actor,"ATTACHMENT_REMOVED",attachmentId.toString());}
     @Transactional public RequestView submit(long org,long actor,long id,long expectedVersion){
-        RequestHead head=head(org,id,true);requireOwner(head,actor);requireStatus(head,"DRAFT");requireVersion(head,expectedVersion);
+        RequestHead head=head(org,id,true);requireOwner(head,actor);if(!List.of("DRAFT","PENDING_CORRECTION").contains(head.status()))throw new IllegalStateException("Only a draft or returned request can be submitted");requireVersion(head,expectedVersion);boolean resubmission=head.status().equals("PENDING_CORRECTION");
         RequestView value=request(org,id,true);var staff=identities.staff(org,actor);PolicyView policy=policy(org,value.leaveTypeId());
+        if(isPolicyRetired(org,policy.id()))throw new IllegalStateException("Leave policy has been retired; this draft cannot be submitted");
+        if(!eligible(policy,staffEligibilityGender(org,actor)))throw new IllegalStateException("Leave policy is not available for this staff member");
+        if(policy.supportingDocumentRequired()){Integer attachments=jdbc.queryForObject("SELECT COUNT(*) FROM staff_leave_attachments WHERE organization_id=:org AND leave_request_id=:id AND revision_number=:revision AND removed_at IS NULL",p("org",org).addValue("id",id).addValue("revision",currentRevision(org,id)),Integer.class);if(attachments==null||attachments==0)throw new IllegalStateException("A supporting document is required before this request can be submitted");}
         rejectOverlap(org,actor,value.startDate(),value.endDate(),id);BalanceView balance=balanceFor(org,actor,policy,value.startDate().getYear());
-        if(!policy.negativeBalanceAllowed()&&balance.available().compareTo(value.units())<0)throw new IllegalStateException("Insufficient leave balance");
+        if(!policy.negativeBalanceAllowed()&&balance.available().subtract(balance.pending()).compareTo(value.units())<0)throw new IllegalStateException("Insufficient leave balance");
         List<ApprovalTarget> chain=approvalChain(org,actor,staff.roles());if(chain.isEmpty())throw new IllegalStateException("No eligible leave approver is configured");
-        int step=1;for(var target:chain)jdbc.update("INSERT INTO staff_leave_approvals(organization_id,leave_request_id,step_number,approver_role,approver_user_id,status) VALUES(:org,:id,:step,:role,:user,:status)",p("org",org).addValue("id",id).addValue("step",step).addValue("role",target.role()).addValue("user",target.userId()).addValue("status",step==1?"PENDING":"WAITING"));
+        int revision=approvalRevision(org,id,actor,value,resubmission);int step=1;for(var target:chain)jdbc.update("INSERT INTO staff_leave_approvals(organization_id,leave_request_id,revision_number,step_number,approver_role,approver_user_id,status) VALUES(:org,:id,:revision,:step,:role,:user,:status)",p("org",org).addValue("id",id).addValue("revision",revision).addValue("step",step).addValue("role",target.role()).addValue("user",target.userId()).addValue("status",step==1?"PENDING":"WAITING"));
         jdbc.update("UPDATE staff_leave_requests SET status='PENDING',current_approval_step=1,submitted_at=CURRENT_TIMESTAMP,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id));
-        jdbc.update("UPDATE staff_leave_balances SET pending=pending+:units,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:balance",p("org",org).addValue("balance",balance.id()).addValue("units",value.units()));
-        audit(org,id,actor,"SUBMITTED",null);notify(org,id,"LEAVE_REQUESTED","Leave request submitted","Your leave request was submitted",Set.of(actor),"leave:"+id);
+        if(!resubmission)jdbc.update("UPDATE staff_leave_balances SET pending=pending+:units,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:balance",p("org",org).addValue("balance",balance.id()).addValue("units",value.units()));
+        audit(org,id,actor,resubmission?"RESUBMITTED":"SUBMITTED",null);notify(org,id,resubmission?"LEAVE_CHANGED":"LEAVE_REQUESTED",resubmission?"Leave request resubmitted":"Leave request submitted",resubmission?"Your corrected leave request was resubmitted":"Your leave request was submitted",Set.of(actor),"leave:"+id+":"+currentVersion(org,id));
         notify(org,id,"LEAVE_APPROVAL_REQUIRED","Leave approval required","A staff leave request requires your review",Set.of(chain.getFirst().userId()),"leave-approval:"+id);
         return request(org,id,true);
     }
     @Transactional public RequestView approve(long org,long actor,long id,DecisionRequest decision){return decide(org,actor,id,decision,true);}
     @Transactional public RequestView reject(long org,long actor,long id,DecisionRequest decision){return decide(org,actor,id,decision,false);}
+    @Transactional public RequestView returnForCorrection(long org,long actor,long id,DecisionRequest decision){
+        RequestHead head=head(org,id,true);requireStatus(head,"PENDING");requireVersion(head,decision.expectedVersion());if(head.requester()==actor)throw new IllegalStateException("Self-review is not allowed");
+        var rows=jdbc.query("SELECT id FROM staff_leave_approvals WHERE organization_id=:org AND leave_request_id=:id AND status='PENDING' AND approver_user_id=:actor FOR UPDATE",p("org",org).addValue("id",id).addValue("actor",actor),(rs,n)->rs.getLong(1));
+        if(rows.size()!=1)throw new ResourceNotFoundException("Pending leave approval not found");
+        jdbc.update("UPDATE staff_leave_approvals SET status='RETURNED',reason=:reason,decided_at=CURRENT_TIMESTAMP,version=version+1 WHERE id=:id",p("id",rows.getFirst()).addValue("reason",decision.reason().trim()));
+        jdbc.update("UPDATE staff_leave_approvals SET status='CANCELLED' WHERE organization_id=:org AND leave_request_id=:id AND status='WAITING'",p("org",org).addValue("id",id));
+        jdbc.update("UPDATE staff_leave_requests SET status='PENDING_CORRECTION',returned_by_user_id=:actor,return_comment=:reason,current_approval_step=0,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id).addValue("actor",actor).addValue("reason",decision.reason().trim()));
+        audit(org,id,actor,"RETURNED",decision.reason());notify(org,id,"LEAVE_CHANGED","Leave request returned","Your leave request needs a correction",Set.of(head.requester()),"leave-returned:"+id+":"+head.version());return request(org,id,true);
+    }
     private RequestView decide(long org,long actor,long id,DecisionRequest decision,boolean approved){
         RequestHead head=head(org,id,true);requireStatus(head,"PENDING");requireVersion(head,decision.expectedVersion());if(head.requester()==actor)throw new IllegalStateException("Self-approval is not allowed");
         var rows=jdbc.query("SELECT id,step_number,approver_user_id FROM staff_leave_approvals WHERE organization_id=:org AND leave_request_id=:id AND status='PENDING' FOR UPDATE",p("org",org).addValue("id",id),(rs,n)->new long[]{rs.getLong(1),rs.getLong(2),rs.getLong(3)});
@@ -157,8 +202,8 @@ public class StaffLeaveService {
         RequestView updated=request(org,id,true);coverage(org,updated,"UPSERT",actor);audit(org,id,actor,"PARTIALLY_CANCELLED",decision.reason());notify(org,id,"LEAVE_CHANGED","Approved leave changed","Future approved leave dates were changed",approverRecipients(updated,actor),"leave:"+id);return updated;
     }
 
-    @Transactional(readOnly=true) public List<RequestView> mine(long org,long actor){return ids("SELECT id FROM staff_leave_requests WHERE organization_id=:org AND requester_user_id=:actor ORDER BY created_at DESC",p("org",org).addValue("actor",actor)).stream().map(id->request(org,id,true)).toList();}
-    @Transactional(readOnly=true) public List<RequestView> queue(long org,long actor){return ids("SELECT r.id FROM staff_leave_requests r JOIN staff_leave_approvals a ON a.leave_request_id=r.id AND a.organization_id=r.organization_id WHERE r.organization_id=:org AND a.approver_user_id=:actor AND a.status='PENDING' ORDER BY r.submitted_at,r.id",p("org",org).addValue("actor",actor)).stream().map(id->request(org,id,true)).toList();}
+    @Transactional(readOnly=true) public List<RequestView> mine(long org,long actor){return ids("SELECT id FROM staff_leave_requests WHERE organization_id=:org AND requester_user_id=:actor AND status<>'DELETED' ORDER BY created_at DESC",p("org",org).addValue("actor",actor)).stream().map(id->request(org,id,true)).toList();}
+    @Transactional(readOnly=true) public List<RequestView> queue(long org,long actor){return ids("SELECT r.id FROM staff_leave_requests r JOIN staff_leave_approvals a ON a.leave_request_id=r.id AND a.organization_id=r.organization_id AND a.revision_number=r.current_revision WHERE r.organization_id=:org AND r.status='PENDING' AND a.approver_user_id=:actor AND a.status='PENDING' ORDER BY r.submitted_at,r.id",p("org",org).addValue("actor",actor)).stream().map(id->request(org,id,true)).toList();}
     @Transactional(readOnly=true) public List<AuditView> audit(long org,long actor,long id,boolean reviewer){RequestHead head=head(org,id,false);if(head.requester()!=actor&&!reviewer)throw new ResourceNotFoundException("Leave request not found");return jdbc.query("SELECT action,actor_user_id,reason,occurred_at FROM staff_leave_audit WHERE organization_id=:org AND leave_request_id=:id ORDER BY occurred_at,id",p("org",org).addValue("id",id),(rs,n)->new AuditView(rs.getString(1),rs.getLong(2),rs.getString(3),rs.getObject(4,OffsetDateTime.class)));}
     @Transactional(readOnly=true) public List<CalendarEntry> calendar(long org,LocalDate start,LocalDate end){return jdbc.query("SELECT r.id,r.requester_user_id,r.start_date,r.end_date,r.request_kind,r.status FROM staff_leave_requests r WHERE r.organization_id=:org AND r.status IN ('APPROVED','PARTIALLY_CANCELLED') AND r.start_date<=:end AND r.end_date>=:start ORDER BY r.start_date,r.id",p("org",org).addValue("start",start).addValue("end",end),(rs,n)->{long user=rs.getLong(2);String name=identities.staff(org,user).displayName();return new CalendarEntry(rs.getLong(1),user,name,rs.getObject(3,LocalDate.class),rs.getObject(4,LocalDate.class),RequestKind.valueOf(rs.getString(5)),rs.getString(6));});}
 
@@ -173,29 +218,87 @@ public class StaffLeaveService {
     private void auditPolicy(long org,long id,long actor,String action){try{String snapshot=json.writeValueAsString(policy(org,id));jdbc.update("INSERT INTO staff_leave_policy_audit(organization_id,leave_type_id,actor_user_id,action,snapshot) VALUES(:org,:id,:actor,:action,CAST(:snapshot AS JSONB))",p("org",org).addValue("id",id).addValue("actor",actor).addValue("action",action).addValue("snapshot",snapshot));}catch(Exception exception){throw new IllegalStateException("Leave policy audit could not be recorded",exception);}}
 
     private RequestView request(long org,long id,boolean privateView){var rows=jdbc.query("SELECT r.*,t.name leave_type_name FROM staff_leave_requests r JOIN staff_leave_types t ON t.id=r.leave_type_id AND t.organization_id=r.organization_id WHERE r.organization_id=:org AND r.id=:id",p("org",org).addValue("id",id),(rs,n)->new RequestView(rs.getLong("id"),rs.getLong("requester_user_id"),rs.getLong("leave_type_id"),rs.getString("leave_type_name"),RequestKind.valueOf(rs.getString("request_kind")),rs.getObject("start_date",LocalDate.class),rs.getObject("end_date",LocalDate.class),rs.getObject("start_time",java.time.LocalTime.class),rs.getObject("end_time",java.time.LocalTime.class),rs.getString("half_day_period")==null?null:HalfDayPeriod.valueOf(rs.getString("half_day_period")),rs.getBigDecimal("units"),privateView?rs.getString("reason"):null,privateView?rs.getString("document_name"):null,rs.getString("status"),rs.getInt("current_approval_step"),rs.getLong("version"),rs.getObject("created_at",OffsetDateTime.class),approvals(org,id)));if(rows.isEmpty())throw new ResourceNotFoundException("Leave request not found");return rows.getFirst();}
-    private List<ApprovalView> approvals(long org,long id){return jdbc.query("SELECT * FROM staff_leave_approvals WHERE organization_id=:org AND leave_request_id=:id ORDER BY step_number",p("org",org).addValue("id",id),(rs,n)->new ApprovalView(rs.getInt("step_number"),rs.getString("approver_role"),(Long)rs.getObject("approver_user_id"),rs.getString("status"),rs.getString("reason"),rs.getObject("decided_at",OffsetDateTime.class),rs.getLong("version")));}
+    private List<ApprovalView> approvals(long org,long id){return jdbc.query("SELECT a.* FROM staff_leave_approvals a JOIN staff_leave_requests r ON r.id=a.leave_request_id AND r.organization_id=a.organization_id WHERE a.organization_id=:org AND a.leave_request_id=:id AND a.revision_number=r.current_revision ORDER BY a.step_number",p("org",org).addValue("id",id),(rs,n)->new ApprovalView(rs.getInt("step_number"),rs.getString("approver_role"),(Long)rs.getObject("approver_user_id"),rs.getString("status"),rs.getString("reason"),rs.getObject("decided_at",OffsetDateTime.class),rs.getLong("version")));}
     private RequestHead head(long org,long id,boolean lock){var rows=jdbc.query("SELECT requester_user_id,status,version FROM staff_leave_requests WHERE organization_id=:org AND id=:id"+(lock?" FOR UPDATE":""),p("org",org).addValue("id",id),(rs,n)->new RequestHead(rs.getLong(1),rs.getString(2),rs.getLong(3)));if(rows.isEmpty())throw new ResourceNotFoundException("Leave request not found");return rows.getFirst();}
     private PolicyView policy(long org,long id){var rows=jdbc.query("SELECT * FROM staff_leave_types WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),this::policy);if(rows.isEmpty())throw new ResourceNotFoundException("Leave policy not found");return rows.getFirst();}
     private ApprovalRuleView approvalRule(long org,long id){var rows=jdbc.query("SELECT * FROM staff_leave_approval_rules WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),(rs,n)->new ApprovalRuleView(rs.getLong("id"),rs.getString("requester_role"),rs.getInt("step_number"),rs.getString("approver_role"),rs.getBoolean("active"),rs.getLong("version")));if(rows.isEmpty())throw new ResourceNotFoundException("Leave approval rule not found");return rows.getFirst();}
     private long currentVersion(long org,long id){Long value=jdbc.queryForObject("SELECT version FROM staff_leave_requests WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),Long.class);return value==null?0:value;}
-    private PolicyView policy(java.sql.ResultSet rs,int n)throws java.sql.SQLException{Array roles=rs.getArray("applicable_roles");return new PolicyView(rs.getLong("id"),rs.getString("code"),rs.getString("name"),rs.getObject("active_from",LocalDate.class),rs.getObject("active_to",LocalDate.class),rs.getBigDecimal("yearly_allowance"),rs.getBoolean("carry_forward_enabled"),rs.getBigDecimal("carry_forward_limit"),rs.getBigDecimal("maximum_consecutive_days"),rs.getBoolean("supporting_document_required"),rs.getBoolean("paid"),rs.getBoolean("partial_time_enabled"),rs.getBoolean("negative_balance_allowed"),Set.of((String[])roles.getArray()),rs.getLong("version"));}
-    private BalanceView balance(java.sql.ResultSet rs,int n)throws java.sql.SQLException{BigDecimal available=rs.getBigDecimal("opening").add(rs.getBigDecimal("accrued")).add(rs.getBigDecimal("carried")).add(rs.getBigDecimal("adjusted")).subtract(rs.getBigDecimal("used")).subtract(rs.getBigDecimal("pending"));return new BalanceView(rs.getLong("id"),rs.getLong("staff_user_id"),rs.getLong("leave_type_id"),rs.getInt("leave_year"),rs.getBigDecimal("opening"),rs.getBigDecimal("accrued"),rs.getBigDecimal("carried"),rs.getBigDecimal("used"),rs.getBigDecimal("pending"),rs.getBigDecimal("adjusted"),available,rs.getLong("version"));}
+    private int currentRevision(long org,long id){Integer value=jdbc.queryForObject("SELECT current_revision FROM staff_leave_requests WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),Integer.class);return value==null?1:value;}
+    int approvalRevision(long org,long id,long actor,RequestView value,boolean resubmission){
+        int revision=currentRevision(org,id);if(!resubmission)return revision;
+        Integer existing=jdbc.queryForObject("SELECT COUNT(*) FROM staff_leave_approvals WHERE organization_id=:org AND leave_request_id=:id AND revision_number=:revision",p("org",org).addValue("id",id).addValue("revision",revision),Integer.class);
+        if(existing==null||existing==0)return revision;
+        jdbc.update("UPDATE staff_leave_revisions SET superseded=TRUE WHERE organization_id=:org AND leave_request_id=:id AND revision_number=:revision",p("org",org).addValue("id",id).addValue("revision",revision));
+        jdbc.update("UPDATE staff_leave_requests SET current_revision=current_revision+1 WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id));
+        int nextRevision=revision+1;RequestInput snapshot=new RequestInput(value.leaveTypeId(),value.kind(),value.startDate(),value.endDate(),value.startTime(),value.endTime(),value.halfDayPeriod(),value.reason(),value.documentName(),null,null);
+        insertRevision(org,id,nextRevision,actor,snapshot,value.units());return nextRevision;
+    }
+    private PolicyView policy(java.sql.ResultSet rs,int n)throws java.sql.SQLException{Array roles=rs.getArray("applicable_roles");return new PolicyView(rs.getLong("id"),rs.getString("code"),rs.getString("name"),rs.getObject("active_from",LocalDate.class),rs.getObject("active_to",LocalDate.class),rs.getBigDecimal("yearly_allowance"),rs.getBoolean("carry_forward_enabled"),rs.getBigDecimal("carry_forward_limit"),rs.getBigDecimal("maximum_consecutive_days"),rs.getBoolean("supporting_document_required"),rs.getBoolean("paid"),rs.getBoolean("partial_time_enabled"),rs.getBoolean("negative_balance_allowed"),Set.of((String[])roles.getArray()),rs.getString("eligibility_gender"),rs.getLong("version"));}
+    private BalanceView balance(java.sql.ResultSet rs,int n)throws java.sql.SQLException{BigDecimal available=availableBalance(rs.getBigDecimal("opening"),rs.getBigDecimal("accrued"),rs.getBigDecimal("carried"),rs.getBigDecimal("adjusted"),rs.getBigDecimal("used"));return new BalanceView(rs.getLong("id"),rs.getLong("staff_user_id"),rs.getLong("leave_type_id"),rs.getInt("leave_year"),rs.getBigDecimal("opening"),rs.getBigDecimal("accrued"),rs.getBigDecimal("carried"),rs.getBigDecimal("used"),rs.getBigDecimal("pending"),rs.getBigDecimal("adjusted"),available,rs.getLong("version"));}
+    static BigDecimal availableBalance(BigDecimal opening,BigDecimal accrued,BigDecimal carried,BigDecimal adjusted,BigDecimal used){return opening.add(accrued).add(carried).add(adjusted).subtract(used);}
     private BalanceView balanceFor(long org,long staff,PolicyView policy,int year){ensureBalance(org,staff,policy,year);return jdbc.query("SELECT b.*,t.negative_balance_allowed FROM staff_leave_balances b JOIN staff_leave_types t ON t.id=b.leave_type_id AND t.organization_id=b.organization_id WHERE b.organization_id=:org AND b.staff_user_id=:staff AND b.leave_type_id=:type AND b.leave_year=:year",p("org",org).addValue("staff",staff).addValue("type",policy.id()).addValue("year",year),this::balance).getFirst();}
     private void ensureBalance(long org,long staff,PolicyView policy,int year){jdbc.update("INSERT INTO staff_leave_balances(organization_id,staff_user_id,leave_type_id,leave_year,accrued) VALUES(:org,:staff,:type,:year,:allowance) ON CONFLICT DO NOTHING",p("org",org).addValue("staff",staff).addValue("type",policy.id()).addValue("year",year).addValue("allowance",policy.yearlyAllowance()));}
-    private List<ApprovalTarget> approvalChain(long org,long requester,Set<String> requesterRoles){List<String> roles=jdbc.queryForList("SELECT approver_role FROM staff_leave_approval_rules WHERE organization_id=:org AND requester_role IN (:roles) AND active ORDER BY step_number",p("org",org).addValue("roles",requesterRoles),String.class);if(roles.isEmpty())roles=List.of("HR","PRINCIPAL");List<ApprovalTarget> result=new ArrayList<>();for(String role:new LinkedHashSet<>(roles)){var available=identities.approvers(org,List.of(role)).stream().filter(v->v.userId()!=requester).findFirst();available.ifPresent(staff->result.add(new ApprovalTarget(role,staff.userId())));}return result;}
+    List<ApprovalTarget> approvalChain(long org,long requester,Set<String> requesterRoles){
+        String category=requesterRoles.contains("TEACHER")?"TEACHING":"NON_TEACHING";
+        var rows=jdbc.query("SELECT stage,approver_user_id FROM staff_leave_approver_mappings WHERE organization_id=:org AND staff_category=:category AND active AND (subject_user_id IS NULL OR subject_user_id=:requester) ORDER BY subject_user_id NULLS LAST,id",p("org",org).addValue("category",category).addValue("requester",requester),(rs,n)->new ApprovalTarget(rs.getString(1),rs.getLong(2)));
+        List<ApprovalTarget> result=new ArrayList<>();Set<Long>seen=new HashSet<>();
+        for(var row:rows)if(row.userId()!=requester&&seen.add(row.userId()))result.add(row);
+        if(!result.isEmpty())return result;
+
+        // A principal is the safe organization-level default when no category-specific
+        // workflow has been configured. Principal requests fall back to an administrator
+        // so that self-approval can never be introduced by the default.
+        String fallbackRole=requesterRoles.contains("PRINCIPAL")?"ADMIN":"PRINCIPAL";
+        for(var staff:identities.approvers(org,List.of(fallbackRole))){
+            if(staff.userId()!=requester)return List.of(new ApprovalTarget(fallbackRole,staff.userId()));
+        }
+        return List.of();
+    }
     private Set<Long> approverRecipients(RequestView value,long requester){Set<Long> users=new LinkedHashSet<>();users.add(requester);value.approvals().stream().map(ApprovalView::approverUserId).filter(java.util.Objects::nonNull).forEach(users::add);return users;}
     private BigDecimal units(long org,RequestInput input){var days=workingDays.days(org,input.startDate(),input.endDate());return calculator.calculate(input.kind(),days.workingDates().size(),input.startTime(),input.endTime());}
-    private void validateRequest(long org,PolicyView policy,Set<String> roles,RequestInput input){if(input.endDate().isBefore(input.startDate()))throw new IllegalArgumentException("End date cannot precede start date");if(input.startDate().isBefore(policy.activeFrom())||(policy.activeTo()!=null&&input.endDate().isAfter(policy.activeTo())))throw new IllegalArgumentException("Leave policy is not active for these dates");if(!applies(policy,roles))throw new IllegalArgumentException("Leave policy does not apply to this staff member");if((input.kind()==RequestKind.PARTIAL_TIME||input.kind()==RequestKind.LATE_ARRIVAL||input.kind()==RequestKind.EARLY_DEPARTURE)&&!policy.partialTimeEnabled())throw new IllegalArgumentException("Partial-time leave is not enabled");if(input.kind()==RequestKind.HALF_DAY&&input.halfDayPeriod()==null)throw new IllegalArgumentException("Half-day period is required");if(policy.supportingDocumentRequired()&&(input.documentReference()==null||input.documentReference().isBlank()))throw new IllegalArgumentException("Supporting document metadata is required");BigDecimal count=units(org,input);if(policy.maximumConsecutiveDays()!=null&&count.compareTo(policy.maximumConsecutiveDays())>0)throw new IllegalArgumentException("Maximum consecutive leave days exceeded");}
-    private void rejectOverlap(long org,long staff,LocalDate start,LocalDate end,long id){Integer count=jdbc.queryForObject("SELECT COUNT(*) FROM staff_leave_requests WHERE organization_id=:org AND requester_user_id=:staff AND id<>:id AND status IN ('PENDING','APPROVED','PARTIALLY_CANCELLED') AND start_date<=:end AND end_date>=:start",p("org",org).addValue("staff",staff).addValue("id",id).addValue("start",start).addValue("end",end),Integer.class);if(count!=null&&count>0)throw new DataIntegrityViolationException("Leave request overlaps an existing request");}
+    private boolean isPolicyRetired(long org,long id){return Boolean.TRUE.equals(jdbc.queryForObject("SELECT retired_at IS NOT NULL FROM staff_leave_types WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),Boolean.class));}
+    private void validateRequest(long org,long actor,PolicyView policy,Set<String> roles,RequestInput input){if(!eligible(policy,staffEligibilityGender(org,actor)))throw new IllegalArgumentException("Leave policy is not available for this staff member");if(isPolicyRetired(org,policy.id()))throw new IllegalArgumentException("Leave policy has been retired");if(input.endDate().isBefore(input.startDate()))throw new IllegalArgumentException("End date cannot precede start date");if(input.startDate().isBefore(policy.activeFrom())||(policy.activeTo()!=null&&input.endDate().isAfter(policy.activeTo())))throw new IllegalArgumentException("Leave policy is not active for these dates");if(!applies(policy,roles))throw new IllegalArgumentException("Leave policy does not apply to this staff member");if((input.kind()==RequestKind.PARTIAL_TIME||input.kind()==RequestKind.LATE_ARRIVAL||input.kind()==RequestKind.EARLY_DEPARTURE)&&!policy.partialTimeEnabled())throw new IllegalArgumentException("Partial-time leave is not enabled");if(input.kind()==RequestKind.HALF_DAY&&input.halfDayPeriod()==null)throw new IllegalArgumentException("Half-day period is required");BigDecimal count=units(org,input);if(policy.maximumConsecutiveDays()!=null&&count.compareTo(policy.maximumConsecutiveDays())>0)throw new IllegalArgumentException("Maximum consecutive leave days exceeded");}
+    private void rejectOverlap(long org,long staff,LocalDate start,LocalDate end,long id){Integer count=jdbc.queryForObject("SELECT COUNT(*) FROM staff_leave_requests WHERE organization_id=:org AND requester_user_id=:staff AND id<>:id AND status IN ('DRAFT','PENDING_CORRECTION','PENDING','APPROVED','PARTIALLY_CANCELLED') AND start_date<=:end AND end_date>=:start",p("org",org).addValue("staff",staff).addValue("id",id).addValue("start",start).addValue("end",end),Integer.class);if(count!=null&&count>0)throw new IllegalStateException("A leave request already exists for the selected dates. Delete the existing draft or choose different dates.");}
+    @Transactional(readOnly=true) public StaffEligibilityView staffEligibility(long org,long staffUserId){
+        identities.staff(org,staffUserId);
+        return new StaffEligibilityView(staffUserId,staffEligibilityGender(org,staffUserId));
+    }
+    @Transactional public StaffEligibilityView setStaffEligibility(long org,long actor,long staffUserId,String gender){
+        identities.staff(org,staffUserId);
+        if(!Set.of("UNSPECIFIED","MALE","FEMALE").contains(gender))throw new IllegalArgumentException("Invalid leave eligibility");
+        String previous=staffEligibilityGender(org,staffUserId);
+        if(previous.equals(gender))return new StaffEligibilityView(staffUserId,gender);
+        jdbc.update("INSERT INTO staff_leave_person_eligibility(organization_id,staff_user_id,eligibility_gender,updated_by_user_id) VALUES(:org,:staff,:gender,:actor) ON CONFLICT(organization_id,staff_user_id) DO UPDATE SET eligibility_gender=EXCLUDED.eligibility_gender,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=CURRENT_TIMESTAMP",
+                p("org",org).addValue("staff",staffUserId).addValue("gender",gender).addValue("actor",actor));
+        jdbc.update("INSERT INTO staff_leave_person_eligibility_audit(organization_id,staff_user_id,previous_gender,new_gender,actor_user_id) VALUES(:org,:staff,:previous,:gender,:actor)",
+                p("org",org).addValue("staff",staffUserId).addValue("previous",previous).addValue("gender",gender).addValue("actor",actor));
+        return new StaffEligibilityView(staffUserId,gender);
+    }
+    private String staffEligibilityGender(long org,long staffUserId){
+        var rows=jdbc.queryForList("SELECT eligibility_gender FROM staff_leave_person_eligibility WHERE organization_id=:org AND staff_user_id=:staff",
+                p("org",org).addValue("staff",staffUserId),String.class);
+        return rows.isEmpty()?"UNSPECIFIED":rows.getFirst();
+    }
+    private boolean eligible(PolicyView policy,String gender){return "ALL".equals(policy.eligibilityGender())||policy.eligibilityGender().equals(gender);}
     private boolean applies(PolicyView policy,Set<String> roles){return roles.stream().anyMatch(policy.applicableRoles()::contains);}
-    private void validatePolicy(PolicyInput input){if(input.activeTo()!=null&&input.activeTo().isBefore(input.activeFrom()))throw new IllegalArgumentException("Policy end date cannot precede start date");if(!input.carryForwardEnabled()&&input.carryForwardLimit()!=null)throw new IllegalArgumentException("Carry-forward limit requires carry-forward to be enabled");}
-    private MapSqlParameterSource policyParams(long org,long actor,PolicyInput i){return p("org",org).addValue("actor",actor).addValue("code",i.code()).addValue("name",i.name().trim()).addValue("from",i.activeFrom()).addValue("to",i.activeTo()).addValue("allowance",i.yearlyAllowance()).addValue("carry",i.carryForwardEnabled()).addValue("carryLimit",i.carryForwardLimit()).addValue("maximum",i.maximumConsecutiveDays()).addValue("document",i.supportingDocumentRequired()).addValue("paid",i.paid()).addValue("partial",i.partialTimeEnabled()).addValue("negative",i.negativeBalanceAllowed()).addValue("roles",i.applicableRoles().toArray(String[]::new));}
+    private void validatePolicy(long org,PolicyInput input){if(input.activeTo()!=null&&input.activeTo().isBefore(input.activeFrom()))throw new IllegalArgumentException("Policy end date cannot precede start date");if(!input.carryForwardEnabled()&&input.carryForwardLimit()!=null)throw new IllegalArgumentException("Carry-forward limit requires carry-forward to be enabled");if(!Set.copyOf(activeStaffRoles(org)).containsAll(input.applicableRoles()))throw new IllegalArgumentException("Applicable roles must be active staff roles in this organization");}
+    private void insertRevision(long org,long id,int revision,long actor,RequestInput i,BigDecimal units){jdbc.update("INSERT INTO staff_leave_revisions(organization_id,leave_request_id,revision_number,leave_type_id,request_kind,start_date,end_date,start_time,end_time,half_day_period,units,reason,created_by_user_id) VALUES(:org,:id,:revision,:type,:kind,:start,:end,:startTime,:endTime,:half,:units,:reason,:actor)",requestParams(org,actor,i,units).addValue("id",id).addValue("revision",revision));}
+    private MapSqlParameterSource policyParams(long org,long actor,PolicyInput i){return p("org",org).addValue("actor",actor).addValue("code",i.code()).addValue("name",i.name().trim()).addValue("from",i.activeFrom()).addValue("to",i.activeTo()).addValue("allowance",i.yearlyAllowance()).addValue("carry",i.carryForwardEnabled()).addValue("carryLimit",i.carryForwardLimit()).addValue("maximum",i.maximumConsecutiveDays()).addValue("document",i.supportingDocumentRequired()).addValue("paid",i.paid()).addValue("partial",i.partialTimeEnabled()).addValue("negative",i.negativeBalanceAllowed()).addValue("roles",i.applicableRoles().toArray(String[]::new)).addValue("gender",i.eligibilityGender());}
     private MapSqlParameterSource requestParams(long org,long actor,RequestInput i,BigDecimal units){return p("org",org).addValue("actor",actor).addValue("type",i.leaveTypeId()).addValue("kind",i.kind().name()).addValue("start",i.startDate()).addValue("end",i.endDate()).addValue("startTime",i.startTime()).addValue("endTime",i.endTime()).addValue("half",i.halfDayPeriod()==null?null:i.halfDayPeriod().name()).addValue("units",units).addValue("reason",i.reason().trim()).addValue("document",i.documentName()).addValue("contentType",i.documentContentType()).addValue("reference",i.documentReference());}
+    private MapSqlParameterSource mappingParams(long org,StaffApproverMappingInput input){return p("org",org).addValue("category",input.staffCategory()).addValue("stage",input.stage().trim().toUpperCase()).addValue("approver",input.approverUserId()).addValue("subject",input.subjectUserId()).addValue("active",input.active());}
+    private void validateApproverMapping(long org,StaffApproverMappingInput input){identities.staff(org,input.approverUserId());if(input.subjectUserId()!=null){identities.staff(org,input.subjectUserId());if(input.subjectUserId()==input.approverUserId())throw new IllegalArgumentException("A staff member cannot approve their own leave");}}
+    private StaffApproverMappingView approverMapping(long org,long id){var rows=jdbc.query("SELECT id,staff_category,stage,approver_user_id,subject_user_id,active,version FROM staff_leave_approver_mappings WHERE organization_id=:org AND id=:id",p("org",org).addValue("id",id),(rs,n)->new StaffApproverMappingView(rs.getLong(1),rs.getString(2),rs.getString(3),rs.getLong(4),(Long)rs.getObject(5),rs.getBoolean(6),rs.getLong(7)));if(rows.isEmpty())throw new ResourceNotFoundException("Staff leave approver mapping not found");return rows.getFirst();}
+    private void authorizeAttachmentAccess(long org,long actor,long requestId){Integer allowed=jdbc.queryForObject("SELECT COUNT(*) FROM staff_leave_requests r WHERE r.organization_id=:org AND r.id=:id AND (r.requester_user_id=:actor OR EXISTS(SELECT 1 FROM staff_leave_approvals a WHERE a.organization_id=r.organization_id AND a.leave_request_id=r.id AND a.approver_user_id=:actor))",p("org",org).addValue("id",requestId).addValue("actor",actor),Integer.class);if(allowed==null||allowed==0)throw new ResourceNotFoundException("Leave request not found");}
+    private AttachmentView attachment(long org,long requestId,UUID attachmentId){var rows=jdbc.query("SELECT id,revision_number,original_name,content_type,byte_size,sha256,uploaded_by_user_id,created_at FROM staff_leave_attachments WHERE organization_id=:org AND leave_request_id=:id AND id=:attachment AND removed_at IS NULL",p("org",org).addValue("id",requestId).addValue("attachment",attachmentId),(rs,n)->new AttachmentView(rs.getObject(1,UUID.class),rs.getInt(2),rs.getString(3),rs.getString(4),rs.getLong(5),rs.getString(6),rs.getLong(7),rs.getObject(8,OffsetDateTime.class)));if(rows.isEmpty())throw new ResourceNotFoundException("Leave attachment not found");return rows.getFirst();}
+    private String validatedAttachmentType(String claimed,byte[] bytes){if("application/pdf".equals(claimed)&&bytes.length>=4&&bytes[0]=='%'&&bytes[1]=='P'&&bytes[2]=='D'&&bytes[3]=='F')return claimed;if("image/jpeg".equals(claimed)&&bytes.length>=2&&(bytes[0]&255)==255&&(bytes[1]&255)==216)return claimed;if("image/png".equals(claimed)&&bytes.length>=4&&(bytes[0]&255)==137&&bytes[1]=='P'&&bytes[2]=='N'&&bytes[3]=='G')return claimed;throw new IllegalArgumentException("Only valid PDF, JPG, and PNG files are supported");}
+    private String safeFileName(String value){String name=value==null||value.isBlank()?"evidence":value.replaceAll("[\\r\\n\\\\/]","_");return name.length()>200?name.substring(0,200):name;}
+    private String sha256(byte[] bytes){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}catch(Exception exception){throw new IllegalStateException("Attachment checksum could not be calculated",exception);}}
     private List<Long> ids(String sql,MapSqlParameterSource parameters){return jdbc.queryForList(sql,parameters,Long.class);}
     private void requireOwner(RequestHead head,long actor){if(head.requester()!=actor)throw new ResourceNotFoundException("Leave request not found");}
     private void requireStatus(RequestHead head,String status){if(!status.equals(head.status()))throw new IllegalStateException("Leave request is not "+status.toLowerCase());}
     private void requireVersion(RequestHead head,long expected){if(head.version()!=expected)throw new OptimisticLockingFailureException("Leave request changed");}
     private MapSqlParameterSource p(String key,Object value){return new MapSqlParameterSource(key,value);}
     private record RequestHead(long requester,String status,long version){}
-    private record ApprovalTarget(String role,long userId){}
+    record ApprovalTarget(String role,long userId){}
+    public record AttachmentDownload(String name,String contentType,byte[] content){}
 }

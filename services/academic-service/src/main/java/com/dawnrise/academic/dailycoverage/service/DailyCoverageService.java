@@ -567,6 +567,8 @@ public class DailyCoverageService {
                 """).param("org", org).param("year", year).param("publication", publication.id())
                 .param("teacher", teacher).param("day", date.getDayOfWeek().getValue())
                 .param("start", start).param("end", end).query(Long.class).list();
+        Long firstCreatedCaseId = null;
+        int createdCaseCount = 0;
         for (Long entry : entries) {
             if (wingIds != null && !wingIds.isEmpty()) {
                 Long entryWing = jdbc.sql("SELECT wing_id FROM timetable_publication_entries WHERE id=:id AND organization_id=:org")
@@ -593,8 +595,14 @@ public class DailyCoverageService {
                     .query(Long.class).optional().orElse(null);
             if (caseId != null) {
                 event(org, year, absence, caseId, null, "CASE_CREATED", "Cover needed", actor);
-                outbox(org, caseId, "COVER_NEEDED", "cover-needed:" + caseId, "{\"caseId\":" + caseId + "}");
+                if (firstCreatedCaseId == null) firstCreatedCaseId = caseId;
+                createdCaseCount++;
             }
+        }
+        if (firstCreatedCaseId != null) {
+            outbox(org, firstCreatedCaseId, "COVER_NEEDED", "cover-needed-absence:" + absence,
+                    "{\"caseId\":" + firstCreatedCaseId + ",\"absenceId\":" + absence
+                            + ",\"periodCount\":" + createdCaseCount + "}");
         }
     }
 

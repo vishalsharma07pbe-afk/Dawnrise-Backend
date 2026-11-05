@@ -15,6 +15,8 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -71,6 +73,14 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.message").value("An unexpected error occurred."))
                 .andExpect(jsonPath("$.message", not(containsString("database password"))));
+    }
+
+    @Test
+    void missingLongLeaveApproverReturnsActionableValidationError() throws Exception {
+        mockMvc.perform(get("/throw/long-leave-approver"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.message").value(
+                        "A distinct academic head or principal approver must be configured for long leave."));
     }
 
     @Test
@@ -140,6 +150,12 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class ThrowingController {
+
+        @GetMapping("/throw/long-leave-approver")
+        void longLeaveApprover() {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "A distinct academic head or principal approver must be configured for long leave.");
+        }
 
         @GetMapping("/throw/invalid")
         void invalid() {

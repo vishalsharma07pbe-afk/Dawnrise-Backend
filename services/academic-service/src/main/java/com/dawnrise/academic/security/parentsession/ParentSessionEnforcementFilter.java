@@ -119,6 +119,11 @@ public class ParentSessionEnforcementFilter extends OncePerRequestFilter {
                 && path.startsWith("/api/v1/timetable-drafts")
                 && !path.endsWith("/conflict-preview") && !path.endsWith("/swap-preview")) return true;
         if ("POST".equals(method) && path.startsWith("/api/v1/timetable-generation-jobs")) return true;
+        if (("POST".equals(method) || "PUT".equals(method) || "DELETE".equals(method))
+                && path.startsWith("/api/v1/student-leave/admin/")) return true;
+        if ("POST".equals(method) && path.matches("/api/v1/student-leave/approvals/\\d+/decision")) return true;
+        if ("POST".equals(method) && path.matches("/api/v1/student-leave/requests/\\d+/cancel")) return true;
+        if ("DELETE".equals(method) && path.matches("/api/v1/student-leave/requests/\\d+/attachments/[^/]+")) return true;
         if ("POST".equals(method) && path.matches("/api/v1/timetables/drafts/\\d+/(submit|return|approve|publish)")) return true;
         if (("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method) || "DELETE".equals(method))
                 && path.startsWith("/api/v1/daily-timetable-cover")

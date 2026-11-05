@@ -45,6 +45,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.dawnrise.academic.studentattendance.notificationoutbox.service.StudentAttendanceNotificationOutboxService;
+import com.dawnrise.academic.studentleave.StudentLeaveAttendanceProjectionService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -74,6 +76,12 @@ public class StudentAttendanceRecordingServiceImpl
     private final SchoolTimeZoneClient schoolTimeZoneClient;
     private final StudentAttendanceNotificationOutboxService notificationOutboxService;
     private final Clock clock;
+    private StudentLeaveAttendanceProjectionService leaveProjections;
+
+    @Autowired(required = false)
+    void setLeaveProjections(StudentLeaveAttendanceProjectionService leaveProjections) {
+        this.leaveProjections = leaveProjections;
+    }
 
     public StudentAttendanceRecordingServiceImpl(
             StudentAttendanceSessionRepository sessionRepository,
@@ -150,6 +158,8 @@ public class StudentAttendanceRecordingServiceImpl
                                 StudentAttendanceRecord::getVersion
                         )))
                 .orElseGet(Map::of);
+        Map<Long, AttendanceStatus> approvedLeave = leaveProjections == null ? Map.of()
+                : leaveProjections.approvedForSectionDate(organizationId, academicYearId, gradeLevelId, sectionId, attendanceDate);
         return new StudentAttendanceOfflineDraftSnapshot(
                 existingSession.map(StudentAttendanceSession::getVersion).orElse(null),
                 roster.stream()
@@ -157,7 +167,8 @@ public class StudentAttendanceRecordingServiceImpl
                                 enrollment.getId(),
                                 enrollment.getStudentUserId(),
                                 enrollment.getRollNumber(),
-                                recordVersions.get(enrollment.getId())
+                                recordVersions.get(enrollment.getId()),
+                                approvedLeave.get(enrollment.getStudentUserId())
                         ))
                         .toList()
         );
@@ -289,23 +300,25 @@ public class StudentAttendanceRecordingServiceImpl
                 );
             }
 
+            StudentEnrollment enrollment = enrollments.get(item.studentEnrollmentId());
+            AttendanceStatus recorded = applyLeaveProjection(session, enrollment.getStudentUserId(), item.recordedStatus(),
+                    record != null && record.getRecordedStatus() == AttendanceStatus.PRESENT);
             AttendanceStatus effective = effectiveStatus(
                     session,
                     policy,
                     item.studentEnrollmentId(),
-                    item.recordedStatus(),
+                    recorded,
                     requestLateCounts
             );
-            boolean penaltyApplied = item.recordedStatus() == AttendanceStatus.LATE
+            boolean penaltyApplied = recorded == AttendanceStatus.LATE
                     && effective != AttendanceStatus.LATE;
             StudentAttendanceStatusPolicy credit = credits.get(effective);
-            StudentEnrollment enrollment = enrollments.get(item.studentEnrollmentId());
             if (record == null) {
                 record = new StudentAttendanceRecord(
                         session,
                         enrollment.getId(),
                         enrollment.getStudentUserId(),
-                        item.recordedStatus(),
+                        recorded,
                         effective,
                         credit.getEarnedCredit(),
                         credit.getPossibleCredit(),
@@ -315,7 +328,7 @@ public class StudentAttendanceRecordingServiceImpl
                 );
             } else {
                 record.replace(
-                        item.recordedStatus(),
+                        recorded,
                         effective,
                         credit.getEarnedCredit(),
                         credit.getPossibleCredit(),
@@ -513,14 +526,17 @@ public class StudentAttendanceRecordingServiceImpl
 
         for (StudentAttendanceRecordRequest item : requests) {
             StudentEnrollment enrollment = enrollments.get(item.studentEnrollmentId());
+            StudentAttendanceRecord existingRecord = existing.get(item.studentEnrollmentId());
+            AttendanceStatus recorded = applyLeaveProjection(session, enrollment.getStudentUserId(), item.recordedStatus(),
+                    existingRecord != null && existingRecord.getRecordedStatus() == AttendanceStatus.PRESENT);
             AttendanceStatus effective = effectiveStatus(
                     session,
                     policy,
                     enrollment.getId(),
-                    item.recordedStatus(),
+                    recorded,
                     requestLateCounts
             );
-            boolean penaltyApplied = item.recordedStatus() == AttendanceStatus.LATE
+            boolean penaltyApplied = recorded == AttendanceStatus.LATE
                     && effective != AttendanceStatus.LATE;
             StudentAttendanceStatusPolicy credit = credits.get(effective);
             StudentAttendanceRecord record = existing.get(item.studentEnrollmentId());
@@ -529,7 +545,7 @@ public class StudentAttendanceRecordingServiceImpl
                         session,
                         enrollment.getId(),
                         enrollment.getStudentUserId(),
-                        item.recordedStatus(),
+                        recorded,
                         effective,
                         credit.getEarnedCredit(),
                         credit.getPossibleCredit(),
@@ -539,7 +555,7 @@ public class StudentAttendanceRecordingServiceImpl
                 );
             } else {
                 record.replace(
-                        item.recordedStatus(),
+                        recorded,
                         effective,
                         credit.getEarnedCredit(),
                         credit.getPossibleCredit(),
@@ -937,6 +953,13 @@ public class StudentAttendanceRecordingServiceImpl
                 session,
                 recordRepository.findAllByAttendanceSessionIdOrderByIdAsc(session.getId())
         );
+    }
+
+    private AttendanceStatus applyLeaveProjection(StudentAttendanceSession session, long studentUserId,
+                                                  AttendanceStatus requestedStatus, boolean preserveExistingPresent) {
+        if (preserveExistingPresent && requestedStatus == AttendanceStatus.PRESENT) return requestedStatus;
+        return leaveProjections == null ? requestedStatus : leaveProjections.apply(
+                session.getOrganizationId(), studentUserId, session.getAttendanceDate(), requestedStatus);
     }
 
     private void enforceSectionAccess(long actorUserId, StudentAttendanceSession session) {

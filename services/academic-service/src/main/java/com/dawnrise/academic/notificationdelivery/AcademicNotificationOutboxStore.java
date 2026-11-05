@@ -22,7 +22,7 @@ public class AcademicNotificationOutboxStore {
         this.jdbc = jdbc;
     }
 
-    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION, TIMETABLE_EXPIRY, EXAMINATION }
+    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION, TIMETABLE_EXPIRY, EXAMINATION, STUDENT_LEAVE }
 
     public record Item(Source source, long id, UUID eventId, long organizationId,
                        Long academicYearId, Long studentUserId, Long caseId, Long artifactId,
@@ -54,6 +54,11 @@ public class AcademicNotificationOutboxStore {
         }
     }
 
+    public record CoverSummary(int periodCount, java.time.LocalDate coverDate,
+                               java.time.LocalTime firstStart, java.time.LocalTime lastEnd,
+                               String sections) {
+    }
+
     public record DeadLetter(Source source, long id, UUID eventId, String eventType,
                              int attemptCount, String lastError, OffsetDateTime deadLetteredAt) {
     }
@@ -70,7 +75,28 @@ public class AcademicNotificationOutboxStore {
             case PUBLICATION -> claimPublication(owner, now, leaseDuration, limit);
             case TIMETABLE_EXPIRY -> claimTimetableExpiry(owner, now, leaseDuration, limit);
             case EXAMINATION -> claimExamination(owner, now, leaseDuration, limit);
+            case STUDENT_LEAVE -> claimStudentLeave(owner, now, leaseDuration, limit);
         };
+    }
+
+    private List<Item> claimStudentLeave(UUID owner, OffsetDateTime now, Duration lease, int limit) {
+        return jdbc.sql("""
+                WITH candidates AS (
+                    SELECT id FROM student_leave_notification_outbox
+                     WHERE publication_status='PENDING' AND available_at<=:now
+                       AND (lease_until IS NULL OR lease_until<:now)
+                     ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT :limit
+                )
+                UPDATE student_leave_notification_outbox o
+                   SET lease_owner=:owner,lease_until=:leaseUntil,attempt_count=attempt_count+1,
+                       last_error=NULL,updated_at=:now
+                  FROM candidates c WHERE o.id=c.id
+                RETURNING o.id,o.event_id,o.organization_id,NULL::BIGINT academic_year_id,
+                          o.student_user_id,NULL::BIGINT case_id,o.request_id artifact_id,
+                          NULL::BIGINT actor_user_id,o.event_type,o.payload::TEXT,o.occurred_at,
+                          o.attempt_count,o.recipient_user_ids
+                """).param("now", now).param("owner", owner).param("leaseUntil", now.plus(lease))
+                .param("limit", limit).query((rs, n) -> item(Source.STUDENT_LEAVE, rs)).list();
     }
 
     private List<Item> claimAttendance(UUID owner, OffsetDateTime now, Duration lease, int limit) {
@@ -237,6 +263,21 @@ public class AcademicNotificationOutboxStore {
                 .orElseThrow(() -> new NotificationDeliveryException("Coverage case no longer exists", null));
     }
 
+    public CoverSummary coverSummary(long organizationId, long caseId) {
+        return jdbc.sql("""
+                SELECT COUNT(*),MIN(c.cover_date),MIN(c.start_time),MAX(c.end_time),
+                       STRING_AGG(DISTINCT c.section_name, ', ' ORDER BY c.section_name)
+                  FROM timetable_daily_cover_cases anchor
+                  JOIN timetable_daily_cover_cases c
+                    ON c.organization_id=anchor.organization_id AND c.absence_id=anchor.absence_id
+                 WHERE anchor.organization_id=:org AND anchor.id=:case
+                """).param("org", organizationId).param("case", caseId)
+                .query((rs, n) -> new CoverSummary(rs.getInt(1),
+                        rs.getObject(2, java.time.LocalDate.class),
+                        rs.getObject(3, java.time.LocalTime.class),
+                        rs.getObject(4, java.time.LocalTime.class), rs.getString(5))).single();
+    }
+
     public TimetableAudience timetableAudience(long organizationId, long publicationId) {
         PublicationScope current = jdbc.sql("""
                 SELECT academic_year_id,effective_from FROM timetable_publications
@@ -341,6 +382,9 @@ public class AcademicNotificationOutboxStore {
                     UNION ALL
                     SELECT 'EXAMINATION',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
                       FROM examination_notification_outbox WHERE publication_status='DEAD_LETTER'
+                    UNION ALL
+                    SELECT 'STUDENT_LEAVE',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
+                      FROM student_leave_notification_outbox WHERE publication_status='DEAD_LETTER'
                 ) failures WHERE organization_id=:org ORDER BY dead_lettered_at DESC,id DESC
                 """).param("org", organizationId).query((rs, n) -> new DeadLetter(
                         Source.valueOf(rs.getString(1)), rs.getLong(2), rs.getObject(3, UUID.class),
@@ -390,6 +434,7 @@ public class AcademicNotificationOutboxStore {
             case PUBLICATION -> "academic_publication_notification_outbox";
             case TIMETABLE_EXPIRY -> "timetable_expiry_notification_outbox";
             case EXAMINATION -> "examination_notification_outbox";
+            case STUDENT_LEAVE -> "student_leave_notification_outbox";
         };
     }
 

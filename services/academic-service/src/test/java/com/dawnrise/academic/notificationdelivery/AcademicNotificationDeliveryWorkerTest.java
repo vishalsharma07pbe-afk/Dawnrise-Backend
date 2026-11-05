@@ -65,6 +65,23 @@ class AcademicNotificationDeliveryWorkerTest {
     }
 
     @Test
+    void studentLeaveStageUpdateIsNotPresentedAsFinalApproval() {
+        UUID owner = UUID.randomUUID();
+        Item item = item(Source.STUDENT_LEAVE, "STUDENT_LEAVE_CHANGED", 21L, null, 40L);
+        when(store.snapshotRecipients(eq(item), any())).thenReturn(Set.of(21L, 90L));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals(Set.of(21L, 90L), request.getValue().recipientUserIds());
+        assertEquals("Student leave review progressed", request.getValue().heading());
+        assertEquals("An approval stage is complete. Further review is pending.", request.getValue().context());
+        assertEquals("LEAVE_REQUEST", request.getValue().action().type());
+    }
+
+    @Test
     void confirmedCoverIsDistinctAndReachesAssignedSubstituteAfterIngestion() {
         UUID owner = UUID.randomUUID();
         Item item = item(Source.DAILY_COVER, "CONFIRMED_SUBSTITUTION", null, 50L, null);

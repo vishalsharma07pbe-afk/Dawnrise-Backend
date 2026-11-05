@@ -94,6 +94,24 @@ class NotificationServiceImplTest {
     }
 
     @Test
+    void schoolPolicyNoticeUsesTypedLeaveActionAndDeduplicatesRetry() {
+        allowUsers(1L, 10L, 11L);
+        jdbc.getJdbcTemplate().update("INSERT INTO notification_preferences(organization_id,user_id,leave_enabled) VALUES(1,10,FALSE),(1,11,FALSE)");
+        var request = new IngestNotificationRequest(1L, "leave-policy:17:LEAVE_POLICY_CREATED",
+                NotificationEventType.LEAVE_POLICY_CREATED, NotificationCategory.LEAVE,
+                NotificationImportance.NORMAL, "New staff leave policy", "Policy SICK is available.",
+                new NotificationAction(NotificationActionType.LEAVE_POLICY, 17L, null, null),
+                "leave-policy:17", OffsetDateTime.now(), Set.of(10L, 11L));
+        var first = service.ingest("school-service", request);
+        var retry = service.ingest("school-service", request);
+        assertTrue(first.created());
+        assertEquals(2, first.recipientCount());
+        assertFalse(retry.created());
+        assertEquals(1, service.unreadCount(1L, 10L));
+        assertEquals(1, service.unreadCount(1L, 11L));
+    }
+
+    @Test
     void concurrentIngestionCreatesOneEventAndOneRecipientSet() throws Exception {
         allowUsers(1L, 10L, 11L);
         var start = new CountDownLatch(1);
@@ -149,6 +167,33 @@ class NotificationServiceImplTest {
         assertEquals(1, service.unreadCount(1L, 10L));
         assertEquals(1, service.inbox(1L, 10L, NotificationFilter.ALL,
                 null, 0, 20).content().size());
+    }
+
+    @Test
+    void inboxFiltersAndCategoryExcludeSuppressedNotificationsFromContentAndTotals() {
+        allowUsers(1L, 10L);
+        service.ingest("academic-service", request(1L, "visible-unread-important", Set.of(10L)));
+        service.ingest("academic-service", request(1L, "visible-read-important", Set.of(10L)));
+        service.ingest("academic-service", attendanceRequest("visible-unread-normal"));
+        service.ingest("academic-service", request(1L, "suppressed-unread-important", Set.of(10L)));
+        jdbc.getJdbcTemplate().update("""
+                UPDATE notification_recipients
+                   SET read_at=CURRENT_TIMESTAMP
+                 WHERE event_id=(SELECT id FROM notification_events WHERE source_event_id=?)
+                """, "visible-read-important");
+        UUID suppressedId = jdbc.getJdbcTemplate().queryForObject("""
+                UPDATE notification_recipients
+                   SET inbox_suppressed=TRUE
+                 WHERE event_id=(SELECT id FROM notification_events WHERE source_event_id=?)
+                RETURNING id
+                """, UUID.class, "suppressed-unread-important");
+
+        assertInbox(NotificationFilter.ALL, null, 3, suppressedId);
+        assertInbox(NotificationFilter.ALL, NotificationCategory.TIMETABLE, 2, suppressedId);
+        assertInbox(NotificationFilter.UNREAD, null, 2, suppressedId);
+        assertInbox(NotificationFilter.UNREAD, NotificationCategory.TIMETABLE, 1, suppressedId);
+        assertInbox(NotificationFilter.IMPORTANT, null, 2, suppressedId);
+        assertInbox(NotificationFilter.IMPORTANT, NotificationCategory.TIMETABLE, 2, suppressedId);
     }
 
     @Test
@@ -341,6 +386,22 @@ class NotificationServiceImplTest {
                 NotificationImportance.IMPORTANT, "Cover needed", "Grade 1, Section A",
                 new NotificationAction(NotificationActionType.DAILY_COVERAGE, 20L, null, 30L),
                 "cover:20", OffsetDateTime.now(clock), recipients);
+    }
+
+    private IngestNotificationRequest attendanceRequest(String sourceEventId) {
+        return new IngestNotificationRequest(1L, sourceEventId,
+                NotificationEventType.ATTENDANCE_RECORDED, NotificationCategory.ATTENDANCE,
+                NotificationImportance.NORMAL, "Attendance recorded", "Grade 1, Section A",
+                new NotificationAction(NotificationActionType.ATTENDANCE, 20L, 10L, 30L),
+                "attendance:20", OffsetDateTime.now(clock), Set.of(10L));
+    }
+
+    private void assertInbox(NotificationFilter filter, NotificationCategory category,
+                             int expectedCount, UUID suppressedId) {
+        var inbox = service.inbox(1L, 10L, filter, category, 0, 20);
+        assertEquals(expectedCount, inbox.content().size());
+        assertEquals(expectedCount, inbox.totalElements());
+        assertTrue(inbox.content().stream().noneMatch(item -> item.id().equals(suppressedId)));
     }
 
     private void allowUsers(long organizationId, Long... ids) {

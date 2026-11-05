@@ -55,13 +55,14 @@ public class DailyCoverIncidentService {
             initialDelayString = "${dawnrise.notification-delivery.initial-delay:PT15S}")
     public void escalate() {
         List<CaseTime> cases = jdbc.sql("""
-                SELECT id,organization_id,cover_date,start_time
+                SELECT id,organization_id,cover_date,start_time,end_time
                   FROM timetable_daily_cover_cases
                  WHERE status IN ('COVER_NEEDED','AWAITING_APPROVAL')
                    AND cover_date BETWEEN CURRENT_DATE-1 AND CURRENT_DATE+1
                  ORDER BY organization_id,cover_date,start_time,id
                 """).query((rs, n) -> new CaseTime(rs.getLong(1), rs.getLong(2),
-                        rs.getObject(3, java.time.LocalDate.class), rs.getObject(4, java.time.LocalTime.class))).list();
+                        rs.getObject(3, java.time.LocalDate.class), rs.getObject(4, java.time.LocalTime.class),
+                        rs.getObject(5, java.time.LocalTime.class))).list();
         for (CaseTime item : cases) {
             try {
                 transactions.executeWithoutResult(status -> evaluate(item));
@@ -76,6 +77,8 @@ public class DailyCoverIncidentService {
         ZoneId zone = timeZones.getTimeZone(item.organizationId());
         ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(zone);
         ZonedDateTime classStart = ZonedDateTime.of(item.date(), item.startTime(), zone);
+        ZonedDateTime classEnd = ZonedDateTime.of(item.date(), item.endTime(), zone);
+        if (!now.isBefore(classEnd)) return;
         Duration untilStart = Duration.between(now, classStart);
         if (untilStart.compareTo(INITIAL_WINDOW) > 0) return;
 
@@ -176,6 +179,6 @@ public class DailyCoverIncidentService {
     }
 
     record CaseTime(long caseId, long organizationId, java.time.LocalDate date,
-                    java.time.LocalTime startTime) {
+                    java.time.LocalTime startTime, java.time.LocalTime endTime) {
     }
 }

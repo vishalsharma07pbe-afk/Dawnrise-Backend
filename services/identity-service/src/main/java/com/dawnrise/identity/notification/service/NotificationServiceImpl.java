@@ -54,12 +54,24 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationEventType.TIMETABLE_PUBLISHED, NotificationEventType.TIMETABLE_CHANGED,
             NotificationEventType.TIMETABLE_EXPIRING, NotificationEventType.TIMETABLE_EXPIRES_TODAY,
             NotificationEventType.EXAM_SCHEDULE_PUBLISHED,
+            NotificationEventType.STUDENT_LEAVE_REQUESTED,
+            NotificationEventType.STUDENT_LEAVE_APPROVAL_REQUIRED,
+            NotificationEventType.STUDENT_LEAVE_GUARDIAN_APPROVAL_REQUIRED,
+            NotificationEventType.STUDENT_LEAVE_SCHOOL_APPROVAL_REQUIRED,
+            NotificationEventType.STUDENT_LEAVE_RETURNED,
+            NotificationEventType.STUDENT_LEAVE_RESUBMITTED,
+            NotificationEventType.STUDENT_LEAVE_APPROVED,
+            NotificationEventType.STUDENT_LEAVE_REJECTED,
+            NotificationEventType.STUDENT_LEAVE_WITHDRAWN,
+            NotificationEventType.STUDENT_LEAVE_CANCELLED,
+            NotificationEventType.STUDENT_LEAVE_CHANGED);
+    private static final Set<NotificationEventType> SCHOOL_EVENTS = EnumSet.of(
+            NotificationEventType.SCHOOL_ANNOUNCEMENT, NotificationEventType.DAWNRISE_RELEASE,
             NotificationEventType.LEAVE_REQUESTED, NotificationEventType.LEAVE_APPROVAL_REQUIRED,
             NotificationEventType.LEAVE_APPROVED, NotificationEventType.LEAVE_REJECTED,
             NotificationEventType.LEAVE_WITHDRAWN, NotificationEventType.LEAVE_CANCELLED,
-            NotificationEventType.LEAVE_CHANGED);
-    private static final Set<NotificationEventType> SCHOOL_EVENTS = EnumSet.of(
-            NotificationEventType.SCHOOL_ANNOUNCEMENT, NotificationEventType.DAWNRISE_RELEASE,
+            NotificationEventType.LEAVE_CHANGED,
+            NotificationEventType.LEAVE_POLICY_CREATED, NotificationEventType.LEAVE_POLICY_RETIRED,
             NotificationEventType.SCHOOL_PROVISIONING_COMPLETED,
             NotificationEventType.SCHOOL_PROVISIONING_FAILED);
     private static final Set<NotificationEventType> IDENTITY_EVENTS =
@@ -120,7 +132,8 @@ public class NotificationServiceImpl implements NotificationService {
         List<NotificationItemResponse> content = jdbc.query(ITEM_SELECT + """
                 WHERE r.organization_id=:organizationId AND r.user_id=:userId
                   AND r.deleted_at IS NULL
-                """ + conditions + """
+                  AND NOT r.inbox_suppressed
+                """ + conditions + "\n" + """
                 ORDER BY e.occurred_at DESC, r.id DESC
                 LIMIT :limit OFFSET :offset
                 """, parameters, this::mapItem);
@@ -464,7 +477,7 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
-    private void validateIngestion(String sourceService, IngestNotificationRequest request) {
+    void validateIngestion(String sourceService, IngestNotificationRequest request) {
         Map<String, Set<NotificationEventType>> allowed = Map.of(
                 "academic-service", ACADEMIC_EVENTS,
                 "school-service", SCHOOL_EVENTS,
@@ -524,6 +537,16 @@ public class NotificationServiceImpl implements NotificationService {
             case LEAVE_REQUESTED, LEAVE_APPROVAL_REQUIRED, LEAVE_APPROVED,
                     LEAVE_REJECTED, LEAVE_WITHDRAWN, LEAVE_CANCELLED, LEAVE_CHANGED -> category == NotificationCategory.LEAVE
                     && actionType == NotificationActionType.LEAVE_REQUEST;
+            case LEAVE_POLICY_CREATED, LEAVE_POLICY_RETIRED -> category == NotificationCategory.LEAVE
+                    && actionType == NotificationActionType.LEAVE_POLICY;
+            case STUDENT_LEAVE_REQUESTED, STUDENT_LEAVE_APPROVAL_REQUIRED,
+                    STUDENT_LEAVE_GUARDIAN_APPROVAL_REQUIRED,
+                    STUDENT_LEAVE_SCHOOL_APPROVAL_REQUIRED, STUDENT_LEAVE_RETURNED,
+                    STUDENT_LEAVE_RESUBMITTED, STUDENT_LEAVE_APPROVED,
+                    STUDENT_LEAVE_REJECTED, STUDENT_LEAVE_WITHDRAWN,
+                    STUDENT_LEAVE_CANCELLED, STUDENT_LEAVE_CHANGED ->
+                    category == NotificationCategory.LEAVE
+                            && actionType == NotificationActionType.LEAVE_REQUEST;
             case SCHOOL_PROVISIONING_COMPLETED, SCHOOL_PROVISIONING_FAILED ->
                     category == NotificationCategory.SCHOOL
                             && (actionType == NotificationActionType.NONE
@@ -631,7 +654,9 @@ public class NotificationServiceImpl implements NotificationService {
     private boolean mandatoryInApp(IngestNotificationRequest request) {
         return request.category() == NotificationCategory.SECURITY
                 || Set.of(NotificationEventType.IMMINENT_UNCOVERED,
-                NotificationEventType.CLASS_UNCOVERED).contains(request.eventType());
+                NotificationEventType.CLASS_UNCOVERED,
+                NotificationEventType.LEAVE_POLICY_CREATED,
+                NotificationEventType.LEAVE_POLICY_RETIRED).contains(request.eventType());
     }
 
     private void enqueueEmail(IngestNotificationRequest request, UUID eventId, UUID recipientId,
