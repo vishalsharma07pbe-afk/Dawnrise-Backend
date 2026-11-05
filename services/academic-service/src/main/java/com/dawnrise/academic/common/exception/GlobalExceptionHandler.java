@@ -71,6 +71,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.server.ResponseStatusException;
 import com.dawnrise.academic.teacherassignment.integration.identity.IdentityTeacherEligibilityException;
 import com.dawnrise.academic.timetable.exception.InvalidTimetableConfigurationException;
 import com.dawnrise.academic.timetable.exception.TimetableConfigurationConflictException;
@@ -314,6 +315,18 @@ public class GlobalExceptionHandler {
                 request,
                 null
         );
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleResponseStatusException(
+            ResponseStatusException exception,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.resolve(exception.getStatusCode().value());
+        if (status == null) {
+            return response(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.", request, null);
+        }
+        return response(status, exception.getReason() == null ? status.getReasonPhrase() : exception.getReason(), request, null);
     }
 
     @ExceptionHandler(Exception.class)

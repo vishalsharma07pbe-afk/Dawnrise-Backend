@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 public final class LeaveDtos {
     private LeaveDtos() {}
@@ -32,12 +33,17 @@ public final class LeaveDtos {
             @DecimalMin(value="0", inclusive=false) BigDecimal maximumConsecutiveDays,
             boolean supportingDocumentRequired, boolean paid, boolean partialTimeEnabled,
             boolean negativeBalanceAllowed, @NotEmpty Set<@NotBlank String> applicableRoles,
+            @NotNull @Pattern(regexp="ALL|MALE|FEMALE") String eligibilityGender,
             @Min(0) Long expectedVersion) {}
 
     public record PolicyView(long id, String code, String name, LocalDate activeFrom, LocalDate activeTo,
             BigDecimal yearlyAllowance, boolean carryForwardEnabled, BigDecimal carryForwardLimit,
             BigDecimal maximumConsecutiveDays, boolean supportingDocumentRequired, boolean paid,
-            boolean partialTimeEnabled, boolean negativeBalanceAllowed, Set<String> applicableRoles, long version) {}
+            boolean partialTimeEnabled, boolean negativeBalanceAllowed, Set<String> applicableRoles,
+            String eligibilityGender, long version) {}
+
+    public record StaffEligibilityView(long staffUserId, String eligibilityGender) {}
+    public record StaffEligibilityInput(@NotNull @Pattern(regexp="UNSPECIFIED|MALE|FEMALE") String eligibilityGender) {}
 
     public record BalanceView(long id, long staffUserId, long leaveTypeId, int leaveYear,
             BigDecimal opening, BigDecimal accrued, BigDecimal carried, BigDecimal used,
@@ -67,6 +73,15 @@ public final class LeaveDtos {
     public record ApprovalView(int stepNumber, String approverRole, Long approverUserId, String status,
                                String reason, OffsetDateTime decidedAt, long version) {}
     public record AuditView(String action, long actorUserId, String reason, OffsetDateTime occurredAt) {}
+    public record AttachmentView(UUID id, int revision, String name, String contentType, long size,
+                                 String sha256, long uploadedByUserId, OffsetDateTime createdAt) {}
+    public record StaffApproverMappingInput(@NotBlank @Pattern(regexp="TEACHING|NON_TEACHING") String staffCategory,
+                                            @NotBlank @Size(max=40) String stage,
+                                            @Positive long approverUserId, @Positive Long subjectUserId,
+                                            boolean active, @Min(0) Long expectedVersion) {}
+    public record StaffApproverMappingView(long id, String staffCategory, String stage,
+                                           long approverUserId, Long subjectUserId,
+                                           boolean active, long version) {}
     public record CalendarEntry(long requestId, long staffUserId, String displayName, LocalDate startDate,
                                 LocalDate endDate, RequestKind kind, String status) {}
     public record ApprovalRule(@NotBlank String requesterRole, @Positive int stepNumber,

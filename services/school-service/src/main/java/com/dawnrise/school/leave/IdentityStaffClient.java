@@ -32,6 +32,12 @@ public class IdentityStaffClient {
         return values==null?List.of():List.of(values);
     }
 
+    public List<String> activeStaffRoles(long organizationId) {
+        String[] values=client.get().uri("/internal/v1/organizations/{organizationId}/staff-directory/roles",organizationId)
+                .headers(this::headers).retrieve().body(String[].class);
+        return values==null?List.of():List.of(values);
+    }
+
     private void headers(org.springframework.http.HttpHeaders headers) {
         headers.set("X-Internal-Api-Key",properties.getApiKey());
         headers.set("X-Service-Name",properties.getServiceName());

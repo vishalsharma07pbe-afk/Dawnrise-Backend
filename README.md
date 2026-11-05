@@ -121,14 +121,60 @@ cd services/identity-service
 Start identity-service locally:
 
 ```bash
-cd services/identity-service
-set -a
-. ./.env
-set +a
-./mvnw spring-boot:run
+/Users/vishalsharma/Developer/Dawnrise-Backend/scripts/run-service.sh identity-service
 ```
 
 The default service port is `8081`.
+
+### Consistent local service startup
+
+Use the repository launcher for identity, school, and academic services. It can
+be invoked from any working directory and exports the root `.env.shared.local`
+before Maven starts:
+
+```bash
+/Users/vishalsharma/Developer/Dawnrise-Backend/scripts/run-service.sh identity-service
+/Users/vishalsharma/Developer/Dawnrise-Backend/scripts/run-service.sh school-service
+/Users/vishalsharma/Developer/Dawnrise-Backend/scripts/run-service.sh academic-service
+```
+
+Create the ignored local file once from the committed placeholder template:
+
+```bash
+cd /Users/vishalsharma/Developer/Dawnrise-Backend
+cp .env.shared.local.example .env.shared.local
+```
+
+The launcher loads only the root shared file, making its internal API
+credentials authoritative across services. It validates required variables,
+reports only their names when values are missing, and refuses to launch when
+the service port is already occupied. It reports the listener PID but never
+kills it. Check configuration and port availability without starting a service
+or invoking Maven:
+
+```bash
+./scripts/run-service.sh identity-service --check
+./scripts/run-service.sh school-service --check
+./scripts/run-service.sh academic-service --check
+```
+
+`.env.shared.local` uses shell assignment syntax because the launcher sources
+and exports it; Spring does not import this file directly. Keep values quoted
+when they contain shell-special characters.
+
+For IntelliJ, create a **Shell Script** run configuration with:
+
+- Script path: `$ProjectFileDir$/scripts/run-local-service`
+- Script options: `school-service` (or `identity-service` / `academic-service`)
+- Working directory: `$ProjectFileDir$`
+
+If a Spring Boot run configuration must be used instead, copy the variables
+from `.env.shared.local` into that configuration's **Environment variables**
+field. IntelliJ does not automatically inherit variables loaded in an unrelated
+terminal. Do not add `.env.shared.local` as a Spring property source; its
+contents are environment assignments, not Spring property keys. The shell
+launcher is preferred because it validates the variables and supplies the same
+shared credentials to every service.
 
 ## Database Migrations
 

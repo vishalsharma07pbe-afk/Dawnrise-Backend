@@ -103,6 +103,16 @@ class DailyCoverIncidentPostgresTest {
     }
 
     @Test
+    void elapsedClassDoesNotCreateAStartedNotification() {
+        long caseId = insertCase(LocalTime.now(clock).minusMinutes(60));
+
+        incidents.escalate();
+
+        assertEquals(0, outboxCount(caseId));
+        assertTrue(incidents.open(1).isEmpty());
+    }
+
+    @Test
     void outboxFailureRollsBackIncidentCreationAndEscalationState() {
         long caseId = insertCase(LocalTime.now(clock).plusMinutes(20));
         jdbc.sql("""

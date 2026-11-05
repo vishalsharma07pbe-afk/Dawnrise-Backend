@@ -477,6 +477,57 @@ class AuthServiceImplTest {
     }
 
     @Test
+    void loginAndRefreshIncludeStaffLeavePermissionsInRebuiltSession() {
+        User user = user(UserStatus.ACTIVE);
+        Set<PermissionCode> leavePermissions = Set.of(
+                PermissionCode.STAFF_LEAVE_SELF,
+                PermissionCode.STAFF_LEAVE_APPROVE,
+                PermissionCode.STAFF_LEAVE_ADMIN,
+                PermissionCode.STAFF_LEAVE_CALENDAR_VIEW);
+        when(userRepository.findByOrganizationIdAndUsername(1L, "teacher01"))
+                .thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Teacher@123", "encoded-password")).thenReturn(true);
+        when(refreshTokenService.rotateRefreshToken("refresh-token"))
+                .thenReturn(new RefreshTokenRotationResult(10L, "rotated-refresh-token"));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(permissionService.getActivePermissionsForRoles(user.getRoles()))
+                .thenReturn(leavePermissions);
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+
+        authService.login(request());
+        authService.refresh("refresh-token");
+
+        verify(jwtService, atLeastOnce()).generateAccessToken(
+                eq(user), eq(leavePermissions), any(), any());
+        verify(permissionService, times(2)).getActivePermissionsForRoles(user.getRoles());
+    }
+
+    @Test
+    void unlockSessionIncludesGuardianAndStudentLeavePermissions() {
+        UUID oldSession = UUID.randomUUID();
+        User user = new User(1L, "guardian01", "Guardian", Set.of(UserRole.PARENT, UserRole.STUDENT));
+        ReflectionTestUtils.setField(user, "id", 10L);
+        ReflectionTestUtils.setField(user, "passwordHash", "encoded-password");
+        user.setStatus(UserStatus.ACTIVE);
+        Set<PermissionCode> leavePermissions = Set.of(
+                PermissionCode.STUDENT_LEAVE_GUARDIAN,
+                PermissionCode.STUDENT_LEAVE_SELF,
+                PermissionCode.STUDENT_LEAVE_APPROVE,
+                PermissionCode.STUDENT_LEAVE_ADMIN);
+        when(refreshTokenService.resolveRefreshTokenSession("old-refresh"))
+                .thenReturn(new RefreshTokenSession(10L, oldSession));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(permissionService.getActivePermissionsForRoles(user.getRoles()))
+                .thenReturn(leavePermissions);
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+
+        AuthenticationResult result = authService.unlockSession("old-refresh", "secret");
+
+        assertEquals("refresh-token", result.rawRefreshToken());
+        verify(jwtService).generateAccessToken(eq(user), eq(leavePermissions), any(), any());
+    }
+
+    @Test
     void logout_revokesRefreshToken() {
         authService.logout("refresh-token");
 

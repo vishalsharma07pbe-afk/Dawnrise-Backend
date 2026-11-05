@@ -19,6 +19,7 @@ target/
 .env
 *.env
 .env.shared.local
+!.env.shared.local.example
 
 # Local Spring configuration containing secrets
 application-local.yml

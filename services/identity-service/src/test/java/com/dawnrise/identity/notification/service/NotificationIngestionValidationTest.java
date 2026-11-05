@@ -14,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.mock;
 
 class NotificationIngestionValidationTest {
@@ -24,6 +25,20 @@ class NotificationIngestionValidationTest {
     void rejectsEventTypesNotOwnedByAuthenticatedSource() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.ingest("school-service", validRequest()));
+    }
+
+    @Test
+    void acceptsStaffLeaveEventsFromSchoolService() {
+        IngestNotificationRequest request = new IngestNotificationRequest(
+                7L, "leave_requested:3:1", NotificationEventType.LEAVE_REQUESTED,
+                NotificationCategory.LEAVE, NotificationImportance.NORMAL,
+                "Leave request submitted", "Your leave request was submitted",
+                new NotificationAction(NotificationActionType.LEAVE_REQUEST, 3L, null, null),
+                "leave:3", OffsetDateTime.now(), Set.of(12L));
+
+        assertDoesNotThrow(() -> service.validateIngestion("school-service", request));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.validateIngestion("academic-service", request));
     }
 
     @Test

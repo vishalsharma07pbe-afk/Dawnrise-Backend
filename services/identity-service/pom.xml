@@ -111,6 +111,9 @@
                     <mainClass>
                         com.dawnrise.identity.IdentityServiceApplication
                     </mainClass>
+                    <systemPropertyVariables>
+                        <spring.config.import>optional:file:${maven.multiModuleProjectDirectory}/../../.env.shared.local[.properties]</spring.config.import>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
