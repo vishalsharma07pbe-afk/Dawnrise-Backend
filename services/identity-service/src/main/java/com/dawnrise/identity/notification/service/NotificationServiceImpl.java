@@ -67,6 +67,7 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationEventType.STUDENT_LEAVE_CHANGED);
     private static final Set<NotificationEventType> SCHOOL_EVENTS = EnumSet.of(
             NotificationEventType.SCHOOL_ANNOUNCEMENT, NotificationEventType.DAWNRISE_RELEASE,
+            NotificationEventType.PARENT_COMMUNICATION_MESSAGE,
             NotificationEventType.LEAVE_REQUESTED, NotificationEventType.LEAVE_APPROVAL_REQUIRED,
             NotificationEventType.LEAVE_APPROVED, NotificationEventType.LEAVE_REJECTED,
             NotificationEventType.LEAVE_WITHDRAWN, NotificationEventType.LEAVE_CANCELLED,
@@ -534,6 +535,8 @@ public class NotificationServiceImpl implements NotificationService {
                     && actionType == NotificationActionType.ANNOUNCEMENT;
             case DAWNRISE_RELEASE -> category == NotificationCategory.SCHOOL
                     && actionType == NotificationActionType.RELEASE_DETAILS;
+            case PARENT_COMMUNICATION_MESSAGE -> category == NotificationCategory.SCHOOL
+                    && actionType == NotificationActionType.COMMUNICATION_THREAD;
             case LEAVE_REQUESTED, LEAVE_APPROVAL_REQUIRED, LEAVE_APPROVED,
                     LEAVE_REJECTED, LEAVE_WITHDRAWN, LEAVE_CANCELLED, LEAVE_CHANGED -> category == NotificationCategory.LEAVE
                     && actionType == NotificationActionType.LEAVE_REQUEST;

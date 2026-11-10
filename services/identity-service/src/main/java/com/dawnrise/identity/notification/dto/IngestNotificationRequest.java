@@ -24,5 +24,5 @@ public record IngestNotificationRequest(
         @Valid NotificationAction action,
         @Size(max = 160) String groupingKey,
         @PastOrPresent OffsetDateTime occurredAt,
-        @NotEmpty @Size(max = 500) Set<@Positive Long> recipientUserIds
+        @NotEmpty @Size(max = 5000) Set<@Positive Long> recipientUserIds
 ) {}
