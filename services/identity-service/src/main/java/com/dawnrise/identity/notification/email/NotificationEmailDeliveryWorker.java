@@ -7,6 +7,8 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -22,9 +24,10 @@ public class NotificationEmailDeliveryWorker {
     private static final Logger log=LoggerFactory.getLogger(NotificationEmailDeliveryWorker.class);
     private final NotificationEmailOutboxStore store;
     private final JavaMailSender mail;
+    private final ObjectMapper json;
 
-    public NotificationEmailDeliveryWorker(NotificationEmailOutboxStore store,JavaMailSender mail) {
-        this.store=store; this.mail=mail;
+    public NotificationEmailDeliveryWorker(NotificationEmailOutboxStore store,JavaMailSender mail,ObjectMapper json) {
+        this.store=store; this.mail=mail; this.json=json;
     }
 
     @Scheduled(fixedDelayString="${dawnrise.notification-email.delay:PT30S}",
@@ -46,13 +49,19 @@ public class NotificationEmailDeliveryWorker {
             message.setTo(first.email());
             message.setSubject(items.size()==1?first.subject():"Your Dawnrise notification digest");
             StringBuilder body=new StringBuilder("Sign in to Dawnrise to review these updates:\n\n");
-            for(var item:items) body.append("• ").append(item.subject()).append("\n");
+            for(var item:items) {
+                Map<String,String> variables=json.readValue(item.variables(),new TypeReference<>(){});
+                body.append("• ").append(variables.getOrDefault("heading",item.subject())).append("\n");
+                if(items.size()==1&&"SCHOOL_ANNOUNCEMENT".equals(item.templateKey()))
+                    body.append(variables.getOrDefault("context","")).append("\n");
+            }
             body.append("\nFor privacy and security, details are available only after signing in.\n");
+            message.setText(body.toString());
             // SimpleMailMessage cannot set a Message-ID header. The durable message_id still prevents
             // application retries from creating a second job; SMTP may duplicate after an ambiguous send result.
             mail.send(message);
             store.sent(items,owner,OffsetDateTime.now());
-        } catch(RuntimeException failure) {
+        } catch(Exception failure) {
             log.warn("Notification email delivery failed for outbox batch",failure);
             store.failed(items,owner,OffsetDateTime.now(),5,Duration.ofMinutes(1),failure);
         }

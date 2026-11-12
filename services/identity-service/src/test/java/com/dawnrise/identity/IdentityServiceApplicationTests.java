@@ -23,9 +23,12 @@ import com.dawnrise.identity.securityaudit.repository.SecurityAuditEventReposito
 import com.dawnrise.identity.studentguardian.repository.StudentGuardianRelationshipRepository;
 import com.dawnrise.identity.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = "spring.autoconfigure.exclude="
@@ -33,6 +36,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
         + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration")
 class IdentityServiceApplicationTests {
+
+    @Autowired
+    private ApplicationContext context;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -91,6 +97,10 @@ class IdentityServiceApplicationTests {
 
     @Test
     void contextLoads() {
+        org.assertj.core.api.Assertions.assertThat(
+                context.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)).isNotEmpty();
+        org.assertj.core.api.Assertions.assertThat(context.containsBean("notificationEmailDeliveryWorker")).isTrue();
+        org.assertj.core.api.Assertions.assertThat(context.containsBean("notificationSmsDeliveryWorker")).isFalse();
     }
 
 }

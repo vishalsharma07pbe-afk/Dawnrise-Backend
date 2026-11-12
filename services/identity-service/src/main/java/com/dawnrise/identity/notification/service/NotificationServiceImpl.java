@@ -16,6 +16,8 @@ import com.dawnrise.identity.notification.model.NotificationEventType;
 import com.dawnrise.identity.notification.model.NotificationFilter;
 import com.dawnrise.identity.notification.model.NotificationImportance;
 import com.dawnrise.identity.notification.model.NotificationEmailMode;
+import com.dawnrise.identity.notification.model.NotificationDeliveryChannel;
+import com.dawnrise.identity.notification.sms.NotificationSmsProperties;
 import com.dawnrise.identity.user.entity.User;
 import com.dawnrise.identity.user.repository.UserRepository;
 import org.springframework.dao.DuplicateKeyException;
@@ -67,6 +69,7 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationEventType.STUDENT_LEAVE_CHANGED);
     private static final Set<NotificationEventType> SCHOOL_EVENTS = EnumSet.of(
             NotificationEventType.SCHOOL_ANNOUNCEMENT, NotificationEventType.DAWNRISE_RELEASE,
+            NotificationEventType.PARENT_COMMUNICATION_MESSAGE,
             NotificationEventType.LEAVE_REQUESTED, NotificationEventType.LEAVE_APPROVAL_REQUIRED,
             NotificationEventType.LEAVE_APPROVED, NotificationEventType.LEAVE_REJECTED,
             NotificationEventType.LEAVE_WITHDRAWN, NotificationEventType.LEAVE_CANCELLED,
@@ -101,16 +104,25 @@ public class NotificationServiceImpl implements NotificationService {
     private final NamedParameterJdbcTemplate jdbc;
     private final UserRepository users;
     private final Clock clock;
+    private final NotificationSmsProperties smsProperties;
 
     @Autowired
-    public NotificationServiceImpl(NamedParameterJdbcTemplate jdbc, UserRepository users) {
-        this(jdbc, users, Clock.systemUTC());
+    public NotificationServiceImpl(NamedParameterJdbcTemplate jdbc, UserRepository users,
+                                   NotificationSmsProperties smsProperties) {
+        this(jdbc, users, Clock.systemUTC(), smsProperties);
+    }
+
+    NotificationServiceImpl(NamedParameterJdbcTemplate jdbc, UserRepository users) {
+        this(jdbc, users, Clock.systemUTC(), new NotificationSmsProperties());
     }
 
     NotificationServiceImpl(NamedParameterJdbcTemplate jdbc, UserRepository users, Clock clock) {
-        this.jdbc = jdbc;
-        this.users = users;
-        this.clock = clock;
+        this(jdbc, users, clock, new NotificationSmsProperties());
+    }
+
+    NotificationServiceImpl(NamedParameterJdbcTemplate jdbc, UserRepository users, Clock clock,
+                            NotificationSmsProperties smsProperties) {
+        this.jdbc = jdbc; this.users = users; this.clock = clock; this.smsProperties = smsProperties;
     }
 
     @Override
@@ -258,7 +270,7 @@ public class NotificationServiceImpl implements NotificationService {
                        attendance_enabled, results_enabled, security_enabled, school_enabled,
                        approvals_enabled,leave_enabled,timetable_email_mode,attendance_email_mode,results_email_mode,
                        approvals_email_mode,school_email_mode,leave_email_mode,quiet_hours_enabled,quiet_hours_start,
-                       quiet_hours_end,time_zone,version
+                       quiet_hours_end,time_zone,school_sms_enabled,version
                 FROM notification_preferences
                 WHERE organization_id=:organizationId AND user_id=:userId
                 """, scope(organizationId, userId), (rs, row) -> mapPreferences(rs));
@@ -280,6 +292,7 @@ public class NotificationServiceImpl implements NotificationService {
                     approvals_enabled=:approvals,leave_enabled=:leave,timetable_email_mode=:timetableEmail,
                     attendance_email_mode=:attendanceEmail,results_email_mode=:resultsEmail,
                     approvals_email_mode=:approvalsEmail,school_email_mode=:schoolEmail,leave_email_mode=:leaveEmail,
+                    school_sms_enabled=:schoolSms,
                     quiet_hours_enabled=:quietEnabled,quiet_hours_start=:quietStart,
                     quiet_hours_end=:quietEnd,time_zone=:timeZone,
                     updated_at=:now, version=version+1
@@ -292,11 +305,11 @@ public class NotificationServiceImpl implements NotificationService {
                             organization_id,user_id,browser_notifications_enabled,sounds_enabled,
                             timetable_enabled,attendance_enabled,results_enabled,security_enabled,school_enabled,
                             approvals_enabled,leave_enabled,timetable_email_mode,attendance_email_mode,results_email_mode,
-                            approvals_email_mode,school_email_mode,leave_email_mode,quiet_hours_enabled,quiet_hours_start,
+                            approvals_email_mode,school_email_mode,leave_email_mode,school_sms_enabled,quiet_hours_enabled,quiet_hours_start,
                             quiet_hours_end,time_zone)
                         VALUES(:organizationId,:userId,:browser,:sounds,:timetable,:attendance,
                                :results,:security,:school,:approvals,:leave,:timetableEmail,:attendanceEmail,
-                               :resultsEmail,:approvalsEmail,:schoolEmail,:leaveEmail,:quietEnabled,:quietStart,
+                               :resultsEmail,:approvalsEmail,:schoolEmail,:leaveEmail,:schoolSms,:quietEnabled,:quietStart,
                                :quietEnd,:timeZone)
                         """, parameters);
             } catch (DuplicateKeyException exception) {
@@ -367,7 +380,8 @@ public class NotificationServiceImpl implements NotificationService {
         for (Long recipientId : recipientIds) {
             DeliveryPreference preference = deliveryPreferences.getOrDefault(recipientId,
                     DeliveryPreference.defaults());
-            boolean inApp = mandatoryInApp(request) || preference.inApp(request);
+            boolean inApp = request.deliveryChannels().contains(NotificationDeliveryChannel.APP)
+                    && (mandatoryInApp(request) || preference.inApp(request));
             UUID recipientRowId = UUID.randomUUID();
             recipientCount += jdbc.update("""
                     INSERT INTO notification_recipients(id,organization_id,event_id,user_id,inbox_suppressed)
@@ -377,7 +391,12 @@ public class NotificationServiceImpl implements NotificationService {
                     .addValue("id", recipientRowId).addValue("organizationId", request.organizationId())
                     .addValue("eventId", eventId).addValue("userId", recipientId)
                     .addValue("suppressed", !inApp));
-            if (inserted == 1) enqueueEmail(request, eventId, recipientRowId, recipientId, preference);
+            if (inserted == 1) {
+                if (request.deliveryChannels().contains(NotificationDeliveryChannel.EMAIL))
+                    enqueueEmail(request, eventId, recipientRowId, recipientId, preference);
+                if (request.deliveryChannels().contains(NotificationDeliveryChannel.SMS))
+                    enqueueSms(request, eventId, recipientRowId, recipientId, preference);
+            }
         }
         return new IngestNotificationResponse(eventId, inserted == 1, recipientCount);
     }
@@ -534,6 +553,8 @@ public class NotificationServiceImpl implements NotificationService {
                     && actionType == NotificationActionType.ANNOUNCEMENT;
             case DAWNRISE_RELEASE -> category == NotificationCategory.SCHOOL
                     && actionType == NotificationActionType.RELEASE_DETAILS;
+            case PARENT_COMMUNICATION_MESSAGE -> category == NotificationCategory.SCHOOL
+                    && actionType == NotificationActionType.COMMUNICATION_THREAD;
             case LEAVE_REQUESTED, LEAVE_APPROVAL_REQUIRED, LEAVE_APPROVED,
                     LEAVE_REJECTED, LEAVE_WITHDRAWN, LEAVE_CANCELLED, LEAVE_CHANGED -> category == NotificationCategory.LEAVE
                     && actionType == NotificationActionType.LEAVE_REQUEST;
@@ -599,6 +620,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .addValue("approvalsEmail", request.approvalsEmailMode().name())
                 .addValue("schoolEmail", request.schoolEmailMode().name())
                 .addValue("leaveEmail", request.leaveEmailMode().name())
+                .addValue("schoolSms", request.schoolSmsEnabled())
                 .addValue("quietEnabled", request.quietHoursEnabled())
                 .addValue("quietStart", request.quietHoursEnabled() ? request.quietHoursStart() : null)
                 .addValue("quietEnd", request.quietHoursEnabled() ? request.quietHoursEnd() : null)
@@ -618,6 +640,7 @@ public class NotificationServiceImpl implements NotificationService {
                 NotificationEmailMode.valueOf(rs.getString("approvals_email_mode")),
                 NotificationEmailMode.valueOf(rs.getString("school_email_mode")),
                 NotificationEmailMode.valueOf(rs.getString("leave_email_mode")),
+                rs.getBoolean("school_sms_enabled"),
                 rs.getBoolean("quiet_hours_enabled"), rs.getObject("quiet_hours_start", LocalTime.class),
                 rs.getObject("quiet_hours_end", LocalTime.class), rs.getString("time_zone"),
                 Set.of("SECURITY", "URGENT_OPERATIONAL"),
@@ -629,7 +652,7 @@ public class NotificationServiceImpl implements NotificationService {
         return new NotificationPreferencesResponse(false, false, true, true, true, true, true, true, true,
                 NotificationEmailMode.IMMEDIATE, NotificationEmailMode.IMMEDIATE,
                 NotificationEmailMode.IMMEDIATE, NotificationEmailMode.IMMEDIATE,
-                NotificationEmailMode.IMMEDIATE, NotificationEmailMode.IMMEDIATE, false, null, null, "UTC",
+                NotificationEmailMode.IMMEDIATE, NotificationEmailMode.IMMEDIATE, false, false, null, null, "UTC",
                 Set.of("SECURITY", "URGENT_OPERATIONAL"),
                 Set.of("PASSWORD_CHANGED", "ACCOUNT_LOCKED", "ACCOUNT_SUSPENDED",
                         "URGENT_UNCOVERED_CLASS"), 0);
@@ -638,9 +661,9 @@ public class NotificationServiceImpl implements NotificationService {
     private Map<Long, DeliveryPreference> deliveryPreferences(long organizationId, Set<Long> userIds) {
         Map<Long, DeliveryPreference> values = new HashMap<>();
         jdbc.query("""
-                SELECT u.id,u.email,p.timetable_enabled,p.attendance_enabled,p.results_enabled,
+                SELECT u.id,u.email,u.phone,p.timetable_enabled,p.attendance_enabled,p.results_enabled,
                        p.school_enabled,p.approvals_enabled,p.leave_enabled,p.timetable_email_mode,p.attendance_email_mode,
-                       p.results_email_mode,p.school_email_mode,p.approvals_email_mode,p.leave_email_mode,p.quiet_hours_enabled,
+                       p.results_email_mode,p.school_email_mode,p.approvals_email_mode,p.leave_email_mode,p.school_sms_enabled,p.quiet_hours_enabled,
                        p.quiet_hours_start,p.quiet_hours_end,COALESCE(p.time_zone,'UTC') time_zone
                   FROM users u LEFT JOIN notification_preferences p
                     ON p.organization_id=u.organization_id AND p.user_id=u.id
@@ -691,7 +714,27 @@ public class NotificationServiceImpl implements NotificationService {
                 .addValue("availableAt", availableAt));
     }
 
+    private void enqueueSms(IngestNotificationRequest request, UUID eventId, UUID recipientId,
+                            long userId, DeliveryPreference preference) {
+        if (!smsProperties.configured() || request.eventType() != NotificationEventType.SCHOOL_ANNOUNCEMENT || !preference.schoolSms()
+                || preference.phone() == null || !preference.phone().matches("^\\+[1-9][0-9]{7,14}$")) return;
+        String variables = "{\"VAR1\":\"" + json(request.heading()) + "\",\"VAR2\":\""
+                + json(request.context()) + "\"}";
+        jdbc.update("""
+                INSERT INTO notification_sms_outbox(
+                    id,organization_id,event_id,recipient_id,user_id,destination_phone,
+                    template_key,template_variables,available_at)
+                VALUES(:id,:org,:event,:recipient,:user,:phone,:template,CAST(:variables AS JSONB),:availableAt)
+                ON CONFLICT(event_id,user_id) DO NOTHING
+                """, new MapSqlParameterSource().addValue("id", UUID.randomUUID())
+                .addValue("org", request.organizationId()).addValue("event", eventId)
+                .addValue("recipient", recipientId).addValue("user", userId).addValue("phone", preference.phone())
+                .addValue("template", request.eventType().name()).addValue("variables", variables)
+                .addValue("availableAt", preference.availableAt(now(), NotificationEmailMode.IMMEDIATE, false)));
+    }
+
     private String safeSubject(IngestNotificationRequest request) {
+        if(request.eventType()==NotificationEventType.SCHOOL_ANNOUNCEMENT)return request.heading().trim();
         return switch (request.category()) {
             case SECURITY -> "Dawnrise account security update";
             case ATTENDANCE -> "Dawnrise attendance update";
@@ -713,23 +756,25 @@ public class NotificationServiceImpl implements NotificationService {
                 .replace("\n", " ").replace("\r", " ");
     }
 
-    private record DeliveryPreference(String email, boolean timetable, boolean attendance,
+    private record DeliveryPreference(String email, String phone, boolean timetable, boolean attendance,
                                       boolean results, boolean school, boolean approvals, boolean leave,
                                       NotificationEmailMode timetableEmail, NotificationEmailMode attendanceEmail,
                                       NotificationEmailMode resultsEmail, NotificationEmailMode schoolEmail,
-                                      NotificationEmailMode approvalsEmail, NotificationEmailMode leaveEmail, boolean quietEnabled,
+                                      NotificationEmailMode approvalsEmail, NotificationEmailMode leaveEmail, boolean schoolSms,
+                                      boolean quietEnabled,
                                       LocalTime quietStart, LocalTime quietEnd, ZoneId zone) {
-        static DeliveryPreference defaults() { return new DeliveryPreference(null,true,true,true,true,true,true,
+        static DeliveryPreference defaults() { return new DeliveryPreference(null,null,true,true,true,true,true,true,
                 NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,
-                NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,false,null,null,ZoneOffset.UTC); }
+                NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,NotificationEmailMode.IMMEDIATE,false,false,null,null,ZoneOffset.UTC); }
         static DeliveryPreference from(ResultSet rs) throws SQLException {
             boolean absent = rs.getObject("timetable_enabled") == null;
-            return new DeliveryPreference(rs.getString("email"), absent || rs.getBoolean("timetable_enabled"),
+            return new DeliveryPreference(rs.getString("email"), rs.getString("phone"), absent || rs.getBoolean("timetable_enabled"),
                     absent || rs.getBoolean("attendance_enabled"), absent || rs.getBoolean("results_enabled"),
                     absent || rs.getBoolean("school_enabled"), absent || rs.getBoolean("approvals_enabled"),
                     absent || rs.getBoolean("leave_enabled"),
                     mode(rs,"timetable_email_mode"),mode(rs,"attendance_email_mode"),mode(rs,"results_email_mode"),
                     mode(rs,"school_email_mode"),mode(rs,"approvals_email_mode"),mode(rs,"leave_email_mode"),
+                    !absent && rs.getBoolean("school_sms_enabled"),
                     !absent && rs.getBoolean("quiet_hours_enabled"),rs.getObject("quiet_hours_start",LocalTime.class),
                     rs.getObject("quiet_hours_end",LocalTime.class),ZoneId.of(rs.getString("time_zone")));
         }

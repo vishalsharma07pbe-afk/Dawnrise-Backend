@@ -3,6 +3,7 @@ package com.dawnrise.identity.notification.dto;
 import com.dawnrise.identity.notification.model.NotificationCategory;
 import com.dawnrise.identity.notification.model.NotificationEventType;
 import com.dawnrise.identity.notification.model.NotificationImportance;
+import com.dawnrise.identity.notification.model.NotificationDeliveryChannel;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -24,5 +25,16 @@ public record IngestNotificationRequest(
         @Valid NotificationAction action,
         @Size(max = 160) String groupingKey,
         @PastOrPresent OffsetDateTime occurredAt,
-        @NotEmpty @Size(max = 500) Set<@Positive Long> recipientUserIds
-) {}
+        @NotEmpty @Size(max = 5000) Set<@Positive Long> recipientUserIds,
+        @NotEmpty Set<@NotNull NotificationDeliveryChannel> deliveryChannels
+) {
+    public IngestNotificationRequest(long organizationId, String sourceEventId,
+            NotificationEventType eventType, NotificationCategory category,
+            NotificationImportance importance, String heading, String context,
+            NotificationAction action, String groupingKey, OffsetDateTime occurredAt,
+            Set<Long> recipientUserIds) {
+        this(organizationId, sourceEventId, eventType, category, importance, heading, context,
+                action, groupingKey, occurredAt, recipientUserIds,
+                Set.of(NotificationDeliveryChannel.APP, NotificationDeliveryChannel.EMAIL));
+    }
+}

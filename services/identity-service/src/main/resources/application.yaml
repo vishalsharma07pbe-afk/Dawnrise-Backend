@@ -20,6 +20,15 @@ platform:
     phone: ${PLATFORM_BOOTSTRAP_PHONE:}
 
 dawnrise:
+  notification-sms:
+    enabled: ${IDENTITY_NOTIFICATION_SMS_ENABLED:false}
+    base-url: ${MSG91_BASE_URL:https://control.msg91.com}
+    auth-key: ${MSG91_AUTH_KEY:}
+    delay: ${IDENTITY_NOTIFICATION_SMS_DELAY:PT30S}
+    initial-delay: ${IDENTITY_NOTIFICATION_SMS_INITIAL_DELAY:PT30S}
+    maximum-attempts: ${IDENTITY_NOTIFICATION_SMS_MAX_ATTEMPTS:5}
+    template-ids:
+      SCHOOL_ANNOUNCEMENT: ${MSG91_TEMPLATE_SCHOOL_ANNOUNCEMENT:}
   notification-email:
     enabled: ${IDENTITY_NOTIFICATION_EMAIL_ENABLED:true}
     delay: ${IDENTITY_NOTIFICATION_EMAIL_DELAY:PT30S}
