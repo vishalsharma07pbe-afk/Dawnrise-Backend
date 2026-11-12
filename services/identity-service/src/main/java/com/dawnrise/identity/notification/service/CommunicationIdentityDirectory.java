@@ -4,6 +4,8 @@ import com.dawnrise.identity.notification.dto.CommunicationIdentityDtos;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.dawnrise.identity.notification.sms.NotificationSmsProperties;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -13,8 +15,11 @@ import java.util.Set;
 public class CommunicationIdentityDirectory {
     private static final int MAX_PAGE_SIZE = 50;
     private final NamedParameterJdbcTemplate jdbc;
+    private final NotificationSmsProperties sms;
 
-    public CommunicationIdentityDirectory(NamedParameterJdbcTemplate jdbc) { this.jdbc = jdbc; }
+    @Autowired
+    public CommunicationIdentityDirectory(NamedParameterJdbcTemplate jdbc,NotificationSmsProperties sms) { this.jdbc = jdbc;this.sms=sms; }
+    CommunicationIdentityDirectory(NamedParameterJdbcTemplate jdbc) { this(jdbc,new NotificationSmsProperties()); }
 
     public CommunicationIdentityDtos.Page search(long organizationId, CommunicationIdentityDtos.SearchRequest request) {
         requireOrganization(organizationId);
@@ -87,6 +92,28 @@ public class CommunicationIdentityDirectory {
         Set<String> permissions = Set.copyOf(jdbc.queryForList("SELECT DISTINCT p.code FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN role_permissions rp ON rp.role=ur.role JOIN permissions p ON p.id=rp.permission_id WHERE u.organization_id=:organizationId AND u.id=:userId AND u.status='ACTIVE' AND p.active=TRUE ORDER BY p.code",
                 new MapSqlParameterSource("organizationId", organizationId).addValue("userId", userId), String.class));
         return new CommunicationIdentityDtos.Authority(true, permissions);
+    }
+
+    public CommunicationIdentityDtos.Eligibility eligibility(long organizationId,CommunicationIdentityDtos.EligibilityRequest request) {
+        requireOrganization(organizationId);
+        Set<Long> active=Set.copyOf(jdbc.queryForList("SELECT id FROM users WHERE organization_id=:org AND status='ACTIVE' AND id IN (:ids)",
+                new MapSqlParameterSource("org",organizationId).addValue("ids",request.userIds()),Long.class));
+        int total=request.userIds().size();
+        List<CommunicationIdentityDtos.ChannelEligibility> result=request.channels().stream().sorted().map(channel->switch(channel){
+            case "APP" -> new CommunicationIdentityDtos.ChannelEligibility(channel,active.size(),total-active.size(),true,null);
+            case "EMAIL" -> countEligibility(organizationId,active,channel,"u.email IS NOT NULL AND BTRIM(u.email)<>'' AND COALESCE(p.school_email_mode,'IMMEDIATE')<>'DISABLED'",true,null);
+            case "SMS" -> sms.configured()?countEligibility(organizationId,active,channel,"u.phone ~ '^\\+[1-9][0-9]{7,14}$' AND COALESCE(p.school_sms_enabled,FALSE)=TRUE",true,null):new CommunicationIdentityDtos.ChannelEligibility(channel,0,total,false,"SMS provider and approved template setup is incomplete");
+            case "WHATSAPP" -> new CommunicationIdentityDtos.ChannelEligibility(channel,0,total,false,"WhatsApp Business provider and approved template setup is required");
+            case "CALL" -> new CommunicationIdentityDtos.ChannelEligibility(channel,0,total,false,"Voice provider configuration and consent rules are required");
+            default -> throw new IllegalArgumentException("Unsupported delivery channel");
+        }).toList();
+        return new CommunicationIdentityDtos.Eligibility(result);
+    }
+
+    private CommunicationIdentityDtos.ChannelEligibility countEligibility(long org,Set<Long> active,String channel,String condition,boolean available,String reason){
+        if(active.isEmpty())return new CommunicationIdentityDtos.ChannelEligibility(channel,0,0,available,reason);
+        Integer count=jdbc.queryForObject("SELECT COUNT(*) FROM users u LEFT JOIN notification_preferences p ON p.organization_id=u.organization_id AND p.user_id=u.id WHERE u.organization_id=:org AND u.id IN (:ids) AND "+condition,new MapSqlParameterSource("org",org).addValue("ids",active),Integer.class);
+        int eligible=count==null?0:count;return new CommunicationIdentityDtos.ChannelEligibility(channel,eligible,active.size()-eligible,available,reason);
     }
 
     private void requireOrganization(long organizationId) { if (organizationId <= 0) throw new IllegalArgumentException("Organization is required"); }

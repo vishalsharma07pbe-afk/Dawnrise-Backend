@@ -17,4 +17,9 @@ public final class CommunicationIdentityDtos {
     public record ResolveGuardiansRequest(@NotEmpty @Size(max = 5000) Set<Long> studentUserIds) {}
     public record Ids(Set<Long> userIds) {}
     public record Authority(boolean active, Set<String> permissions) {}
+    public record EligibilityRequest(@NotEmpty @Size(max = 5000) Set<Long> userIds,
+                                     @NotEmpty @Size(max = 5) Set<String> channels) {}
+    public record ChannelEligibility(String channel, int eligibleCount, int excludedCount,
+                                     boolean available, String reason) {}
+    public record Eligibility(List<ChannelEligibility> channels) {}
 }

@@ -39,4 +39,10 @@ public class InternalCommunicationIdentityController {
     public CommunicationIdentityDtos.Authority authority(@PathVariable long organizationId, @PathVariable long userId) {
         return directory.authority(organizationId, userId);
     }
+
+    @PostMapping("/users/eligibility")
+    public CommunicationIdentityDtos.Eligibility eligibility(@PathVariable long organizationId,
+            @Valid @RequestBody CommunicationIdentityDtos.EligibilityRequest request) {
+        return directory.eligibility(organizationId, request);
+    }
 }

@@ -11,7 +11,8 @@ public record UpdateNotificationPreferencesRequest(
         boolean securityEnabled, boolean schoolEnabled, boolean approvalsEnabled, boolean leaveEnabled,
         NotificationEmailMode timetableEmailMode, NotificationEmailMode attendanceEmailMode,
         NotificationEmailMode resultsEmailMode, NotificationEmailMode approvalsEmailMode,
-        NotificationEmailMode schoolEmailMode, NotificationEmailMode leaveEmailMode, boolean quietHoursEnabled,
+        NotificationEmailMode schoolEmailMode, NotificationEmailMode leaveEmailMode, boolean schoolSmsEnabled,
+        boolean quietHoursEnabled,
         LocalTime quietHoursStart, LocalTime quietHoursEnd, @NotBlank String timeZone,
         @PositiveOrZero long version
 ) {}

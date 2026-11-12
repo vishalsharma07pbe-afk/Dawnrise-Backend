@@ -88,6 +88,20 @@ class CommunicationAudienceServiceTest {
         assertEquals(3,service.preview(7,42,true,request).recipientCount());
     }
 
+    @Test void previewReturnsPerChannelEligibilityWithoutContactDetails(){
+        when(gateway.resolveUsers(7,Set.of(50L))).thenReturn(Set.of(50L));
+        when(gateway.eligibility(7,Set.of(50L),Set.of("APP","EMAIL"))).thenReturn(List.of(
+                new CommunicationDirectoryGateway.ChannelEligibility("APP",1,0,true,null),
+                new CommunicationDirectoryGateway.ChannelEligibility("EMAIL",0,1,true,null)));
+        var request=new CommunicationDtos.PreviewRequest(List.of(
+                new CommunicationDtos.Selection(CommunicationDtos.Type.INDIVIDUAL,"50")),
+                List.of(CommunicationDtos.Channel.APP,CommunicationDtos.Channel.EMAIL));
+        var preview=service.preview(7,42,true,request);
+        assertEquals(1,preview.recipientCount());
+        assertEquals(1,preview.channels().getFirst().eligibleCount());
+        assertEquals(1,preview.channels().get(1).excludedCount());
+    }
+
     @Test void groupDiscoveryIsBoundedAndPaginated(){
         when(gateway.identityGroups(7)).thenReturn(List.of(
                 new CommunicationDirectoryGateway.IdentityGroup("STAFF",null,"Staff","Active"),

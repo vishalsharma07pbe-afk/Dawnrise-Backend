@@ -47,7 +47,10 @@ public class CommunicationAudienceService {
             if (resolved.isEmpty()) throw new IllegalArgumentException("Selected audience is unavailable or empty");
             recipients.addAll(resolved); normalized.add(new CommunicationDtos.Selection(selection.type(),key));
         }
-        return new CommunicationDtos.Preview(List.copyOf(normalized),recipients.size(),"AT_DELIVERY_TIME","Scheduled audience membership will be resolved again at delivery time.");
+        List<CommunicationDtos.Channel> channels=request.channels()==null||request.channels().isEmpty()
+                ?List.of(CommunicationDtos.Channel.APP):request.channels().stream().distinct().toList();
+        List<CommunicationDtos.ChannelPreview> channelPreview=gateway.eligibility(org,Set.copyOf(recipients),channels.stream().map(Enum::name).collect(java.util.stream.Collectors.toSet())).stream().map(value->new CommunicationDtos.ChannelPreview(CommunicationDtos.Channel.valueOf(value.channel()),value.eligibleCount(),value.excludedCount(),value.available(),value.reason())).toList();
+        return new CommunicationDtos.Preview(List.copyOf(normalized),recipients.size(),channelPreview,"AT_DELIVERY_TIME","Scheduled audience membership will be resolved again at delivery time.");
     }
 
     public Set<Long> resolveRecipients(long org,long actor,boolean schoolWide,List<CommunicationDtos.Selection> selections) {
