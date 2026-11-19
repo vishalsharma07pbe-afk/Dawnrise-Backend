@@ -22,7 +22,7 @@ public class AcademicNotificationOutboxStore {
         this.jdbc = jdbc;
     }
 
-    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION, TIMETABLE_EXPIRY, EXAMINATION, STUDENT_LEAVE }
+    public enum Source { ATTENDANCE, DAILY_COVER, PUBLICATION, TIMETABLE_EXPIRY, EXAMINATION, STUDENT_LEAVE, LEARNING }
 
     public record Item(Source source, long id, UUID eventId, long organizationId,
                        Long academicYearId, Long studentUserId, Long caseId, Long artifactId,
@@ -76,7 +76,35 @@ public class AcademicNotificationOutboxStore {
             case TIMETABLE_EXPIRY -> claimTimetableExpiry(owner, now, leaseDuration, limit);
             case EXAMINATION -> claimExamination(owner, now, leaseDuration, limit);
             case STUDENT_LEAVE -> claimStudentLeave(owner, now, leaseDuration, limit);
+            case LEARNING -> claimLearning(owner, now, leaseDuration, limit);
         };
+    }
+
+    private List<Item> claimLearning(UUID owner, OffsetDateTime now, Duration lease, int limit) {
+        return jdbc.sql("""
+                WITH candidates AS (SELECT id FROM learning_notification_outbox
+                 WHERE publication_status='PENDING' AND available_at<=:now
+                   AND (lease_until IS NULL OR lease_until<:now)
+                 ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT :limit)
+                UPDATE learning_notification_outbox o SET lease_owner=:owner,lease_until=:leaseUntil,
+                  attempt_count=attempt_count+1,last_error=NULL,updated_at=:now
+                FROM candidates c WHERE o.id=c.id
+                RETURNING o.id,o.event_id,o.organization_id,
+                  (SELECT p.academic_year_id FROM learning_posts p WHERE p.id=o.post_id AND p.organization_id=o.organization_id) academic_year_id,
+                  NULL::BIGINT student_user_id,NULL::BIGINT case_id,o.post_id artifact_id,
+                  NULL::BIGINT actor_user_id,o.event_type,o.payload::TEXT,o.created_at occurred_at,
+                  o.attempt_count,o.recipient_user_ids
+                """).param("now",now).param("owner",owner).param("leaseUntil",now.plus(lease))
+                .param("limit",limit).query((rs,n)->item(Source.LEARNING,rs)).list();
+    }
+
+    public TimetableAudience learningAudience(long organizationId,long postId) {
+        var scope=jdbc.sql("SELECT academic_year_id,section_id FROM learning_posts WHERE organization_id=:o AND id=:p")
+                .param("o",organizationId).param("p",postId).query((rs,n)->new long[]{rs.getLong(1),rs.getLong(2)})
+                .optional().orElseThrow(()->new NotificationDeliveryException("Learning post no longer exists",null));
+        Set<Long> students=Set.copyOf(jdbc.sql("SELECT student_user_id FROM student_enrollments WHERE organization_id=:o AND academic_year_id=:y AND section_id=:s AND status='ENROLLED'")
+                .param("o",organizationId).param("y",scope[0]).param("s",scope[1]).query(Long.class).list());
+        return new TimetableAudience(students,Set.of());
     }
 
     private List<Item> claimStudentLeave(UUID owner, OffsetDateTime now, Duration lease, int limit) {
@@ -385,6 +413,9 @@ public class AcademicNotificationOutboxStore {
                     UNION ALL
                     SELECT 'STUDENT_LEAVE',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
                       FROM student_leave_notification_outbox WHERE publication_status='DEAD_LETTER'
+                    UNION ALL
+                    SELECT 'LEARNING',id,event_id,event_type,attempt_count,last_error,dead_lettered_at,organization_id
+                      FROM learning_notification_outbox WHERE publication_status='DEAD_LETTER'
                 ) failures WHERE organization_id=:org ORDER BY dead_lettered_at DESC,id DESC
                 """).param("org", organizationId).query((rs, n) -> new DeadLetter(
                         Source.valueOf(rs.getString(1)), rs.getLong(2), rs.getObject(3, UUID.class),
@@ -435,6 +466,7 @@ public class AcademicNotificationOutboxStore {
             case TIMETABLE_EXPIRY -> "timetable_expiry_notification_outbox";
             case EXAMINATION -> "examination_notification_outbox";
             case STUDENT_LEAVE -> "student_leave_notification_outbox";
+            case LEARNING -> "learning_notification_outbox";
         };
     }
 

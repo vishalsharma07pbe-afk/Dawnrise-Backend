@@ -119,8 +119,24 @@ public class AcademicNotificationDeliveryWorker {
             }
             return Set.copyOf(recipients);
         }
+        if (item.source() == Source.LEARNING) {
+            LinkedHashSet<Long> recipients = new LinkedHashSet<>();
+            TimetableAudience audience = store.learningAudience(item.organizationId(), item.artifactId());
+            recipients.addAll(audience.studentUserIds());
+            for (Long studentUserId : audience.studentUserIds()) {
+                recipients.addAll(guardians.activeGuardianUserIds(item.organizationId(), studentUserId));
+            }
+            return Set.copyOf(recipients);
+        }
         if (item.source() == Source.STUDENT_LEAVE) {
             return item.recipientUserIds();
+        }
+        if (item.source() == Source.LEARNING) {
+            LinkedHashSet<Long> recipients = new LinkedHashSet<>();
+            TimetableAudience audience = store.learningAudience(item.organizationId(), item.artifactId());
+            recipients.addAll(audience.studentUserIds());
+            for (Long student : audience.studentUserIds()) recipients.addAll(guardians.activeGuardianUserIds(item.organizationId(), student));
+            return Set.copyOf(recipients);
         }
         CoverContext context = store.coverContext(item.organizationId(), item.caseId());
         return "CONFIRMED_SUBSTITUTION".equals(item.eventType())
@@ -135,7 +151,19 @@ public class AcademicNotificationDeliveryWorker {
             case TIMETABLE_EXPIRY -> timetableExpiry(item, recipients);
             case EXAMINATION -> examination(item, recipients);
             case STUDENT_LEAVE -> studentLeave(item, recipients);
+            case LEARNING -> learning(item, recipients);
         };
+    }
+
+    private IdentityNotificationClient.NotificationRequest learning(Item item, Set<Long> recipients) {
+        boolean withdrawn="LEARNING_POST_WITHDRAWN".equals(item.eventType());
+        boolean dueDateChanged="LEARNING_DUE_DATE_CHANGED".equals(item.eventType());
+        boolean reminder="LEARNING_REMINDER".equals(item.eventType());
+        return new IdentityNotificationClient.NotificationRequest(item.organizationId(),item.eventId().toString(),
+                item.eventType(),"SCHOOL",reminder?"IMPORTANT":"NORMAL",reminder?"Homework reminder":dueDateChanged?"Homework due date changed":withdrawn?"Classwork update":"New classwork or homework",
+                reminder?"Your teacher sent a reminder. Open the homework to finish the remaining work.":dueDateChanged?"Your teacher changed the due date. Open the work to review it.":withdrawn?"A learning post was withdrawn.":"New learning work is available for your class.",
+                new IdentityNotificationClient.Action("CLASSWORK_HOMEWORK",item.artifactId(),null,item.academicYearId()),
+                "learning:"+item.artifactId(),item.occurredAt(),recipients);
     }
 
     private IdentityNotificationClient.NotificationRequest studentLeave(Item item, Set<Long> recipients) {

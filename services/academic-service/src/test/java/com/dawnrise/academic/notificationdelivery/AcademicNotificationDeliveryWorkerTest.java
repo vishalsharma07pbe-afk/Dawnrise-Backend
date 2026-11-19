@@ -201,6 +201,26 @@ class AcademicNotificationDeliveryWorkerTest {
     }
 
     @Test
+    void learningPublicationTargetsEnrolledStudentsAndDeduplicatedActiveGuardians() {
+        UUID owner = UUID.randomUUID();
+        Item item = item(Source.LEARNING, "LEARNING_POST_PUBLISHED", null, null, 91L);
+        when(store.learningAudience(1, 91)).thenReturn(
+                new TimetableAudience(Set.of(21L, 22L), Set.of()));
+        when(guardians.activeGuardianUserIds(1, 21)).thenReturn(List.of(50L));
+        when(guardians.activeGuardianUserIds(1, 22)).thenReturn(List.of(50L, 51L));
+        when(store.snapshotRecipients(eq(item), any())).thenAnswer(invocation -> invocation.getArgument(1));
+
+        worker.deliver(item, owner);
+
+        ArgumentCaptor<IdentityNotificationClient.NotificationRequest> request =
+                ArgumentCaptor.forClass(IdentityNotificationClient.NotificationRequest.class);
+        verify(identity).ingest(request.capture());
+        assertEquals(Set.of(21L, 22L, 50L, 51L), request.getValue().recipientUserIds());
+        assertEquals("CLASSWORK_HOMEWORK", request.getValue().action().type());
+        assertEquals(91L, request.getValue().action().referenceId());
+    }
+
+    @Test
     void failedIdentityCallLeavesRowForBoundedRetry() {
         UUID owner = UUID.randomUUID();
         Item item = item(Source.ATTENDANCE, "ABSENCE_RECORDED", 21L, null, null);

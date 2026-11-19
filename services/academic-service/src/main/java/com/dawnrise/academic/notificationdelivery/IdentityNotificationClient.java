@@ -11,7 +11,14 @@ public interface IdentityNotificationClient {
     record NotificationRequest(long organizationId, String sourceEventId, String eventType,
                                String category, String importance, String heading, String context,
                                Action action, String groupingKey, OffsetDateTime occurredAt,
-                               Set<Long> recipientUserIds) {
+                               Set<Long> recipientUserIds, Set<String> deliveryChannels) {
+        NotificationRequest(long organizationId, String sourceEventId, String eventType,
+                            String category, String importance, String heading, String context,
+                            Action action, String groupingKey, OffsetDateTime occurredAt,
+                            Set<Long> recipientUserIds) {
+            this(organizationId, sourceEventId, eventType, category, importance, heading, context,
+                    action, groupingKey, occurredAt, recipientUserIds, Set.of("APP", "EMAIL"));
+        }
     }
 
     record Action(String type, Long referenceId, Long studentUserId, Long academicYearId) {
