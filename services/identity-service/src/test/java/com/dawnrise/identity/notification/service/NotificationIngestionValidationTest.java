@@ -42,6 +42,27 @@ class NotificationIngestionValidationTest {
     }
 
     @Test
+    void acceptsLearningEventsAndRemindersFromAcademicService() {
+        for (NotificationEventType type : Set.of(
+                NotificationEventType.LEARNING_POST_PUBLISHED,
+                NotificationEventType.LEARNING_POST_CHANGED,
+                NotificationEventType.LEARNING_DUE_DATE_CHANGED,
+                NotificationEventType.LEARNING_POST_WITHDRAWN,
+                NotificationEventType.LEARNING_REMINDER)) {
+            IngestNotificationRequest request = new IngestNotificationRequest(
+                    7L, "learning:" + type, type, NotificationCategory.SCHOOL,
+                    NotificationImportance.NORMAL, "Homework update",
+                    "Open classwork and homework to review this update.",
+                    new NotificationAction(NotificationActionType.CLASSWORK_HOMEWORK, 4L, null, 3L),
+                    "learning:4", OffsetDateTime.now(), Set.of(15L, 16L));
+
+            assertDoesNotThrow(() -> service.validateIngestion("academic-service", request));
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.validateIngestion("school-service", request));
+        }
+    }
+
+    @Test
     void rejectsMarkupBeforeAnyPersistence() {
         IngestNotificationRequest request = new IngestNotificationRequest(
                 1L, "event-1", NotificationEventType.COVER_NEEDED,
